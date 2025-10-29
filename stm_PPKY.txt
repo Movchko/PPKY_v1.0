@@ -1,0 +1,52 @@
+Configuration	stm_PPKY
+STM32CubeMX 	6.12.1
+Date	10/28/2025
+MCU	STM32H523RETx
+
+
+
+PERIPHERALS	MODES	FUNCTIONS	PINS
+PWR:Low Power	Dead Battery Signals disabled	PWR_VS_DBSignals	VP_PWR_VS_DBSignals
+PWR:Low Power	Power saving mode	PWR_VS_LPOM	VP_PWR_VS_LPOM
+PWR	Privilege attributes	PWR_VS_SECSignals	VP_PWR_VS_SECSignals
+SYS	SysTick	SYS_VS_Systick	VP_SYS_VS_Systick
+
+
+
+Pin Nb	PINs	FUNCTIONs	LABELs
+PERIPHERALS	MODES	FUNCTIONS	PINS
+PWR:Low Power	Dead Battery Signals disabled	PWR_VS_DBSignals	VP_PWR_VS_DBSignals
+PWR:Low Power	Power saving mode	PWR_VS_LPOM	VP_PWR_VS_LPOM
+PWR	Privilege attributes	PWR_VS_SECSignals	VP_PWR_VS_SECSignals
+SYS	SysTick	SYS_VS_Systick	VP_SYS_VS_Systick
+
+
+
+Pin Nb	PINs	FUNCTIONs	LABELs
+
+
+
+SOFTWARE PROJECT
+
+Project Settings : 
+Project Name : stm_PPKY
+Project Folder : C:\Users\79099\STM32CubeIDE\workspace_1.13.2\stm_PPKY
+Toolchain / IDE : STM32CubeIDE
+Firmware Package Name and Version : STM32Cube FW_H5 V1.3.0
+
+
+Code Generation Settings : 
+STM32Cube MCU packages and embedded software packs : Copy only the necessary library files
+Generate peripheral initialization as a pair of '.c/.h' files per peripheral : No
+Backup previously generated files when re-generating : No
+Delete previously generated files when not re-generated : Yes
+Set all free pins as analog (to optimize the power consumption) : No
+
+
+Toolchains Settings : 
+Compiler Optimizations : 
+
+
+
+
+
