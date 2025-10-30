@@ -23,11 +23,15 @@
 #include <TouchGFXHAL.hpp>
 
 /* USER CODE BEGIN TouchGFXHAL.cpp */
-
+#include "Display/display.h"
 using namespace touchgfx;
 
 void TouchGFXHAL::initialize()
 {
+    // Initialize display hardware first
+    extern void InitDisplay(void);
+    InitDisplay();
+    
     // Calling parent implementation of initialize().
     //
     // To overwrite the generated implementation, omit the call to the parent function
@@ -76,17 +80,27 @@ void TouchGFXHAL::setTFTFrameBuffer(uint16_t* address)
  */
 void TouchGFXHAL::flushFrameBuffer(const touchgfx::Rect& rect)
 {
-    // Calling parent implementation of flushFrameBuffer(const touchgfx::Rect& rect).
-    //
-    // To overwrite the generated implementation, omit the call to the parent function
-    // and implement the needed functionality here.
-    // Please note, HAL::flushFrameBuffer(const touchgfx::Rect& rect) must
-    // be called to notify the touchgfx framework that flush has been performed.
-    // To calculate the start address of rect,
-    // use advanceFrameBufferToRect(uint8_t* fbPtr, const touchgfx::Rect& rect)
-    // defined in TouchGFXGeneratedHAL.cpp
-
-    TouchGFXGeneratedHAL::flushFrameBuffer(rect);
+    // Get pointer to framebuffer
+    uint8_t* fbPtr = (uint8_t*)lockFrameBuffer();
+    if (fbPtr == 0)
+    {
+        return;
+    }
+    
+    // Calculate offset to rectangle start manually
+    // Formula: fbPtr += rect.y * lcd().framebufferStride() + rect.x / 8;
+    uint8_t* rectPtr = fbPtr + (rect.y * lcd().framebufferStride() + rect.x / 8);
+    
+    // Update display with the rectangle
+    // rectPtr points to the rectangle start, coordinates are absolute
+    Display_UpdateRect(rectPtr, rect.x, rect.y, rect.width, rect.height);
+    
+    // Unlock framebuffer
+    unlockFrameBuffer();
+    
+    // Notify framework that flush is complete
+    // NOTE: Must be called at the end
+    HAL::flushFrameBuffer(rect);
 }
 
 bool TouchGFXHAL::blockCopy(void* RESTRICT dest, const void* RESTRICT src, uint32_t numBytes)

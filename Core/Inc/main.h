@@ -75,10 +75,10 @@ void Error_Handler(void);
 #define ESP32_EN_GPIO_Port GPIOA
 #define ESP32_BOOT_Pin GPIO_PIN_12
 #define ESP32_BOOT_GPIO_Port GPIOC
-#define DISP_CS_Pin GPIO_PIN_2
-#define DISP_CS_GPIO_Port GPIOD
-#define DISP_RES_Pin GPIO_PIN_4
-#define DISP_RES_GPIO_Port GPIOB
+#define DISP_RES_Pin GPIO_PIN_2
+#define DISP_RES_GPIO_Port GPIOD
+#define DISP_CS_Pin GPIO_PIN_4
+#define DISP_CS_GPIO_Port GPIOB
 #define DISP_D_C_Pin GPIO_PIN_8
 #define DISP_D_C_GPIO_Port GPIOB
 

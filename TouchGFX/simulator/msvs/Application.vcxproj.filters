@@ -184,6 +184,18 @@
     <Filter Include="Header Files\generated\simulator\include\simulator\video">
       <UniqueIdentifier>85DFE51B-51FA-2963-39DF-42B90367A94A</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\gui\screen_1_screen">
+      <UniqueIdentifier>9836DD72-D5C6-22D8-1223-51EB36A754B7</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\gui\screen_1_screen">
+      <UniqueIdentifier>7B427ADC-B3F2-27E5-1F57-0C5EB912CEAA</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\generated\gui_generated\screen_1_screen">
+      <UniqueIdentifier>D980F0DE-84D9-F40C-BA5C-2FC8468153BD</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\generated\gui_generated\screen_1_screen">
+      <UniqueIdentifier>963C8E1B-173A-90CD-94C2-E74F3216A6DF</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(TouchGFXReleasePath)\framework\source\platform\driver\touch\SDL2TouchController.cpp">
@@ -224,6 +236,15 @@
     </ClCompile>
     <ClCompile Include="..\..\generated\simulator\src\video\SoftwareMJPEGDecoder.cpp">
       <Filter>Source Files\generated\simulator\video</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\screen_1_screen\screen_1Presenter.cpp">
+      <Filter>Source Files\gui\screen_1_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\screen_1_screen\screen_1View.cpp">
+      <Filter>Source Files\gui\screen_1_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\generated\gui_generated\src\screen_1_screen\screen_1ViewBase.cpp">
+      <Filter>Source Files\generated\gui_generated\screen_1_screen</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -675,6 +696,15 @@
     </ClInclude>
     <ClInclude Include="..\..\generated\simulator\include\simulator\video\SoftwareMJPEGDecoder.hpp">
       <Filter>Header Files\generated\simulator\include\simulator\video</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\screen_1_screen\screen_1Presenter.hpp">
+      <Filter>Header Files\gui\screen_1_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\screen_1_screen\screen_1View.hpp">
+      <Filter>Header Files\gui\screen_1_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screen_1_screen\screen_1ViewBase.hpp">
+      <Filter>Header Files\generated\gui_generated\screen_1_screen</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

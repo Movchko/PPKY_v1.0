@@ -20,7 +20,7 @@
             "Name": "textArea1",
             "X": 22,
             "Y": 12,
-            "Width": 84,
+            "Width": 76,
             "Height": 40,
             "TextId": "__SingleUse_7O8S",
             "TextRotation": "0",
@@ -84,6 +84,59 @@
             "Action": {
               "Type": "ActionShow",
               "ActionComponent": "textArea1"
+            }
+          },
+          {
+            "InteractionName": "Interaction5",
+            "Trigger": {
+              "Type": "TriggerOnEveryTick",
+              "TickCount": 1
+            },
+            "Action": {
+              "Type": "ActionGotoScreen",
+              "ScreenTransitionType": "ScreenTransitionNone",
+              "ActionComponent": "screen_1"
+            }
+          }
+        ]
+      },
+      {
+        "Name": "screen_1",
+        "Components": [
+          {
+            "Type": "Box",
+            "Name": "box1",
+            "Width": 128,
+            "Height": 64
+          },
+          {
+            "Type": "TextArea",
+            "Name": "textArea1_1",
+            "X": 22,
+            "Y": 12,
+            "Width": 55,
+            "Height": 20,
+            "TextId": "__SingleUse_P7CU",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            },
+            "AutoSize": true
+          }
+        ],
+        "Interactions": [
+          {
+            "InteractionName": "Interaction1",
+            "Trigger": {
+              "Type": "TriggerOnEveryTick",
+              "TickCount": 1
+            },
+            "Action": {
+              "Type": "ActionGotoScreen",
+              "ScreenTransitionType": "ScreenTransitionNone",
+              "ActionComponent": "screen"
             }
           }
         ]

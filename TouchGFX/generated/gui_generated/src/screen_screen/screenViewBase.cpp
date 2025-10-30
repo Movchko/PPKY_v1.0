@@ -75,3 +75,11 @@ void screenViewBase::handleKeyEvent(uint8_t key)
     
     }
 }
+
+void screenViewBase::handleTickEvent()
+{
+    //Interaction5
+    //When every N tick change screen to screen_1
+    //Go to screen_1 with no screen transition
+    application().gotoscreen_1ScreenNoTransition();
+}
