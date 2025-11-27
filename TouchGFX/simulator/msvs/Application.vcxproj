@@ -20,13 +20,22 @@
     <ClCompile Include="..\..\gui\src\common\FrontendApplication.cpp"/>
     <ClCompile Include="..\..\generated\gui_generated\src\common\FrontendApplicationBase.cpp"/>
     <ClCompile Include="..\..\gui\src\model\Model.cpp"/>
-    <ClCompile Include="..\..\gui\src\screen_screen\screenPresenter.cpp"/>
-    <ClCompile Include="..\..\gui\src\screen_screen\screenView.cpp"/>
-    <ClCompile Include="..\..\generated\gui_generated\src\screen_screen\screenViewBase.cpp"/>
     <ClCompile Include="..\..\generated\simulator\src\video\SoftwareMJPEGDecoder.cpp"/>
-    <ClCompile Include="..\..\gui\src\screen_1_screen\screen_1Presenter.cpp"/>
-    <ClCompile Include="..\..\gui\src\screen_1_screen\screen_1View.cpp"/>
-    <ClCompile Include="..\..\generated\gui_generated\src\screen_1_screen\screen_1ViewBase.cpp"/>
+    <ClCompile Include="..\..\gui\src\containers\mainmenu.cpp"/>
+    <ClCompile Include="..\..\generated\gui_generated\src\containers\mainmenuBase.cpp"/>
+    <ClCompile Include="..\..\gui\src\screenmenu_screen\ScreenMenuPresenter.cpp"/>
+    <ClCompile Include="..\..\gui\src\screenmenu_screen\ScreenMenuView.cpp"/>
+    <ClCompile Include="..\..\generated\gui_generated\src\screenmenu_screen\ScreenMenuViewBase.cpp"/>
+    <ClCompile Include="..\..\gui\src\screen_logo_screen\screen_logoPresenter.cpp"/>
+    <ClCompile Include="..\..\gui\src\screen_logo_screen\screen_logoView.cpp"/>
+    <ClCompile Include="..\..\generated\gui_generated\src\screen_logo_screen\screen_logoViewBase.cpp"/>
+    <ClCompile Include="..\..\gui\src\mainscreen_screen\mainscreenPresenter.cpp"/>
+    <ClCompile Include="..\..\gui\src\mainscreen_screen\mainscreenView.cpp"/>
+    <ClCompile Include="..\..\generated\gui_generated\src\mainscreen_screen\mainscreenViewBase.cpp"/>
+    <ClCompile Include="..\..\gui\src\containers\CustomContainerTopBar.cpp"/>
+    <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerTopBarBase.cpp"/>
+    <ClCompile Include="..\..\gui\src\containers\CustomContainerTopBar_1.cpp"/>
+    <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerTopBar_1Base.cpp"/>
   </ItemGroup>
   <ItemGroup>
     <None Include="$(ApplicationRoot)\assets\texts\texts.xml"/>
@@ -175,14 +184,23 @@
     <ClInclude Include="..\..\generated\simulator\include\simulator\video\MJPEGDecoder.hpp"/>
     <ClInclude Include="..\..\gui\include\gui\model\Model.hpp"/>
     <ClInclude Include="..\..\gui\include\gui\model\ModelListener.hpp"/>
-    <ClInclude Include="..\..\gui\include\gui\screen_screen\screenPresenter.hpp"/>
-    <ClInclude Include="..\..\gui\include\gui\screen_screen\screenView.hpp"/>
-    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screen_screen\screenViewBase.hpp"/>
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\common\SimConstants.hpp"/>
     <ClInclude Include="..\..\generated\simulator\include\simulator\video\SoftwareMJPEGDecoder.hpp"/>
-    <ClInclude Include="..\..\gui\include\gui\screen_1_screen\screen_1Presenter.hpp"/>
-    <ClInclude Include="..\..\gui\include\gui\screen_1_screen\screen_1View.hpp"/>
-    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screen_1_screen\screen_1ViewBase.hpp"/>
+    <ClInclude Include="..\..\gui\include\gui\containers\mainmenu.hpp"/>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\mainmenuBase.hpp"/>
+    <ClInclude Include="..\..\gui\include\gui\screenmenu_screen\ScreenMenuPresenter.hpp"/>
+    <ClInclude Include="..\..\gui\include\gui\screenmenu_screen\ScreenMenuView.hpp"/>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screenmenu_screen\ScreenMenuViewBase.hpp"/>
+    <ClInclude Include="..\..\gui\include\gui\screen_logo_screen\screen_logoPresenter.hpp"/>
+    <ClInclude Include="..\..\gui\include\gui\screen_logo_screen\screen_logoView.hpp"/>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screen_logo_screen\screen_logoViewBase.hpp"/>
+    <ClInclude Include="..\..\gui\include\gui\mainscreen_screen\mainscreenPresenter.hpp"/>
+    <ClInclude Include="..\..\gui\include\gui\mainscreen_screen\mainscreenView.hpp"/>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\mainscreen_screen\mainscreenViewBase.hpp"/>
+    <ClInclude Include="..\..\gui\include\gui\containers\CustomContainerTopBar.hpp"/>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerTopBarBase.hpp"/>
+    <ClInclude Include="..\..\gui\include\gui\containers\CustomContainerTopBar_1.hpp"/>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerTopBar_1Base.hpp"/>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="$(ApplicationRoot)\generated\simulator\touchgfx.rc"/>

@@ -49,6 +49,11 @@ void touchgfx_components_init(void);
 void touchgfx_taskEntry(void);
 
 /* USER CODE BEGIN PFP */
+void MX_TouchGFX_VSync(void)
+{
+    // Calling forward to touchgfx_taskEntry in C++ domain
+
+}
 
 /* USER CODE END PFP */
 

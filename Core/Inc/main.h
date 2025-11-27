@@ -31,7 +31,8 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "spif.h"
+#include "backend.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -53,6 +54,13 @@ extern "C" {
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
+// Объявление C-интерфейса для сигнала VSYNC из TouchGFX
+void TGFX_SignalVSync(void);
+
+void AppTimer1ms();
+
+void AppInit();
+void AppProcess();
 
 /* USER CODE END EFP */
 
@@ -63,12 +71,14 @@ void Error_Handler(void);
 #define KEY_2_GPIO_Port GPIOA
 #define KEY_1_Pin GPIO_PIN_1
 #define KEY_1_GPIO_Port GPIOA
+#define FLASH_CS_Pin GPIO_PIN_4
+#define FLASH_CS_GPIO_Port GPIOA
 #define SOUND_Pin GPIO_PIN_5
 #define SOUND_GPIO_Port GPIOC
 #define ST2_MK_Pin GPIO_PIN_14
 #define ST2_MK_GPIO_Port GPIOB
-#define ST2_M1_Pin GPIO_PIN_15
-#define ST2_M1_GPIO_Port GPIOB
+#define ST1_MK_Pin GPIO_PIN_15
+#define ST1_MK_GPIO_Port GPIOB
 #define LED_Pin GPIO_PIN_8
 #define LED_GPIO_Port GPIOA
 #define ESP32_EN_Pin GPIO_PIN_15
@@ -83,8 +93,15 @@ void Error_Handler(void);
 #define DISP_D_C_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
-#define GFX_RATIO_MS 100
+#define GFX_RATIO_MS 5
 #define LED_TOGGLE HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+
+extern uint8_t setup_change;
+
+#define NUM_ADC_CHANNEL 5
+#define FILTERSIZE 128
+
+extern uint16_t ADC_VAL[NUM_ADC_CHANNEL];
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

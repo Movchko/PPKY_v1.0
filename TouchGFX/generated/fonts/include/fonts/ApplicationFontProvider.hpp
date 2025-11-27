@@ -20,10 +20,10 @@ struct Typography
 
 struct TypographyFontIndex
 {
-    static const touchgfx::FontId DEFAULT = 0; // verdana_20_1bpp
-    static const touchgfx::FontId LARGE = 1;   // verdana_40_1bpp
-    static const touchgfx::FontId SMALL = 2;   // verdana_10_1bpp
-    static const uint16_t NUMBER_OF_FONTS = 3;
+    static const touchgfx::FontId DEFAULT = 0; // MonospaceRegular_20_1bpp
+    static const touchgfx::FontId LARGE = 0;   // MonospaceRegular_20_1bpp
+    static const touchgfx::FontId SMALL = 1;   // MonospaceRegular_15_1bpp
+    static const uint16_t NUMBER_OF_FONTS = 2;
 };
 
 class ApplicationFontProvider : public touchgfx::FontProvider

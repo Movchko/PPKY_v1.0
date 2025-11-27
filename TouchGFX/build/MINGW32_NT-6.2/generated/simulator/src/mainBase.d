@@ -71,13 +71,33 @@ build/MINGW32_NT-6.2/generated/simulator/src/mainBase.o: \
  ../Middlewares/ST/touchgfx/framework/include/mvp/Presenter.hpp \
  ../Middlewares/ST/touchgfx/framework/include/touchgfx/Screen.hpp \
  gui/include/gui/model/Model.hpp \
- gui/include/gui/screen_screen/screenView.hpp \
- generated/gui_generated/include/gui_generated/screen_screen/screenViewBase.hpp \
+ gui/include/gui/mainscreen_screen/mainscreenView.hpp \
+ generated/gui_generated/include/gui_generated/mainscreen_screen/mainscreenViewBase.hpp \
  ../Middlewares/ST/touchgfx/framework/include/mvp/View.hpp \
- gui/include/gui/screen_screen/screenPresenter.hpp \
+ gui/include/gui/mainscreen_screen/mainscreenPresenter.hpp \
  gui/include/gui/model/ModelListener.hpp \
  ../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/Box.hpp \
+ gui/include/gui/containers/CustomContainerTopBar.hpp \
+ generated/gui_generated/include/gui_generated/containers/CustomContainerTopBarBase.hpp \
  ../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/TextArea.hpp \
+ ../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/Image.hpp \
+ gui/include/gui/screenmenu_screen/ScreenMenuView.hpp \
+ generated/gui_generated/include/gui_generated/screenmenu_screen/ScreenMenuViewBase.hpp \
+ gui/include/gui/screenmenu_screen/ScreenMenuPresenter.hpp \
+ ../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/ScrollableContainer.hpp \
+ ../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/ScrollWheel.hpp \
+ ../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/DrawableList.hpp \
+ ../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/ScrollWheelBase.hpp \
+ ../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/ScrollBase.hpp \
+ ../Middlewares/ST/touchgfx/framework/include/touchgfx/EasingEquations.hpp \
+ gui/include/gui/containers/mainmenu.hpp \
+ generated/gui_generated/include/gui_generated/containers/mainmenuBase.hpp \
+ ../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/TextAreaWithWildcard.hpp \
+ gui/include/gui/containers/CustomContainerTopBar_1.hpp \
+ generated/gui_generated/include/gui_generated/containers/CustomContainerTopBar_1Base.hpp \
+ gui/include/gui/screen_logo_screen/screen_logoView.hpp \
+ generated/gui_generated/include/gui_generated/screen_logo_screen/screen_logoViewBase.hpp \
+ gui/include/gui/screen_logo_screen/screen_logoPresenter.hpp \
  ../Middlewares/ST/touchgfx/framework/include/platform/driver/lcd/LCD1bpp.hpp \
  ../Middlewares/ST/touchgfx/framework/include/touchgfx/Color.hpp \
  ../Middlewares/ST/touchgfx/framework/include/touchgfx/lcd/LCD1DebugPrinter.hpp
@@ -224,19 +244,59 @@ generated/gui_generated/include/gui_generated/common/FrontendApplicationBase.hpp
 
 gui/include/gui/model/Model.hpp:
 
-gui/include/gui/screen_screen/screenView.hpp:
+gui/include/gui/mainscreen_screen/mainscreenView.hpp:
 
-generated/gui_generated/include/gui_generated/screen_screen/screenViewBase.hpp:
+generated/gui_generated/include/gui_generated/mainscreen_screen/mainscreenViewBase.hpp:
 
 ../Middlewares/ST/touchgfx/framework/include/mvp/View.hpp:
 
-gui/include/gui/screen_screen/screenPresenter.hpp:
+gui/include/gui/mainscreen_screen/mainscreenPresenter.hpp:
 
 gui/include/gui/model/ModelListener.hpp:
 
 ../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/Box.hpp:
 
+gui/include/gui/containers/CustomContainerTopBar.hpp:
+
+generated/gui_generated/include/gui_generated/containers/CustomContainerTopBarBase.hpp:
+
 ../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/TextArea.hpp:
+
+../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/Image.hpp:
+
+gui/include/gui/screenmenu_screen/ScreenMenuView.hpp:
+
+generated/gui_generated/include/gui_generated/screenmenu_screen/ScreenMenuViewBase.hpp:
+
+gui/include/gui/screenmenu_screen/ScreenMenuPresenter.hpp:
+
+../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/ScrollableContainer.hpp:
+
+../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/ScrollWheel.hpp:
+
+../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/DrawableList.hpp:
+
+../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/ScrollWheelBase.hpp:
+
+../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/ScrollBase.hpp:
+
+../Middlewares/ST/touchgfx/framework/include/touchgfx/EasingEquations.hpp:
+
+gui/include/gui/containers/mainmenu.hpp:
+
+generated/gui_generated/include/gui_generated/containers/mainmenuBase.hpp:
+
+../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/TextAreaWithWildcard.hpp:
+
+gui/include/gui/containers/CustomContainerTopBar_1.hpp:
+
+generated/gui_generated/include/gui_generated/containers/CustomContainerTopBar_1Base.hpp:
+
+gui/include/gui/screen_logo_screen/screen_logoView.hpp:
+
+generated/gui_generated/include/gui_generated/screen_logo_screen/screen_logoViewBase.hpp:
+
+gui/include/gui/screen_logo_screen/screen_logoPresenter.hpp:
 
 ../Middlewares/ST/touchgfx/framework/include/platform/driver/lcd/LCD1bpp.hpp:
 

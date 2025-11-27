@@ -24,7 +24,14 @@
 
 /* USER CODE BEGIN TouchGFXHAL.cpp */
 #include "Display/display.h"
+#include <touchgfx/hal/OSWrappers.hpp>
 using namespace touchgfx;
+
+// C-интерфейс для генерации VSYNC из C-кода (SysTick/таймер)
+extern "C" void TGFX_SignalVSync(void)
+{
+    touchgfx::OSWrappers::signalVSync();
+}
 
 void TouchGFXHAL::initialize()
 {

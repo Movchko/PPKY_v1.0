@@ -12,10 +12,12 @@
 #include <gui/common/FrontendApplication.hpp>
 #include <gui/model/Model.hpp>
 
-#include <gui/screen_screen/screenView.hpp>
-#include <gui/screen_screen/screenPresenter.hpp>
-#include <gui/screen_1_screen/screen_1View.hpp>
-#include <gui/screen_1_screen/screen_1Presenter.hpp>
+#include <gui/mainscreen_screen/mainscreenView.hpp>
+#include <gui/mainscreen_screen/mainscreenPresenter.hpp>
+#include <gui/screenmenu_screen/ScreenMenuView.hpp>
+#include <gui/screenmenu_screen/ScreenMenuPresenter.hpp>
+#include <gui/screen_logo_screen/screen_logoView.hpp>
+#include <gui/screen_logo_screen/screen_logoPresenter.hpp>
 
 
 /**
@@ -38,9 +40,10 @@ public:
      * A list of all view types. Must end with meta::Nil.
      * @note All view types used in the application MUST be added to this list!
      */
-    typedef touchgfx::meta::TypeList< screenView,
-            touchgfx::meta::TypeList< screen_1View,
-            touchgfx::meta::Nil >
+    typedef touchgfx::meta::TypeList< mainscreenView,
+            touchgfx::meta::TypeList< ScreenMenuView,
+            touchgfx::meta::TypeList< screen_logoView,
+            touchgfx::meta::Nil > >
             > GeneratedViewTypes;
 
     /**
@@ -52,9 +55,10 @@ public:
      * A list of all presenter types. Must end with meta::Nil.
      * @note All presenter types used in the application MUST be added to this list!
      */
-    typedef touchgfx::meta::TypeList< screenPresenter,
-            touchgfx::meta::TypeList< screen_1Presenter,
-            touchgfx::meta::Nil >
+    typedef touchgfx::meta::TypeList< mainscreenPresenter,
+            touchgfx::meta::TypeList< ScreenMenuPresenter,
+            touchgfx::meta::TypeList< screen_logoPresenter,
+            touchgfx::meta::Nil > >
             > GeneratedPresenterTypes;
 
     /**
@@ -77,7 +81,7 @@ public:
 
     virtual void gotoStartScreen(FrontendApplication& app)
     {
-        app.gotoscreenScreenNoTransition();
+        app.gotoscreen_logoScreenNoTransition();
     }
 protected:
     FrontendHeapBase(touchgfx::AbstractPartition& presenters, touchgfx::AbstractPartition& views, touchgfx::AbstractPartition& transitions, FrontendApplication& app)

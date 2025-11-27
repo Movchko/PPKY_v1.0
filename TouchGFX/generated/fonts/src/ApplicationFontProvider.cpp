@@ -10,14 +10,14 @@ touchgfx::Font* ApplicationFontProvider::getFont(touchgfx::FontId typography)
     switch (typography)
     {
     case Typography::DEFAULT:
-        // verdana_20_1bpp
+        // MonospaceRegular_20_1bpp
         return const_cast<touchgfx::Font*>(TypedTextDatabase::getFonts()[0]);
     case Typography::LARGE:
-        // verdana_40_1bpp
-        return const_cast<touchgfx::Font*>(TypedTextDatabase::getFonts()[1]);
+        // MonospaceRegular_20_1bpp
+        return const_cast<touchgfx::Font*>(TypedTextDatabase::getFonts()[0]);
     case Typography::SMALL:
-        // verdana_10_1bpp
-        return const_cast<touchgfx::Font*>(TypedTextDatabase::getFonts()[2]);
+        // MonospaceRegular_15_1bpp
+        return const_cast<touchgfx::Font*>(TypedTextDatabase::getFonts()[1]);
     default:
         return 0;
     }

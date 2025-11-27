@@ -100,8 +100,8 @@ void InitDisplay(void) {
 	Write_Command(0xD3);       // Display offset
 	Write_Command(0x00);
 	Write_Command(0x40);       // Display start line
-	Write_Command(0xA1);       // Segment remap
-	Write_Command(0xC8);       // COM scan direction
+	Write_Command(0xA0);       // Segment remap //A1 revert
+	Write_Command(0xC0);       // COM scan direction //C8 revert
 	Write_Command(0xDA);       // COM pins
 	Write_Command(0x12);
 	Write_Command(0x81);       // Contrast

@@ -6,6 +6,10 @@
 #include <touchgfx/hal/Types.hpp>
 #include <touchgfx/Bitmap.hpp>
 
+const uint16_t BITMAP_IMAGES_ID = 0;
+const uint16_t BITMAP_MATERIAL_SYMBOLS_WIFI_ID = 1;
+const uint16_t BITMAP_NO_BEEP_ID = 2;
+const uint16_t BITMAP_WIFI_ID = 3;
 
 namespace BitmapDatabase
 {

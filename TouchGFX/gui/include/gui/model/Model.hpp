@@ -1,6 +1,11 @@
 #ifndef MODEL_HPP
 #define MODEL_HPP
 
+#ifndef SIMULATOR
+#include <main.h>
+#endif
+
+
 class ModelListener;
 
 class Model

@@ -14,6 +14,9 @@ public:
     {
         model = m;
     }
+#ifndef SIMULATOR
+    virtual void SetupMenuChangePos(unsigned char val) {};
+#endif
 protected:
     Model* model;
 };

@@ -8,10 +8,12 @@
 #include <texts/TextKeysAndLanguages.hpp>
 #include <touchgfx/Texts.hpp>
 #include <touchgfx/hal/HAL.hpp>
-#include <gui/screen_screen/screenView.hpp>
-#include <gui/screen_screen/screenPresenter.hpp>
-#include <gui/screen_1_screen/screen_1View.hpp>
-#include <gui/screen_1_screen/screen_1Presenter.hpp>
+#include <gui/mainscreen_screen/mainscreenView.hpp>
+#include <gui/mainscreen_screen/mainscreenPresenter.hpp>
+#include <gui/screenmenu_screen/ScreenMenuView.hpp>
+#include <gui/screenmenu_screen/ScreenMenuPresenter.hpp>
+#include <gui/screen_logo_screen/screen_logoView.hpp>
+#include <gui/screen_logo_screen/screen_logoPresenter.hpp>
 
 using namespace touchgfx;
 
@@ -29,28 +31,28 @@ FrontendApplicationBase::FrontendApplicationBase(Model& m, FrontendHeap& heap)
  * Screen Transition Declarations
  */
 
-// screen
+// ScreenMenu
 
-void FrontendApplicationBase::gotoscreenScreenNoTransition()
+void FrontendApplicationBase::gotoScreenMenuScreenNoTransition()
 {
-    transitionCallback = touchgfx::Callback<FrontendApplicationBase>(this, &FrontendApplicationBase::gotoscreenScreenNoTransitionImpl);
+    transitionCallback = touchgfx::Callback<FrontendApplicationBase>(this, &FrontendApplicationBase::gotoScreenMenuScreenNoTransitionImpl);
     pendingScreenTransitionCallback = &transitionCallback;
 }
 
-void FrontendApplicationBase::gotoscreenScreenNoTransitionImpl()
+void FrontendApplicationBase::gotoScreenMenuScreenNoTransitionImpl()
 {
-    touchgfx::makeTransition<screenView, screenPresenter, touchgfx::NoTransition, Model >(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
+    touchgfx::makeTransition<ScreenMenuView, ScreenMenuPresenter, touchgfx::NoTransition, Model >(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
 }
 
-// screen_1
+// screen_logo
 
-void FrontendApplicationBase::gotoscreen_1ScreenNoTransition()
+void FrontendApplicationBase::gotoscreen_logoScreenNoTransition()
 {
-    transitionCallback = touchgfx::Callback<FrontendApplicationBase>(this, &FrontendApplicationBase::gotoscreen_1ScreenNoTransitionImpl);
+    transitionCallback = touchgfx::Callback<FrontendApplicationBase>(this, &FrontendApplicationBase::gotoscreen_logoScreenNoTransitionImpl);
     pendingScreenTransitionCallback = &transitionCallback;
 }
 
-void FrontendApplicationBase::gotoscreen_1ScreenNoTransitionImpl()
+void FrontendApplicationBase::gotoscreen_logoScreenNoTransitionImpl()
 {
-    touchgfx::makeTransition<screen_1View, screen_1Presenter, touchgfx::NoTransition, Model >(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
+    touchgfx::makeTransition<screen_logoView, screen_logoPresenter, touchgfx::NoTransition, Model >(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
 }

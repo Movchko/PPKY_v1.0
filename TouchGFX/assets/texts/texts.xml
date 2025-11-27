@@ -6,20 +6,38 @@
   <Texts>
     <TextGroup Id="Group1" />
     <TextGroup Id="Unsorted">
-      <Text Id="__SingleUse_P7CU" Alignment="Left" TypographyId="Default">
-        <Translation Language="GB">Text1</Translation>
+      <Text Id="__SingleUse_XB5O" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">ПРИВЕТ МИР</Translation>
       </Text>
-      <Text Id="__SingleUse_575I" Alignment="Left" TypographyId="Default">
-        <Translation Language="GB">Text1</Translation>
+      <Text Id="__SingleUse_WVOF" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">08:00</Translation>
       </Text>
-      <Text Id="__SingleUse_7O8S" Alignment="Left" TypographyId="Default">
-        <Translation Language="GB">HELLO &#10;WORLD</Translation>
+      <Text Id="Connect" Alignment="Center" TypographyId="Large">
+        <Translation Language="GB">СВЯЗЬ</Translation>
+      </Text>
+      <Text Id="Jurnal" Alignment="Center" TypographyId="Large">
+        <Translation Language="GB">ЖУРНАЛ</Translation>
+      </Text>
+      <Text Id="Settings" Alignment="Center" TypographyId="Large">
+        <Translation Language="GB">НАСТРОЙКИ</Translation>
+      </Text>
+      <Text Id="Sound" Alignment="Center" TypographyId="Large">
+        <Translation Language="GB">ЗВУК</Translation>
+      </Text>
+      <Text Id="Mode" Alignment="Center" TypographyId="Large">
+        <Translation Language="GB">РЕЖИМ</Translation>
+      </Text>
+      <Text Id="Test" Alignment="Center" TypographyId="Large">
+        <Translation Language="GB">ТЕСТ</Translation>
+      </Text>
+      <Text Id="__SingleUse_B5JP" Alignment="Center" TypographyId="Large">
+        <Translation Language="GB">&lt;value&gt;</Translation>
       </Text>
     </TextGroup>
   </Texts>
   <Typographies>
-    <Typography Id="Default" Font="verdana.ttf" Size="20" Bpp="4" IsVector="no" Direction="LTR" FallbackCharacter="?" />
-    <Typography Id="Large" Font="verdana.ttf" Size="40" Bpp="4" IsVector="no" Direction="LTR" FallbackCharacter="?" />
-    <Typography Id="Small" Font="verdana.ttf" Size="10" Bpp="4" IsVector="no" Direction="LTR" FallbackCharacter="?" />
+    <Typography Id="Default" Font="MonospaceRegular.ttf" Size="20" Bpp="4" IsVector="no" Direction="LTR" FallbackCharacter="?" />
+    <Typography Id="Large" Font="MonospaceRegular.ttf" Size="20" Bpp="4" IsVector="no" Direction="LTR" FallbackCharacter="?" />
+    <Typography Id="Small" Font="MonospaceRegular.ttf" Size="15" Bpp="4" IsVector="no" Direction="LTR" FallbackCharacter="?" />
   </Typographies>
 </TextDatabase>

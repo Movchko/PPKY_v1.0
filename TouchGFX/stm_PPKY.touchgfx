@@ -2,106 +2,7 @@
   "Application": {
     "Screens": [
       {
-        "Name": "screen",
-        "Components": [
-          {
-            "Type": "Box",
-            "Name": "box1",
-            "Width": 128,
-            "Height": 64,
-            "Color": {
-              "Red": 255,
-              "Green": 255,
-              "Blue": 255
-            }
-          },
-          {
-            "Type": "TextArea",
-            "Name": "textArea1",
-            "X": 22,
-            "Y": 12,
-            "Width": 76,
-            "Height": 40,
-            "TextId": "__SingleUse_7O8S",
-            "TextRotation": "0",
-            "AutoSize": true
-          },
-          {
-            "Type": "TextArea",
-            "Name": "textArea1_1",
-            "X": 22,
-            "Y": 12,
-            "Width": 55,
-            "Height": 20,
-            "Visible": false,
-            "TextId": "__SingleUse_575I",
-            "TextRotation": "0",
-            "AutoSize": true
-          }
-        ],
-        "Interactions": [
-          {
-            "InteractionName": "Interaction1",
-            "HasCompletedTrigger": true,
-            "Trigger": {
-              "Type": "TriggerPhysicalButtonClicked",
-              "ButtonKey": 48
-            },
-            "Action": {
-              "Type": "ActionHide",
-              "ActionComponent": "textArea1"
-            }
-          },
-          {
-            "InteractionName": "Interaction2",
-            "Trigger": {
-              "Type": "TriggerInteractionCompleted",
-              "InteractionToTriggerOn": "Interaction1"
-            },
-            "Action": {
-              "Type": "ActionShow",
-              "ActionComponent": "textArea1_1"
-            }
-          },
-          {
-            "InteractionName": "Interaction3",
-            "HasCompletedTrigger": true,
-            "Trigger": {
-              "Type": "TriggerPhysicalButtonClicked",
-              "ButtonKey": 49
-            },
-            "Action": {
-              "Type": "ActionHide",
-              "ActionComponent": "textArea1_1"
-            }
-          },
-          {
-            "InteractionName": "Interaction4",
-            "Trigger": {
-              "Type": "TriggerInteractionCompleted",
-              "InteractionToTriggerOn": "Interaction3"
-            },
-            "Action": {
-              "Type": "ActionShow",
-              "ActionComponent": "textArea1"
-            }
-          },
-          {
-            "InteractionName": "Interaction5",
-            "Trigger": {
-              "Type": "TriggerOnEveryTick",
-              "TickCount": 1
-            },
-            "Action": {
-              "Type": "ActionGotoScreen",
-              "ScreenTransitionType": "ScreenTransitionNone",
-              "ActionComponent": "screen_1"
-            }
-          }
-        ]
-      },
-      {
-        "Name": "screen_1",
+        "Name": "mainscreen",
         "Components": [
           {
             "Type": "Box",
@@ -110,13 +11,146 @@
             "Height": 64
           },
           {
+            "Type": "CustomContainerInstance",
+            "Name": "customContainerTopBar1",
+            "Width": 128,
+            "Height": 15,
+            "CustomContainerDefinitionName": "CustomContainerTopBar"
+          }
+        ],
+        "Interactions": []
+      },
+      {
+        "Name": "ScreenMenu",
+        "Components": [
+          {
+            "Type": "Box",
+            "Name": "box1",
+            "Width": 128,
+            "Height": 64
+          },
+          {
+            "Type": "ScrollableContainer",
+            "Name": "scrollableContainer1",
+            "Y": 15,
+            "Width": 128,
+            "Height": 30,
+            "HorizontalScrollEnabled": true,
+            "ScrollbarsAlpha": 255,
+            "Components": [
+              {
+                "Type": "ScrollWheel",
+                "Name": "scrollWheel1",
+                "Y": 2,
+                "Width": 128,
+                "Height": 30,
+                "IsCircular": true,
+                "ItemTemplateName": "mainmenu",
+                "NumberofItems": 6,
+                "Easing": "Back",
+                "EasingOption": "Out",
+                "SwipeAcceleration": 1.0,
+                "DragAcceleration": 1.0,
+                "OverShootPercentage": 75
+              }
+            ]
+          },
+          {
+            "Type": "CustomContainerInstance",
+            "Name": "customContainerTopBar1",
+            "Width": 128,
+            "Height": 15,
+            "CustomContainerDefinitionName": "CustomContainerTopBar"
+          },
+          {
+            "Type": "CustomContainerInstance",
+            "Name": "customContainerTopBar_11",
+            "Y": 49,
+            "Width": 128,
+            "Height": 15,
+            "CustomContainerDefinitionName": "CustomContainerTopBar_1"
+          }
+        ],
+        "Interactions": []
+      },
+      {
+        "Name": "screen_logo",
+        "Components": [
+          {
+            "Type": "Image",
+            "Name": "image1",
+            "X": 34,
+            "Width": 60,
+            "Height": 60,
+            "RelativeFilename": "images.png"
+          }
+        ],
+        "Interactions": [
+          {
+            "InteractionName": "Interaction1",
+            "Trigger": {
+              "Type": "TriggerOnEveryTick",
+              "TickCount": 200
+            },
+            "Action": {
+              "Type": "ActionGotoScreen",
+              "ScreenTransitionType": "ScreenTransitionNone",
+              "ActionComponent": "ScreenMenu"
+            }
+          }
+        ]
+      }
+    ],
+    "CustomContainerDefinitions": [
+      {
+        "Name": "mainmenu",
+        "Y": 32,
+        "Width": 128,
+        "Height": 30,
+        "Components": [
+          {
             "Type": "TextArea",
-            "Name": "textArea1_1",
-            "X": 22,
-            "Y": 12,
-            "Width": 55,
+            "Name": "textAreaMainMenu",
+            "Y": 5,
+            "Width": 128,
             "Height": 20,
-            "TextId": "__SingleUse_P7CU",
+            "TextId": "__SingleUse_B5JP",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            },
+            "Wildcard1": {
+              "UseBuffer": true,
+              "BufferSize": 10
+            }
+          }
+        ],
+        "Interactions": [
+          {
+            "InteractionName": "Interaction1",
+            "Trigger": {
+              "Type": "TriggerNone"
+            },
+            "Action": {
+              "Type": "ActionNone"
+            }
+          }
+        ]
+      },
+      {
+        "Name": "CustomContainerTopBar_1",
+        "Y": 49,
+        "Width": 128,
+        "Height": 15,
+        "Components": [
+          {
+            "Type": "TextArea",
+            "Name": "textAreatime",
+            "Width": 111,
+            "Height": 15,
+            "TextId": "__SingleUse_XB5O",
             "TextRotation": "0",
             "Color": {
               "Red": 255,
@@ -126,30 +160,54 @@
             "AutoSize": true
           }
         ],
-        "Interactions": [
+        "Interactions": []
+      },
+      {
+        "Name": "CustomContainerTopBar",
+        "Width": 128,
+        "Height": 15,
+        "Components": [
           {
-            "InteractionName": "Interaction1",
-            "Trigger": {
-              "Type": "TriggerOnEveryTick",
-              "TickCount": 1
-            },
-            "Action": {
-              "Type": "ActionGotoScreen",
-              "ScreenTransitionType": "ScreenTransitionNone",
-              "ActionComponent": "screen"
+            "Type": "TextArea",
+            "Name": "textAreatime",
+            "X": 8,
+            "Width": 49,
+            "Height": 15,
+            "TextId": "__SingleUse_WVOF",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
             }
+          },
+          {
+            "Type": "Image",
+            "Name": "imageMute",
+            "X": 80,
+            "Width": 14,
+            "Height": 14,
+            "RelativeFilename": "no_beep.png"
+          },
+          {
+            "Type": "Image",
+            "Name": "imageWifi",
+            "X": 105,
+            "Width": 15,
+            "Height": 11,
+            "RelativeFilename": "wifi.png"
           }
-        ]
+        ],
+        "Interactions": []
       }
     ],
-    "CustomContainerDefinitions": [],
     "Name": "MyApplication",
     "Resolution": {
       "Width": 128,
       "Height": 64
     },
     "SelectedColorDepth": 1,
-    "StartupScreenName": "screen",
+    "StartupScreenName": "screen_logo",
     "SelectedStartupLanguage": "GB",
     "TouchGfxPath": "../Middlewares/ST/touchgfx",
     "UIPath": ".",
