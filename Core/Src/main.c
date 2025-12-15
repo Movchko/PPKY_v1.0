@@ -50,8 +50,6 @@ DMA_HandleTypeDef handle_GPDMA1_Channel0;
 
 CRC_HandleTypeDef hcrc;
 
-DCACHE_HandleTypeDef hdcache1;
-
 FDCAN_HandleTypeDef hfdcan1;
 FDCAN_HandleTypeDef hfdcan2;
 
@@ -74,6 +72,7 @@ uint8_t setup_change = 0;
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+static void MPU_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_GPDMA1_Init(void);
 static void MX_ADC1_Init(void);
@@ -87,7 +86,6 @@ static void MX_USART2_UART_Init(void);
 static void MX_CRC_Init(void);
 static void MX_RTC_Init(void);
 static void MX_TIM1_Init(void);
-static void MX_DCACHE1_Init(void);
 static void MX_FLASH_Init(void);
 static void MX_ICACHE_Init(void);
 /* USER CODE BEGIN PFP */
@@ -98,6 +96,8 @@ uint8_t isMainInit = 0;
 /* USER CODE BEGIN 0 */
 
 uint8_t is1ms = 0;
+FDCAN_TxHeaderTypeDef TxHeader;
+
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
@@ -105,45 +105,53 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if(htim->Instance == TIM1) //check if the interrupt comes from TIM4
 		is1ms = 1;
 
-
 }
+
+void HAL_FDCAN_RxFifoCallback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo) {
+	uint8_t Data[8];
+	FDCAN_RxHeaderTypeDef msg;
+	while(HAL_FDCAN_GetRxFifoFillLevel(hfdcan, RxFifo) > 0) {
+		if(HAL_FDCAN_GetRxMessage(hfdcan, RxFifo, &msg, Data) != HAL_OK)
+			break;
+		ProtocolParse(msg.Identifier, Data);
+		 //LED_TOGGLE;
+	}
+}
+
 
 void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifoITs)
 {
-	uint8_t Data[64];
-	FDCAN_RxHeaderTypeDef msg;
-	uint32_t fifo = FDCAN_RX_FIFO1;
-	//HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &msg, Data);
+//	uint8_t Data[64];
+//	FDCAN_RxHeaderTypeDef msg;
 
+	uint32_t fifo = FDCAN_RX_FIFO1;
+	HAL_FDCAN_RxFifoCallback(hfdcan, fifo);
+/*
 		while(HAL_FDCAN_GetRxFifoFillLevel(hfdcan, fifo) > 0) {
 			if(HAL_FDCAN_GetRxMessage(hfdcan, fifo, &msg, Data) != HAL_OK)
 				break;
 			ProtocolParse(msg.Identifier, Data);
 			 //LED_TOGGLE;
 		}
+		*/
 }
 
 
 void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifoITs)
 {
-	uint8_t Data[64];
-	FDCAN_RxHeaderTypeDef msg;
+//	uint8_t Data[64];
+//	FDCAN_RxHeaderTypeDef msg;
 	uint32_t fifo = FDCAN_RX_FIFO0;
-
+	HAL_FDCAN_RxFifoCallback(hfdcan, fifo);
+	/*
 		while(HAL_FDCAN_GetRxFifoFillLevel(hfdcan, fifo) > 0) {
 			if(HAL_FDCAN_GetRxMessage(hfdcan, fifo, &msg, Data) != HAL_OK)
 				break;
 			ProtocolParse(msg.Identifier, Data);
-			 LED_TOGGLE;
+			// LED_TOGGLE;
 		}
-
-
-	/*
-	while(HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &msg, Data) == HAL_OK) {
-			ProtocolParse(msg.Identifier, Data);
-			 LED_TOGGLE;
-	}
 */
+
 }
 
 static void check_can_bus(FDCAN_HandleTypeDef *hfdcan) {
@@ -151,19 +159,21 @@ static void check_can_bus(FDCAN_HandleTypeDef *hfdcan) {
 
   HAL_FDCAN_GetProtocolStatus(hfdcan, &protocolStatus);
   if (protocolStatus.BusOff) {
-    // Правильный выход из Bus Off:
-    // 1. Установить бит INIT
-    SET_BIT(hfdcan->Instance->CCCR, FDCAN_CCCR_INIT);
-    // 2. Дождаться, пока INIT установится
-    while ((hfdcan->Instance->CCCR & FDCAN_CCCR_INIT) == 0) {
-      // Ожидание
-    }
-    // 3. Очистить бит INIT для выхода из режима инициализации
-    CLEAR_BIT(hfdcan->Instance->CCCR, FDCAN_CCCR_INIT);
-    // 4. Дождаться выхода из режима инициализации
-    while ((hfdcan->Instance->CCCR & FDCAN_CCCR_INIT) != 0) {
-      // Ожидание
-    }
+	  	uint16_t try = 0xffff;
+
+		// Правильный выход из Bus Off:
+		// 1. Установить бит INIT
+		SET_BIT(hfdcan->Instance->CCCR, FDCAN_CCCR_INIT);
+		// 2. Дождаться, пока INIT установится
+		while (((hfdcan->Instance->CCCR & FDCAN_CCCR_INIT) == 0) && (try--)) {
+		  // Ожидание
+		}
+		// 3. Очистить бит INIT для выхода из режима инициализации
+		CLEAR_BIT(hfdcan->Instance->CCCR, FDCAN_CCCR_INIT);
+		// 4. Дождаться выхода из режима инициализации
+		while (((hfdcan->Instance->CCCR & FDCAN_CCCR_INIT) != 0) && (try--)) {
+		  // Ожидание
+		}
   }
 }
 
@@ -176,32 +186,21 @@ void HAL_FDCAN_ErrorStatusCallback(FDCAN_HandleTypeDef *hfdcan, uint32_t ErrorSt
 }
 
 
-FDCAN_TxHeaderTypeDef TxHeader;
-uint8_t TxData[8];
+
 void CANSendData(uint8_t *Buf) {
 
 	if(isMainInit == 0) return;
 
-	//isMainInit = 0;
-
-	//FDCAN_TxHeaderTypeDef TxHeader;
+	uint8_t TxData[8];
 
 	TxHeader.Identifier = (*(uint32_t*)Buf);
 	for(uint8_t i = 0; i < 8; i++) {
 		TxData[i] = Buf[4 + i];
 	}
 	//memcpy(&TxHeader.Identifier, Buf, 4);
-	TxHeader.IdType = FDCAN_EXTENDED_ID;
-	TxHeader.TxFrameType = FDCAN_DATA_FRAME;
-	TxHeader.ErrorStateIndicator= FDCAN_ESI_ACTIVE;
-	TxHeader.DataLength = FDCAN_DLC_BYTES_8;
-	TxHeader.BitRateSwitch = FDCAN_BRS_OFF;
-	TxHeader.FDFormat = FDCAN_CLASSIC_CAN;
-	TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
-	TxHeader.MessageMarker = 0;
-	uint8_t try = 2;
+
 	HAL_StatusTypeDef status;
-	//if ((hfdcan1.Instance->TXFQS & FDCAN_TXFQS_TFQF) == 0U) {
+
 	if(HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1) > 0) {
 		TxHeader.Identifier = 0x1AAAAAAA;
 		 status = HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader,/*&Buf[4]*/TxData);
@@ -219,14 +218,7 @@ void CANSendData(uint8_t *Buf) {
 	} else
 		check_can_bus(&hfdcan2);
 
-	//if(hfdcan1.State != HAL_FDCAN_STATE_BUSY)
-	//while (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader,&Buf[4]) != HAL_OK && try) {
-		//HAL_Delay(1);
-		try--;
-	//};
 
-	//HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader,&Buf[4]); // TODO:: убрать while
-	//HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader,&Buf[4]); // TODO:: убрать while
 
 }
 
@@ -245,6 +237,9 @@ int main(void)
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
+
+  /* MPU Configuration--------------------------------------------------------*/
+  MPU_Config();
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
@@ -274,11 +269,23 @@ int main(void)
   MX_CRC_Init();
   MX_RTC_Init();
   MX_TIM1_Init();
-  MX_DCACHE1_Init();
   MX_FLASH_Init();
   MX_ICACHE_Init();
   MX_TouchGFX_Init();
   /* USER CODE BEGIN 2 */
+
+  /* ВАЖНО - включенное кеширование может понизить производительность, если
+   * функции, которые часто вызываются, разнесены по коду
+   * TODO::
+   * протестировать включенное и отключенное кеширование функций
+   * попробовать сгрупировать важные функции в один блок, пример:
+   * __attribute__((section(".fast_code"))) void critical_function(void) {
+   * // ...
+   *}
+   *
+   *
+   */
+  //HAL_ICACHE_Disable();
 
   uint8_t isFlash = 0;
   isFlash = SPIF_Init(&hFlash, &hspi1, FLASH_CS_GPIO_Port, FLASH_CS_Pin);
@@ -312,34 +319,68 @@ int main(void)
   uint32_t beep_tick = 0;
   uint8_t beep = 0;
 
+
+
+  LedInit();
+
   AppInit();
   isMainInit = 1;
+
   while (1)
   {
 	  uint32_t cur_tick = HAL_GetTick();
-	  if(abs(cur_tick - led_tick) >= 2000) {
+	  if(abs(cur_tick - led_tick) >= 1000) {
 		  led_tick = cur_tick;
-		 // LED_TOGGLE;
+		  LED_TOGGLE;
+
+
+
+		/* test
+		 *
+		 */
+		  volatile HAL_StatusTypeDef st = HAL_ERROR;
+		  uint8_t val = 0xFF;
+
+		  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x14, I2C_MEMADD_SIZE_8BIT, &val, sizeof(val), 20);
+		  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x15, I2C_MEMADD_SIZE_8BIT, &val, sizeof(val), 20);
+		  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x16, I2C_MEMADD_SIZE_8BIT, &val, sizeof(val), 20);
+		  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x17, I2C_MEMADD_SIZE_8BIT, &val, sizeof(val), 20);
+
+		  st = HAL_I2C_Mem_Read(&hi2c1, 0x41<<1, 0x00, I2C_MEMADD_SIZE_8BIT, &val, sizeof(val), 10);
 
 		  //HAL_GPIO_TogglePin(SOUND_GPIO_Port, SOUND_Pin);
 		  // beeper test
-		  /*
+
 		  HAL_GPIO_WritePin(SOUND_GPIO_Port, SOUND_Pin, GPIO_PIN_SET);
-		  beep_tick = cut_tick;
+		  beep_tick = cur_tick;
 		  beep = 1;
-		   */
+
 		  setup_change = 1;
+		  /*
+		   * end test
+		   */
 	  }
 
-	  //test beeper
-	  /*
+	  //test
 	  if(beep) {
-		  if(abs(HAL_GetTick() - beep_tick) >= 2) {
+		  if(abs(HAL_GetTick() - beep_tick) >= 500) {
 			  HAL_GPIO_WritePin(SOUND_GPIO_Port, SOUND_Pin, GPIO_PIN_RESET);
 			  beep = 0;
+			  HAL_StatusTypeDef st = HAL_ERROR;
+			  uint8_t led = 0;
+
+			  led = 0;
+//			  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x14, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
+			  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x15, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
+			  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x16, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
+			  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x17, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
+
+			 // for(uint8_t i = 2; i < 0xA; i++) {
+			//	  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, i, I2C_MEMADD_SIZE_8BIT, val, 1, 20);
+			  //}
 		  }
 	  }
-*/
+	  // end test
 
 
 
@@ -381,9 +422,12 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE
-                              |RCC_OSCILLATORTYPE_CSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI
+                              |RCC_OSCILLATORTYPE_HSE|RCC_OSCILLATORTYPE_CSI;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSIDiv = RCC_HSI_DIV2;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.CSIState = RCC_CSI_ON;
   RCC_OscInitStruct.CSICalibrationValue = RCC_CSICALIBRATION_DEFAULT;
@@ -550,33 +594,6 @@ static void MX_CRC_Init(void)
 }
 
 /**
-  * @brief DCACHE1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_DCACHE1_Init(void)
-{
-
-  /* USER CODE BEGIN DCACHE1_Init 0 */
-
-  /* USER CODE END DCACHE1_Init 0 */
-
-  /* USER CODE BEGIN DCACHE1_Init 1 */
-
-  /* USER CODE END DCACHE1_Init 1 */
-  hdcache1.Instance = DCACHE1;
-  hdcache1.Init.ReadBurstType = DCACHE_READ_BURST_WRAP;
-  if (HAL_DCACHE_Init(&hdcache1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN DCACHE1_Init 2 */
-
-  /* USER CODE END DCACHE1_Init 2 */
-
-}
-
-/**
   * @brief FDCAN1 Initialization Function
   * @param None
   * @retval None
@@ -616,6 +633,16 @@ static void MX_FDCAN1_Init(void)
   /* USER CODE BEGIN FDCAN1_Init 2 */
 
 
+	TxHeader.IdType = FDCAN_EXTENDED_ID;
+	TxHeader.TxFrameType = FDCAN_DATA_FRAME;
+	TxHeader.ErrorStateIndicator= FDCAN_ESI_ACTIVE;
+	TxHeader.DataLength = FDCAN_DLC_BYTES_8;
+	TxHeader.BitRateSwitch = FDCAN_BRS_OFF;
+	TxHeader.FDFormat = FDCAN_CLASSIC_CAN;
+	TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+	TxHeader.MessageMarker = 0;
+
+/*
   FDCAN_FilterTypeDef  sFilterConfig;
 
   sFilterConfig.IdType = FDCAN_EXTENDED_ID;
@@ -629,7 +656,7 @@ static void MX_FDCAN1_Init(void)
   {
     Error_Handler();
   }
-
+*/
   if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK)
   {
     /* Start Error */
@@ -690,7 +717,7 @@ static void MX_FDCAN2_Init(void)
   }
   /* USER CODE BEGIN FDCAN2_Init 2 */
 
-
+/*
     FDCAN_FilterTypeDef  sFilterConfig;
 
     sFilterConfig.IdType = FDCAN_EXTENDED_ID;
@@ -705,7 +732,7 @@ static void MX_FDCAN2_Init(void)
       // Filter configuration Error
       Error_Handler();
     }
-
+*/
 
 
   if (HAL_FDCAN_Start(&hfdcan2) != HAL_OK)
@@ -801,7 +828,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x40C0E9FF;
+  hi2c1.Init.Timing = 0x80000DA2;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -1268,6 +1295,40 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
+
+ /* MPU Configuration */
+
+void MPU_Config(void)
+{
+  MPU_Region_InitTypeDef MPU_InitStruct = {0};
+  MPU_Attributes_InitTypeDef MPU_AttributesInit = {0};
+
+  /* Disables the MPU */
+  HAL_MPU_Disable();
+
+  /** Initializes and configures the Region 0 and the memory to be protected
+  */
+  MPU_InitStruct.Enable = MPU_REGION_ENABLE;
+  MPU_InitStruct.Number = MPU_REGION_NUMBER0;
+  MPU_InitStruct.BaseAddress = 0x08FFF800;
+  MPU_InitStruct.LimitAddress = 0x08FFFFFF;
+  MPU_InitStruct.AttributesIndex = MPU_ATTRIBUTES_NUMBER0;
+  MPU_InitStruct.AccessPermission = MPU_REGION_ALL_RO;
+  MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_ENABLE;
+  MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
+
+  HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+  /** Initializes and configures the Attribute 0 and the memory to be protected
+  */
+  MPU_AttributesInit.Number = MPU_ATTRIBUTES_NUMBER0;
+  MPU_AttributesInit.Attributes = MPU_DEVICE_nGnRnE;
+
+  HAL_MPU_ConfigMemoryAttributes(&MPU_AttributesInit);
+  /* Enables the MPU */
+  HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
+
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.

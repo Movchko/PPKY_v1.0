@@ -1,8 +1,8 @@
 
 #include "main.h"
 
-uint16_t ADC_OFFSET[NUM_ADC_CHANNEL] = {70, 75, 75, 0, 0};
-uint16_t ADC_COEF[NUM_ADC_CHANNEL] = {10, 11, 11, 1, 1};
+uint16_t ADC_OFFSET[NUM_ADC_CHANNEL] = {70, 75, 75, 0, 70};
+uint16_t ADC_COEF[NUM_ADC_CHANNEL] = {10, 11, 11, 1, 10};
 //uint16_t ADC_COEF_del[NUM_ADC_CHANNEL] = {10, 1, 1, 1, 1};
 
 int32_t CHANNEL_VAL[NUM_ADC_CHANNEL];

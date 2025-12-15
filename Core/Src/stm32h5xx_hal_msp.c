@@ -281,51 +281,6 @@ void HAL_CRC_MspDeInit(CRC_HandleTypeDef* hcrc)
 
 }
 
-/**
-  * @brief DCACHE MSP Initialization
-  * This function configures the hardware resources used in this example
-  * @param hdcache: DCACHE handle pointer
-  * @retval None
-  */
-void HAL_DCACHE_MspInit(DCACHE_HandleTypeDef* hdcache)
-{
-  if(hdcache->Instance==DCACHE1)
-  {
-    /* USER CODE BEGIN DCACHE1_MspInit 0 */
-
-    /* USER CODE END DCACHE1_MspInit 0 */
-    /* Peripheral clock enable */
-    __HAL_RCC_DCACHE1_CLK_ENABLE();
-    /* USER CODE BEGIN DCACHE1_MspInit 1 */
-
-    /* USER CODE END DCACHE1_MspInit 1 */
-
-  }
-
-}
-
-/**
-  * @brief DCACHE MSP De-Initialization
-  * This function freeze the hardware resources used in this example
-  * @param hdcache: DCACHE handle pointer
-  * @retval None
-  */
-void HAL_DCACHE_MspDeInit(DCACHE_HandleTypeDef* hdcache)
-{
-  if(hdcache->Instance==DCACHE1)
-  {
-    /* USER CODE BEGIN DCACHE1_MspDeInit 0 */
-
-    /* USER CODE END DCACHE1_MspDeInit 0 */
-    /* Peripheral clock disable */
-    __HAL_RCC_DCACHE1_CLK_DISABLE();
-    /* USER CODE BEGIN DCACHE1_MspDeInit 1 */
-
-    /* USER CODE END DCACHE1_MspDeInit 1 */
-  }
-
-}
-
 static uint32_t HAL_RCC_FDCAN_CLK_ENABLED=0;
 
 /**
@@ -497,7 +452,7 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef* hi2c)
   /** Initializes the peripherals clock
   */
     PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2C1;
-    PeriphClkInitStruct.I2c1ClockSelection = RCC_I2C1CLKSOURCE_PCLK1;
+    PeriphClkInitStruct.I2c1ClockSelection = RCC_I2C1CLKSOURCE_HSI;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
     {
       Error_Handler();
@@ -517,6 +472,9 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef* hi2c)
 
     /* Peripheral clock enable */
     __HAL_RCC_I2C1_CLK_ENABLE();
+    /* I2C1 interrupt Init */
+    HAL_NVIC_SetPriority(I2C1_EV_IRQn, 15, 0);
+    HAL_NVIC_EnableIRQ(I2C1_EV_IRQn);
     /* USER CODE BEGIN I2C1_MspInit 1 */
 
     /* USER CODE END I2C1_MspInit 1 */
@@ -549,6 +507,8 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef* hi2c)
 
     HAL_GPIO_DeInit(GPIOB, GPIO_PIN_7);
 
+    /* I2C1 interrupt DeInit */
+    HAL_NVIC_DisableIRQ(I2C1_EV_IRQn);
     /* USER CODE BEGIN I2C1_MspDeInit 1 */
 
     /* USER CODE END I2C1_MspDeInit 1 */

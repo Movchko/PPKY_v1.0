@@ -36,7 +36,9 @@ void AppInit() {
 		Power[i]->PControlInit(PControlGetSTCB, PControlGetADCCB, PControlSetOutCB);
 	}
 
+	HAL_Delay(1000);
 	Power[0]->PControlSetOut(0, true);
+	HAL_Delay(1000);
 	Power[1]->PControlSetOut(1, true);
 	isAppInit = true;
 }
@@ -56,18 +58,16 @@ uint32_t counter1s = 0;
 void AppTimer1ms() {
 	AppProcess();
 	counter1s++;
-	if(counter1s >= 2)
-	{
+	if(counter1s >= 1000) {
 		counter1s = 0;
-		uint8_t data[8] = {8, 9, 10, 11, 12, 13, 14, 15};
+		uint32_t tick = HAL_GetTick();
+		uint8_t data[8] = {128, uint8_t(tick>>24 & 0xff), uint8_t(tick>>16 & 0xff), uint8_t(tick>>8 & 0xff), uint8_t(tick>>0 & 0xff), 0, 0, 0};
 		can_ext_id_t can_id;
 		can_id.field.dir = 1;
-		can_id.field.h_adr = 127;
-		can_id.field.l_adr = 15;
-		can_id.field.zone = 3;
-		can_id.field.d_type = 126;
-
+		can_id.field.h_adr = 0;
+		can_id.field.l_adr = 0;
+		can_id.field.zone = 0;
+		can_id.field.d_type = 0;
 		SendMessageFull(can_id, data, 1);
-
 	}
 }

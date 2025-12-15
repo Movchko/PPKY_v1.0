@@ -61,7 +61,7 @@ void AppTimer1ms();
 
 void AppInit();
 void AppProcess();
-
+void LedInit();
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
