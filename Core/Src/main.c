@@ -61,9 +61,11 @@ SPI_HandleTypeDef hspi1;
 SPI_HandleTypeDef hspi3;
 
 TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart2;
+DMA_HandleTypeDef handle_GPDMA1_Channel1;
 
 /* USER CODE BEGIN PV */
 SPIF_HandleTypeDef hFlash;
@@ -88,6 +90,7 @@ static void MX_RTC_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_FLASH_Init(void);
 static void MX_ICACHE_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 uint8_t isMainInit = 0;
 /* USER CODE END PFP */
@@ -96,14 +99,38 @@ uint8_t isMainInit = 0;
 /* USER CODE BEGIN 0 */
 
 uint8_t is1ms = 0;
+uint8_t is10ms = 0;
 FDCAN_TxHeaderTypeDef TxHeader;
 
+//TODO:: delete
+uint8_t uart_buf[10];
+uint8_t uart_send_buf[2] = {0xAA, 0xBB};
+uint8_t uart_rcv_buf[10];
+
+void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart) {
+	//uart_send_buf[0]++;
+	//uart_send_buf[1]++;
+	uart_rcv_buf[0] = uart_buf[0];
+	uart_rcv_buf[1] = uart_buf[1];
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+	uart_send_buf[0]++;
+	uart_send_buf[1]++;
+
+	//uart_rcv_buf[0] = uart_buf[0];
+	//uart_rcv_buf[1] = uart_buf[1];
+
+	HAL_UART_Receive_DMA(&huart2, uart_buf, 2);
+}
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
-	//Каждую 1 мс //TODO сейчас 1с
-	if(htim->Instance == TIM1) //check if the interrupt comes from TIM4
+	//Каждую 1 мс
+	if(htim->Instance == TIM1)
 		is1ms = 1;
+	if(htim->Instance == TIM2)
+		is10ms = 1;
 
 }
 
@@ -114,6 +141,9 @@ void HAL_FDCAN_RxFifoCallback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo) {
 		if(HAL_FDCAN_GetRxMessage(hfdcan, RxFifo, &msg, Data) != HAL_OK)
 			break;
 		ProtocolParse(msg.Identifier, Data);
+
+
+
 		 //LED_TOGGLE;
 	}
 }
@@ -126,6 +156,10 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifoITs)
 
 	uint32_t fifo = FDCAN_RX_FIFO1;
 	HAL_FDCAN_RxFifoCallback(hfdcan, fifo);
+
+	//TODO:: delete
+	 //HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader,/*&Buf[4]*/TxData);
+
 /*
 		while(HAL_FDCAN_GetRxFifoFillLevel(hfdcan, fifo) > 0) {
 			if(HAL_FDCAN_GetRxMessage(hfdcan, fifo, &msg, Data) != HAL_OK)
@@ -143,6 +177,10 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifoITs)
 //	FDCAN_RxHeaderTypeDef msg;
 	uint32_t fifo = FDCAN_RX_FIFO0;
 	HAL_FDCAN_RxFifoCallback(hfdcan, fifo);
+	//TODO:: delete
+	 //HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader,/*&Buf[4]*/TxData);
+
+
 	/*
 		while(HAL_FDCAN_GetRxFifoFillLevel(hfdcan, fifo) > 0) {
 			if(HAL_FDCAN_GetRxMessage(hfdcan, fifo, &msg, Data) != HAL_OK)
@@ -222,7 +260,6 @@ void CANSendData(uint8_t *Buf) {
 
 }
 
-
 /* USER CODE END 0 */
 
 /**
@@ -271,6 +308,7 @@ int main(void)
   MX_TIM1_Init();
   MX_FLASH_Init();
   MX_ICACHE_Init();
+  MX_TIM2_Init();
   MX_TouchGFX_Init();
   /* USER CODE BEGIN 2 */
 
@@ -287,12 +325,17 @@ int main(void)
    */
   //HAL_ICACHE_Disable();
 
+  // must have for esp32
+  HAL_GPIO_WritePin(ESP32_EN_GPIO_Port, ESP32_EN_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(ESP32_BOOT_GPIO_Port, ESP32_BOOT_Pin, GPIO_PIN_SET);
+  HAL_Delay(100);
+
   uint8_t isFlash = 0;
   isFlash = SPIF_Init(&hFlash, &hspi1, FLASH_CS_GPIO_Port, FLASH_CS_Pin);
 
-  HAL_TIM_Base_Start_IT(&htim1);
-
   HAL_StatusTypeDef s = HAL_ADC_Start_DMA(&hadc1, ADC_VAL, NUM_ADC_CHANNEL);
+
+
 
   //uint32_t erase = HAL_GetTick();
   //SPIF_EraseChip(&hFlash);
@@ -314,18 +357,34 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
+  InitDisplay();
+
   uint32_t gfx_tick = HAL_GetTick();
   uint32_t led_tick = HAL_GetTick();
-  uint32_t beep_tick = 0;
-  uint8_t beep = 0;
-
-
 
   LedInit();
 
   AppInit();
-  isMainInit = 1;
 
+  HAL_TIM_Base_Start_IT(&htim1);
+  HAL_TIM_Base_Start_IT(&htim2);
+
+
+  isMainInit = 1;
+  uint8_t led_power = 100;
+  LedSetAll(led_power);
+
+
+
+  HAL_UART_Receive_DMA(&huart2, uart_buf, 2);
+
+
+
+
+  //HAL_GPIO_WritePin(SOUND_GPIO_Port, SOUND_Pin, GPIO_PIN_SET);
+ // while(1);
+  uint8_t display_turn_on = 0;
   while (1)
   {
 	  uint32_t cur_tick = HAL_GetTick();
@@ -333,27 +392,21 @@ int main(void)
 		  led_tick = cur_tick;
 		  LED_TOGGLE;
 
+		  /*
+		   * задержка включения дисплея, чтобы не было мусора от предыдущего запуска
+		   * дисплей стартует раньше, чем touchgsx успевает заполнить буфер новыми данными
+		   * без задержки можно вручную залить картинку
+		   */
+		  if(display_turn_on == 0) {
+			  Display_Enable(true);
+			  display_turn_on = 1;
+		  }
 
+			/* test
+			 *
+			 */
 
-		/* test
-		 *
-		 */
-		  volatile HAL_StatusTypeDef st = HAL_ERROR;
-		  uint8_t val = 0xFF;
-
-		  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x14, I2C_MEMADD_SIZE_8BIT, &val, sizeof(val), 20);
-		  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x15, I2C_MEMADD_SIZE_8BIT, &val, sizeof(val), 20);
-		  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x16, I2C_MEMADD_SIZE_8BIT, &val, sizeof(val), 20);
-		  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x17, I2C_MEMADD_SIZE_8BIT, &val, sizeof(val), 20);
-
-		  st = HAL_I2C_Mem_Read(&hi2c1, 0x41<<1, 0x00, I2C_MEMADD_SIZE_8BIT, &val, sizeof(val), 10);
-
-		  //HAL_GPIO_TogglePin(SOUND_GPIO_Port, SOUND_Pin);
-		  // beeper test
-
-		  HAL_GPIO_WritePin(SOUND_GPIO_Port, SOUND_Pin, GPIO_PIN_SET);
-		  beep_tick = cur_tick;
-		  beep = 1;
+		  HAL_UART_Transmit(&huart2, uart_send_buf, 2, 0);
 
 		  setup_change = 1;
 		  /*
@@ -362,28 +415,9 @@ int main(void)
 	  }
 
 	  //test
-	  if(beep) {
-		  if(abs(HAL_GetTick() - beep_tick) >= 500) {
-			  HAL_GPIO_WritePin(SOUND_GPIO_Port, SOUND_Pin, GPIO_PIN_RESET);
-			  beep = 0;
-			  HAL_StatusTypeDef st = HAL_ERROR;
-			  uint8_t led = 0;
 
-			  led = 0;
-//			  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x14, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
-			  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x15, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
-			  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x16, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
-			  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x17, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
 
-			 // for(uint8_t i = 2; i < 0xA; i++) {
-			//	  st = HAL_I2C_Mem_Write(&hi2c1, 0xC0, i, I2C_MEMADD_SIZE_8BIT, val, 1, 20);
-			  //}
-		  }
-	  }
 	  // end test
-
-
-
 
 	 if(abs(cur_tick - gfx_tick) >= GFX_RATIO_MS) { // условие чтобы MX_TouchGFX_Process не спамилось слишком часто
     /* USER CODE END WHILE */
@@ -399,6 +433,10 @@ int main(void)
 	 if(is1ms) {
 		 is1ms = 0;
 		 AppTimer1ms();
+	 }
+	 if(is10ms) {
+		 is10ms = 0;
+		 AppTimer10ms();
 	 }
   }
   /* USER CODE END 3 */
@@ -642,21 +680,6 @@ static void MX_FDCAN1_Init(void)
 	TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
 	TxHeader.MessageMarker = 0;
 
-/*
-  FDCAN_FilterTypeDef  sFilterConfig;
-
-  sFilterConfig.IdType = FDCAN_EXTENDED_ID;
-  sFilterConfig.FilterIndex = 0;
-  sFilterConfig.FilterType = FDCAN_FILTER_MASK;
-  sFilterConfig.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
-  sFilterConfig.FilterID1 = 0x000;
-  sFilterConfig.FilterID2 = 0x000;
-
-  if((HAL_FDCAN_ConfigFilter(&hfdcan1, &sFilterConfig))!= HAL_OK)
-  {
-    Error_Handler();
-  }
-*/
   if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK)
   {
     /* Start Error */
@@ -802,6 +825,8 @@ static void MX_GPDMA1_Init(void)
   /* GPDMA1 interrupt Init */
     HAL_NVIC_SetPriority(GPDMA1_Channel0_IRQn, 13, 0);
     HAL_NVIC_EnableIRQ(GPDMA1_Channel0_IRQn);
+    HAL_NVIC_SetPriority(GPDMA1_Channel1_IRQn, 11, 0);
+    HAL_NVIC_EnableIRQ(GPDMA1_Channel1_IRQn);
 
   /* USER CODE BEGIN GPDMA1_Init 1 */
 
@@ -1082,7 +1107,7 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 10000;
+  htim1.Init.Prescaler = 10;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim1.Init.Period = 24799;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -1107,6 +1132,51 @@ static void MX_TIM1_Init(void)
   /* USER CODE BEGIN TIM1_Init 2 */
 
   /* USER CODE END TIM1_Init 2 */
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 1000;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 24799;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
 
 }
 
@@ -1174,7 +1244,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
+  huart2.Init.BaudRate = 1000000;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -1232,10 +1302,10 @@ static void MX_GPIO_Init(void)
                           |ESP32_EN_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(DISP_RES_GPIO_Port, DISP_RES_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(DISP_CS_GPIO_Port, DISP_CS_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(DISP_CS_GPIO_Port, DISP_CS_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(DISP_RES_GPIO_Port, DISP_RES_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(DISP_D_C_GPIO_Port, DISP_D_C_Pin, GPIO_PIN_RESET);
@@ -1268,21 +1338,27 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(SOUND_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : BT_FORCE_ACT_Pin BT_STOP_Pin BT_FIRE_Pin */
+  GPIO_InitStruct.Pin = BT_FORCE_ACT_Pin|BT_STOP_Pin|BT_FIRE_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
   /*Configure GPIO pins : ST2_MK_Pin ST1_MK_Pin */
   GPIO_InitStruct.Pin = ST2_MK_Pin|ST1_MK_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : DISP_RES_Pin */
-  GPIO_InitStruct.Pin = DISP_RES_Pin;
+  /*Configure GPIO pin : DISP_CS_Pin */
+  GPIO_InitStruct.Pin = DISP_CS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  HAL_GPIO_Init(DISP_RES_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(DISP_CS_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : DISP_CS_Pin DISP_D_C_Pin */
-  GPIO_InitStruct.Pin = DISP_CS_Pin|DISP_D_C_Pin;
+  /*Configure GPIO pins : DISP_RES_Pin DISP_D_C_Pin */
+  GPIO_InitStruct.Pin = DISP_RES_Pin|DISP_D_C_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;

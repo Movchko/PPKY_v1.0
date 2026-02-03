@@ -12,8 +12,11 @@ enum LANGUAGES
 
 enum TEXTS
 {
+    T___SINGLEUSE_D1VE,
+    T_DATA,
+    T_TIME,
+    T___SINGLEUSE_YQF0,
     T___SINGLEUSE_XB5O,
-    T___SINGLEUSE_WVOF,
     T_CONNECT,
     T_JURNAL,
     T_SETTINGS,

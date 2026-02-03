@@ -11,6 +11,9 @@ ScreenMenuViewBase::ScreenMenuViewBase() :
     __background.setColor(touchgfx::Color::getColorFromRGB(0, 0, 0));
     add(__background);
 
+    customContainerTopBar_11_1.setXY(0, 49);
+    add(customContainerTopBar_11_1);
+
     box1.setPosition(0, 0, 128, 64);
     box1.setColor(touchgfx::Color::getColorFromRGB(0, 0, 0));
     add(box1);
@@ -41,6 +44,26 @@ ScreenMenuViewBase::ScreenMenuViewBase() :
 
     customContainerTopBar_11.setXY(0, 49);
     add(customContainerTopBar_11);
+
+    scrollableContainer1_1.setPosition(0, 0, 79, 15);
+    scrollableContainer1_1.enableVerticalScroll(false);
+    scrollableContainer1_1.setScrollbarsColor(touchgfx::Color::getColorFromRGB(0, 0, 0));
+    scrollableContainer1_1.setScrollbarsAlpha(255);
+    scrollWheel1_1.setPosition(0, 0, 72, 15);
+    scrollWheel1_1.setHorizontal(false);
+    scrollWheel1_1.setCircular(true);
+    scrollWheel1_1.setEasingEquation(touchgfx::EasingEquations::backEaseOut);
+    scrollWheel1_1.setSwipeAcceleration(10);
+    scrollWheel1_1.setDragAcceleration(10);
+    scrollWheel1_1.setNumberOfItems(2);
+    scrollWheel1_1.setSelectedItemOffset(0);
+    scrollWheel1_1.setOvershootPercentage(75);
+    scrollWheel1_1.setDrawableSize(15, 0);
+    scrollWheel1_1.setDrawables(scrollWheel1_1ListItems, updateItemCallback);
+    scrollWheel1_1.animateToItem(0, 0);
+    scrollableContainer1_1.add(scrollWheel1_1);
+
+    add(scrollableContainer1_1);
 }
 
 ScreenMenuViewBase::~ScreenMenuViewBase()
@@ -50,6 +73,7 @@ ScreenMenuViewBase::~ScreenMenuViewBase()
 
 void ScreenMenuViewBase::setupScreen()
 {
+    customContainerTopBar_11_1.initialize();
     scrollWheel1.initialize();
     for (int i = 0; i < scrollWheel1ListItems.getNumberOfDrawables(); i++)
     {
@@ -57,6 +81,11 @@ void ScreenMenuViewBase::setupScreen()
     }
     customContainerTopBar1.initialize();
     customContainerTopBar_11.initialize();
+    scrollWheel1_1.initialize();
+    for (int i = 0; i < scrollWheel1_1ListItems.getNumberOfDrawables(); i++)
+    {
+        scrollWheel1_1ListItems[i].initialize();
+    }
 }
 
 void ScreenMenuViewBase::updateItemCallbackHandler(touchgfx::DrawableListItemsInterface* items, int16_t containerIndex, int16_t itemIndex)
@@ -66,5 +95,12 @@ void ScreenMenuViewBase::updateItemCallbackHandler(touchgfx::DrawableListItemsIn
         touchgfx::Drawable* d = items->getDrawable(containerIndex);
         mainmenu* cc = (mainmenu*)d;
         scrollWheel1UpdateItem(*cc, itemIndex);
+    }
+
+    if (items == &scrollWheel1_1ListItems)
+    {
+        touchgfx::Drawable* d = items->getDrawable(containerIndex);
+        CustomContainerTime* cc = (CustomContainerTime*)d;
+        scrollWheel1_1UpdateItem(*cc, itemIndex);
     }
 }

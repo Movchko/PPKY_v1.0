@@ -31,17 +31,17 @@ FrontendApplicationBase::FrontendApplicationBase(Model& m, FrontendHeap& heap)
  * Screen Transition Declarations
  */
 
-// ScreenMenu
+// mainscreen
 
-void FrontendApplicationBase::gotoScreenMenuScreenNoTransition()
+void FrontendApplicationBase::gotomainscreenScreenNoTransition()
 {
-    transitionCallback = touchgfx::Callback<FrontendApplicationBase>(this, &FrontendApplicationBase::gotoScreenMenuScreenNoTransitionImpl);
+    transitionCallback = touchgfx::Callback<FrontendApplicationBase>(this, &FrontendApplicationBase::gotomainscreenScreenNoTransitionImpl);
     pendingScreenTransitionCallback = &transitionCallback;
 }
 
-void FrontendApplicationBase::gotoScreenMenuScreenNoTransitionImpl()
+void FrontendApplicationBase::gotomainscreenScreenNoTransitionImpl()
 {
-    touchgfx::makeTransition<ScreenMenuView, ScreenMenuPresenter, touchgfx::NoTransition, Model >(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
+    touchgfx::makeTransition<mainscreenView, mainscreenPresenter, touchgfx::NoTransition, Model >(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
 }
 
 // screen_logo

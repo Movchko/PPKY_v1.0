@@ -6,11 +6,20 @@
   <Texts>
     <TextGroup Id="Group1" />
     <TextGroup Id="Unsorted">
-      <Text Id="__SingleUse_XB5O" Alignment="Left" TypographyId="Small">
-        <Translation Language="GB">ПРИВЕТ МИР</Translation>
+      <Text Id="__SingleUse_D1VE" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">&lt;value&gt;</Translation>
       </Text>
-      <Text Id="__SingleUse_WVOF" Alignment="Left" TypographyId="Small">
-        <Translation Language="GB">08:00</Translation>
+      <Text Id="Data" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">03.02.26&#10;</Translation>
+      </Text>
+      <Text Id="Time" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">01:01:01&#10;&#10;</Translation>
+      </Text>
+      <Text Id="__SingleUse_YQF0" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">12345678901234</Translation>
+      </Text>
+      <Text Id="__SingleUse_XB5O" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">12345678901234</Translation>
       </Text>
       <Text Id="Connect" Alignment="Center" TypographyId="Large">
         <Translation Language="GB">СВЯЗЬ</Translation>

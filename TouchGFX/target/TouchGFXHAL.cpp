@@ -36,8 +36,8 @@ extern "C" void TGFX_SignalVSync(void)
 void TouchGFXHAL::initialize()
 {
     // Initialize display hardware first
-    extern void InitDisplay(void);
-    InitDisplay();
+    //extern void InitDisplay(void);
+    //InitDisplay();
     
     // Calling parent implementation of initialize().
     //

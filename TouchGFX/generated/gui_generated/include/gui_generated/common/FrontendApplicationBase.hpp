@@ -20,8 +20,8 @@ public:
         gotoscreen_logoScreenNoTransition();
     }
 
-    // ScreenMenu
-    void gotoScreenMenuScreenNoTransition();
+    // mainscreen
+    void gotomainscreenScreenNoTransition();
 
     // screen_logo
     void gotoscreen_logoScreenNoTransition();
@@ -31,8 +31,8 @@ protected:
     FrontendHeap& frontendHeap;
     Model& model;
 
-    // ScreenMenu
-    void gotoScreenMenuScreenNoTransitionImpl();
+    // mainscreen
+    void gotomainscreenScreenNoTransitionImpl();
 
     // screen_logo
     void gotoscreen_logoScreenNoTransitionImpl();

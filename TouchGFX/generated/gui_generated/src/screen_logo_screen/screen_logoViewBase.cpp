@@ -33,9 +33,9 @@ void screen_logoViewBase::handleTickEvent()
     if(frameCountInteraction1Interval == TICK_INTERACTION1_INTERVAL)
     {
         //Interaction1
-        //When every N tick change screen to ScreenMenu
-        //Go to ScreenMenu with no screen transition
-        application().gotoScreenMenuScreenNoTransition();
+        //When every N tick change screen to mainscreen
+        //Go to mainscreen with no screen transition
+        application().gotomainscreenScreenNoTransition();
         frameCountInteraction1Interval = 0;
     }
 }

@@ -1,5 +1,7 @@
 #include "power_control.h"
 #include "app.hpp"
+#include "button.h"
+#include "beeper.h"
 
 PControl *Power[2];
 
@@ -31,15 +33,20 @@ void PControlSetOutCB(uint8_t ch, uint8_t out) {
 }
 
 void AppInit() {
+
+	Button_Init();
+	Beeper_Init();
+
 	for(uint8_t i = 0; i < 2; i++) {
 		Power[i] = new PControl(i);
 		Power[i]->PControlInit(PControlGetSTCB, PControlGetADCCB, PControlSetOutCB);
 	}
-
+/*
 	HAL_Delay(1000);
 	Power[0]->PControlSetOut(0, true);
 	HAL_Delay(1000);
 	Power[1]->PControlSetOut(1, true);
+	*/
 	isAppInit = true;
 }
 
@@ -71,3 +78,9 @@ void AppTimer1ms() {
 		SendMessageFull(can_id, data, 1);
 	}
 }
+
+void AppTimer10ms() {
+	Button_Process();
+	Beeper_Process();
+}
+

@@ -9,7 +9,7 @@ mainmenuBase::mainmenuBase()
 {
     setWidth(128);
     setHeight(30);
-    textAreaMainMenu.setPosition(0, 5, 128, 20);
+    textAreaMainMenu.setPosition(0, 0, 128, 20);
     textAreaMainMenu.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
     textAreaMainMenu.setLinespacing(0);
     textAreaMainMenuBuffer[0] = 0;

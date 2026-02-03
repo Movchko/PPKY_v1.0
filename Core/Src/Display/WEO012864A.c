@@ -89,6 +89,8 @@ void Display_Reset(void) {
  */
 void InitDisplay(void) {
 	Display_Reset();
+	HAL_Delay(5);  // Дать время дисплею на стабилизацию
+	Write_Command(0xAE);       // Display OFF
 	HAL_Delay(500);  // Дать время дисплею на стабилизацию
 	
 	// Последовательность инициализации из рабочего проекта
@@ -100,8 +102,8 @@ void InitDisplay(void) {
 	Write_Command(0xD3);       // Display offset
 	Write_Command(0x00);
 	Write_Command(0x40);       // Display start line
-	Write_Command(0xA0);       // Segment remap //A1 revert
-	Write_Command(0xC0);       // COM scan direction //C8 revert
+	Write_Command(0xA1);       // Segment remap //A0 revert
+	Write_Command(0xC8);       // COM scan direction //C0 revert
 	Write_Command(0xDA);       // COM pins
 	Write_Command(0x12);
 	Write_Command(0x81);       // Contrast
@@ -111,7 +113,7 @@ void InitDisplay(void) {
 	Write_Command(0x80);
 	Write_Command(0x8D);       // Charge pump
 	Write_Command(0x14);
-	Write_Command(0xAF);       // Display ON
+	//Write_Command(0xAF);       // Display ON
 	HAL_Delay(100);  // Дать время дисплею на включение
 }
 
@@ -199,6 +201,14 @@ void Display_UpdateRect(uint8_t *framebuffer, uint16_t x, uint16_t y, uint16_t w
 			Write_Data(pixel_data);
 		}
 	}
+}
+
+void Display_Enable(uint8_t en) {
+	if(en)
+		Write_Command(0xAF);       // Display ON
+	else
+		Write_Command(0xAE);
+	HAL_Delay(100);
 }
 
 /**

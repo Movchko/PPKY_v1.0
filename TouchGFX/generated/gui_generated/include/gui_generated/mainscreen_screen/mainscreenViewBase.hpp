@@ -9,6 +9,8 @@
 #include <gui/mainscreen_screen/mainscreenPresenter.hpp>
 #include <touchgfx/widgets/Box.hpp>
 #include <gui/containers/CustomContainerTopBar.hpp>
+#include <gui/containers/CustomContainerTopBar_1_1.hpp>
+#include <gui/containers/CustomContainerScrollTime.hpp>
 
 class mainscreenViewBase : public touchgfx::View<mainscreenPresenter>
 {
@@ -28,6 +30,8 @@ protected:
     touchgfx::Box __background;
     touchgfx::Box box1;
     CustomContainerTopBar customContainerTopBar1;
+    CustomContainerTopBar_1_1 customContainerTopBar_1_11;
+    CustomContainerScrollTime customContainerScrollTime1;
 
 private:
 

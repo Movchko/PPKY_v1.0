@@ -27,6 +27,12 @@ public:
 
     virtual ~mainscreenPresenter() {}
 
+    /** Передать время/дату на экран (из RTC/модели). */
+    virtual void setDateTime(uint8_t hour, uint8_t min, uint8_t sec, uint8_t day, uint8_t month, uint8_t year);
+
+#ifndef SIMULATOR
+    virtual void SetTime(uint32_t time);
+#endif
 private:
     mainscreenPresenter();
 

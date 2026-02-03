@@ -16,6 +16,21 @@
             "Width": 128,
             "Height": 15,
             "CustomContainerDefinitionName": "CustomContainerTopBar"
+          },
+          {
+            "Type": "CustomContainerInstance",
+            "Name": "customContainerTopBar_1_11",
+            "Y": 15,
+            "Width": 128,
+            "Height": 50,
+            "CustomContainerDefinitionName": "CustomContainerTopBar_1_1"
+          },
+          {
+            "Type": "CustomContainerInstance",
+            "Name": "customContainerScrollTime1",
+            "Width": 72,
+            "Height": 15,
+            "CustomContainerDefinitionName": "CustomContainerScrollTime"
           }
         ],
         "Interactions": []
@@ -23,6 +38,14 @@
       {
         "Name": "ScreenMenu",
         "Components": [
+          {
+            "Type": "CustomContainerInstance",
+            "Name": "customContainerTopBar_11_1",
+            "Y": 49,
+            "Width": 128,
+            "Height": 15,
+            "CustomContainerDefinitionName": "CustomContainerTopBar_1"
+          },
           {
             "Type": "Box",
             "Name": "box1",
@@ -69,9 +92,52 @@
             "Width": 128,
             "Height": 15,
             "CustomContainerDefinitionName": "CustomContainerTopBar_1"
+          },
+          {
+            "Type": "ScrollableContainer",
+            "Name": "scrollableContainer1_1",
+            "Width": 79,
+            "Height": 15,
+            "HorizontalScrollEnabled": true,
+            "ScrollbarsVisibleOnPressed": true,
+            "ScrollbarsAlpha": 255,
+            "Components": [
+              {
+                "Type": "ScrollWheel",
+                "Name": "scrollWheel1_1",
+                "Width": 72,
+                "Height": 15,
+                "IsCircular": true,
+                "ItemTemplateName": "CustomContainerTime",
+                "NumberofItems": 2,
+                "Easing": "Back",
+                "EasingOption": "Out",
+                "SwipeAcceleration": 1.0,
+                "DragAcceleration": 1.0,
+                "OverShootPercentage": 75
+              }
+            ]
           }
         ],
-        "Interactions": []
+        "Interactions": [
+          {
+            "InteractionName": "Interaction1",
+            "Trigger": {
+              "Type": "TriggerWhen",
+              "ActionCustomTypeName": "Call ScreenMenu Button_Press"
+            },
+            "Action": {
+              "Type": "ActionExecuteCode"
+            }
+          }
+        ],
+        "CustomActions": [
+          {
+            "Name": "Button_Press",
+            "HasValue": true,
+            "ValueType": "uint8_t"
+          }
+        ]
       },
       {
         "Name": "screen_logo",
@@ -90,12 +156,12 @@
             "InteractionName": "Interaction1",
             "Trigger": {
               "Type": "TriggerOnEveryTick",
-              "TickCount": 200
+              "TickCount": 400
             },
             "Action": {
               "Type": "ActionGotoScreen",
               "ScreenTransitionType": "ScreenTransitionNone",
-              "ActionComponent": "ScreenMenu"
+              "ActionComponent": "mainscreen"
             }
           }
         ]
@@ -111,7 +177,6 @@
           {
             "Type": "TextArea",
             "Name": "textAreaMainMenu",
-            "Y": 5,
             "Width": 128,
             "Height": 20,
             "TextId": "__SingleUse_B5JP",
@@ -127,17 +192,57 @@
             }
           }
         ],
-        "Interactions": [
+        "Interactions": []
+      },
+      {
+        "Name": "CustomContainerTime",
+        "Width": 72,
+        "Height": 15,
+        "Components": [
           {
-            "InteractionName": "Interaction1",
-            "Trigger": {
-              "Type": "TriggerNone"
+            "Type": "TextArea",
+            "Name": "textAreatime",
+            "Y": -2,
+            "Width": 72,
+            "Height": 15,
+            "TextId": "__SingleUse_D1VE",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
             },
-            "Action": {
-              "Type": "ActionNone"
+            "Wildcard1": {
+              "UseBuffer": true,
+              "BufferSize": 10
             }
           }
-        ]
+        ],
+        "Interactions": []
+      },
+      {
+        "Name": "CustomContainerTopBar_1_1",
+        "Y": 14,
+        "Width": 128,
+        "Height": 50,
+        "Components": [
+          {
+            "Type": "TextArea",
+            "Name": "textAreatime",
+            "Y": 3,
+            "Width": 126,
+            "Height": 15,
+            "TextId": "__SingleUse_YQF0",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            },
+            "AutoSize": true
+          }
+        ],
+        "Interactions": []
       },
       {
         "Name": "CustomContainerTopBar_1",
@@ -148,7 +253,7 @@
           {
             "Type": "TextArea",
             "Name": "textAreatime",
-            "Width": 111,
+            "Width": 126,
             "Height": 15,
             "TextId": "__SingleUse_XB5O",
             "TextRotation": "0",
@@ -163,17 +268,70 @@
         "Interactions": []
       },
       {
+        "Name": "CustomContainerScrollTime",
+        "Width": 72,
+        "Height": 15,
+        "Components": [
+          {
+            "Type": "ScrollableContainer",
+            "Name": "scrollableContainer1",
+            "Width": 79,
+            "Height": 15,
+            "HorizontalScrollEnabled": true,
+            "ScrollbarsVisibleOnPressed": true,
+            "ScrollbarsAlpha": 255,
+            "Components": [
+              {
+                "Type": "ScrollWheel",
+                "Name": "scrollWheel1",
+                "Width": 72,
+                "Height": 15,
+                "IsCircular": true,
+                "ItemTemplateName": "CustomContainerTime",
+                "NumberofItems": 2,
+                "Easing": "Back",
+                "EasingOption": "Out",
+                "SwipeAcceleration": 1.0,
+                "DragAcceleration": 1.0,
+                "OverShootPercentage": 75
+              }
+            ]
+          }
+        ],
+        "Interactions": [
+          {
+            "InteractionName": "Interaction1",
+            "Trigger": {
+              "Type": "TriggerOnEveryTick",
+              "TickCount": 400
+            },
+            "Action": {
+              "Type": "ActionExecuteCode",
+              "Code": "/*\r\nwrire code here\r\n*/\r\n    \tuint8_t current = scrollWheel1.getSelectedItem();\r\n    \tcurrent ^= 1;\r\n    \tscrollWheel1.animateToItem(current, -1);"
+            }
+          }
+        ],
+        "CustomActions": [
+          {
+            "Name": "SetTime",
+            "HasValue": true,
+            "ValueType": "uint32_t"
+          }
+        ]
+      },
+      {
         "Name": "CustomContainerTopBar",
         "Width": 128,
         "Height": 15,
         "Components": [
           {
             "Type": "TextArea",
-            "Name": "textAreatime",
-            "X": 8,
-            "Width": 49,
+            "Name": "textAreatime_1",
+            "Y": -3,
+            "Width": 72,
             "Height": 15,
-            "TextId": "__SingleUse_WVOF",
+            "Visible": false,
+            "TextId": "Data",
             "TextRotation": "0",
             "Color": {
               "Red": 255,
@@ -183,8 +341,16 @@
           },
           {
             "Type": "Image",
+            "Name": "imageMute_2",
+            "X": 95,
+            "Width": 14,
+            "Height": 14,
+            "RelativeFilename": "no_beep.png"
+          },
+          {
+            "Type": "Image",
             "Name": "imageMute",
-            "X": 80,
+            "X": 79,
             "Width": 14,
             "Height": 14,
             "RelativeFilename": "no_beep.png"
@@ -192,7 +358,8 @@
           {
             "Type": "Image",
             "Name": "imageWifi",
-            "X": 105,
+            "X": 111,
+            "Y": 2,
             "Width": 15,
             "Height": 11,
             "RelativeFilename": "wifi.png"

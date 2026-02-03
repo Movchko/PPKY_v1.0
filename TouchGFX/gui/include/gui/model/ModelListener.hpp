@@ -16,6 +16,8 @@ public:
     }
 #ifndef SIMULATOR
     virtual void SetupMenuChangePos(unsigned char val) {};
+    virtual void SetTime(long val) {};
+    virtual void setDateTime(uint8_t hour, uint8_t min, uint8_t sec, uint8_t day, uint8_t month, uint8_t year) {}
 #endif
 protected:
     Model* model;

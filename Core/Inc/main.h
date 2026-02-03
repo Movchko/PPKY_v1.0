@@ -58,10 +58,13 @@ void Error_Handler(void);
 void TGFX_SignalVSync(void);
 
 void AppTimer1ms();
+void AppTimer10ms();
 
 void AppInit();
 void AppProcess();
 void LedInit();
+void LedSetAll(uint8_t power);
+void LedOffAll();
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
@@ -75,6 +78,12 @@ void LedInit();
 #define FLASH_CS_GPIO_Port GPIOA
 #define SOUND_Pin GPIO_PIN_5
 #define SOUND_GPIO_Port GPIOC
+#define BT_FORCE_ACT_Pin GPIO_PIN_0
+#define BT_FORCE_ACT_GPIO_Port GPIOB
+#define BT_STOP_Pin GPIO_PIN_2
+#define BT_STOP_GPIO_Port GPIOB
+#define BT_FIRE_Pin GPIO_PIN_10
+#define BT_FIRE_GPIO_Port GPIOB
 #define ST2_MK_Pin GPIO_PIN_14
 #define ST2_MK_GPIO_Port GPIOB
 #define ST1_MK_Pin GPIO_PIN_15
@@ -85,10 +94,10 @@ void LedInit();
 #define ESP32_EN_GPIO_Port GPIOA
 #define ESP32_BOOT_Pin GPIO_PIN_12
 #define ESP32_BOOT_GPIO_Port GPIOC
-#define DISP_RES_Pin GPIO_PIN_2
-#define DISP_RES_GPIO_Port GPIOD
-#define DISP_CS_Pin GPIO_PIN_4
-#define DISP_CS_GPIO_Port GPIOB
+#define DISP_CS_Pin GPIO_PIN_2
+#define DISP_CS_GPIO_Port GPIOD
+#define DISP_RES_Pin GPIO_PIN_4
+#define DISP_RES_GPIO_Port GPIOB
 #define DISP_D_C_Pin GPIO_PIN_8
 #define DISP_D_C_GPIO_Port GPIOB
 
@@ -97,6 +106,7 @@ void LedInit();
 #define LED_TOGGLE HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 
 extern uint8_t setup_change;
+extern RTC_HandleTypeDef hrtc;
 
 #define NUM_ADC_CHANNEL 5
 #define FILTERSIZE 128

@@ -27,6 +27,7 @@ void Display_Reset(void);
 // TouchGFX integration functions
 void Display_UpdateRect(uint8_t *framebuffer, uint16_t x, uint16_t y, uint16_t width, uint16_t height);
 
+void Display_Enable(uint8_t en);
 
 #ifdef __cplusplus
 }

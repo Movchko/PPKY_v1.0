@@ -14,6 +14,11 @@ void ScreenMenuView::setupScreen()
         scrollWheel1.itemChanged(i);
         scrollWheel1ListItems[i].updateText(i);
     }
+    for (int i = 0; i < scrollWheel1_1ListItems.getNumberOfDrawables(); i++)
+    {
+        scrollWheel1_1.itemChanged(i);
+        //scrollWheel1_1ListItems[i].updateText(i);
+    }
 #endif
 }
 
@@ -25,8 +30,21 @@ void ScreenMenuView::tearDownScreen()
 void ScreenMenuView::SetupMenuChangePos(uint8_t val) {
 
 
-	if (val >= 0 && val < scrollWheel1.getNumberOfItems())
-		scrollWheel1.animateToItem(val, -1);
+	//if (val >= 0 && val < scrollWheel1.getNumberOfItems())
+	//	scrollWheel1.animateToItem(val, -1);
+
+	uint8_t i = 0;
+
+	if(val >= 3)
+		i = 1;
+
+
+    scrollWheel1_1.itemChanged(i);
+    scrollWheel1_1ListItems[i].updateText(i, val+ 10, 39, 16, 3, 2, 26);
+
+
+	scrollWheel1_1.animateToItem(i, -1);
+
 
 	//scrollWheel1.invalidate();
 	//scrollWheel1.invalidateContent();
@@ -58,6 +76,11 @@ void ScreenMenuView::SetupMenuChangePos(uint8_t val) {
 }
 
 void ScreenMenuView::scrollWheel1UpdateItem(mainmenu& item, int16_t itemIndex)
+{
+    item.updateText(itemIndex);
+}
+
+void ScreenMenuView::scrollWheel1_1UpdateItem(mainmenu& item, int16_t itemIndex)
 {
     item.updateText(itemIndex);
 }

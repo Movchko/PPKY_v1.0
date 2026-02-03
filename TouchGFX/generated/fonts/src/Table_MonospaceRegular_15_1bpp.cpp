@@ -4,18 +4,19 @@
 
 FONT_TABLE_LOCATION_FLASH_PRAGMA
 KEEP extern const touchgfx::GlyphNode glyphs_MonospaceRegular_15_1bpp[] FONT_TABLE_LOCATION_FLASH_ATTRIBUTE = {
-    {     0, 0x0020,   0,   0,   0,   1,   9,   0,   0, 0x00 }, // space
-    {     0, 0x0030,   5,   9,   9,   2,   9,   0,   0, 0x00 }, // zero
-    {     6, 0x0038,   6,   9,   9,   2,   9,   0,   0, 0x00 }, // eight
-    {    13, 0x003A,   2,   7,   7,   3,   9,   0,   0, 0x00 }, // colon
-    {    15, 0x003F,   6,   9,   9,   0,   9,   0,   0, 0x00 }, // question
-    {    22, 0x0412,   7,   9,   9,   1,   9,   0,   0, 0x00 }, // afii10019
-    {    30, 0x0415,   6,   9,   9,   1,   8,   0,   0, 0x00 }, // afii10022
-    {    37, 0x0418,   8,   9,   9,   0,   9,   0,   0, 0x00 }, // afii10026
-    {    46, 0x041C,  10,   9,   9,   0,  10,   0,   0, 0x00 }, // afii10030
-    {    58, 0x041F,   8,   9,   9,   1,  10,   0,   0, 0x00 }, // afii10033
-    {    67, 0x0420,   8,   9,   9,   1,   9,   0,   0, 0x00 }, // afii10034
-    {    76, 0x0422,   9,   9,   9,   0,   9,   0,   0, 0x00 }  // afii10036
+    {     0, 0x002E,   2,   2,   2,   2,   9,   0,   0, 0x00 }, // period
+    {     1, 0x0030,   5,   9,   9,   2,   9,   0,   0, 0x00 }, // zero
+    {     7, 0x0031,   5,   9,   9,   2,   9,   0,   0, 0x00 }, // one
+    {    13, 0x0032,   5,   9,   9,   2,   9,   0,   0, 0x00 }, // two
+    {    19, 0x0033,   6,   9,   9,   1,   9,   0,   0, 0x00 }, // three
+    {    26, 0x0034,   6,   9,   9,   2,   9,   0,   0, 0x00 }, // four
+    {    33, 0x0035,   7,   9,   9,   1,   9,   0,   0, 0x00 }, // five
+    {    41, 0x0036,   5,   9,   9,   2,   9,   0,   0, 0x00 }, // six
+    {    47, 0x0037,   6,   9,   9,   2,   9,   0,   0, 0x00 }, // seven
+    {    54, 0x0038,   6,   9,   9,   2,   9,   0,   0, 0x00 }, // eight
+    {    61, 0x0039,   5,   9,   9,   1,   9,   0,   0, 0x00 }, // nine
+    {    67, 0x003A,   2,   7,   7,   3,   9,   0,   0, 0x00 }, // colon
+    {    69, 0x003F,   6,   9,   9,   0,   9,   0,   0, 0x00 }  // question
 };
 
 // MonospaceRegular_15_1bpp
@@ -33,6 +34,6 @@ touchgfx::GeneratedFont& getFont_MonospaceRegular_15_1bpp();
 
 touchgfx::GeneratedFont& getFont_MonospaceRegular_15_1bpp()
 {
-    static touchgfx::GeneratedFont MonospaceRegular_15_1bpp(glyphs_MonospaceRegular_15_1bpp, 12, 15, 15, 0, 0, 1, 0, 0, 0, unicodes_MonospaceRegular_15_1bpp, kerning_MonospaceRegular_15_1bpp, 63, 0, 0, 0);
+    static touchgfx::GeneratedFont MonospaceRegular_15_1bpp(glyphs_MonospaceRegular_15_1bpp, 13, 15, 15, 0, 0, 1, 0, 0, 0, unicodes_MonospaceRegular_15_1bpp, kerning_MonospaceRegular_15_1bpp, 63, 0, 0, 0);
     return MonospaceRegular_15_1bpp;
 }
