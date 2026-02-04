@@ -17,11 +17,11 @@ mainscreenViewBase::mainscreenViewBase()
     customContainerTopBar1.setXY(0, 0);
     add(customContainerTopBar1);
 
-    customContainerTopBar_1_11.setXY(0, 15);
-    add(customContainerTopBar_1_11);
-
     customContainerScrollTime1.setXY(0, 0);
     add(customContainerScrollTime1);
+
+    CustomContainerSrollText.setXY(0, 46);
+    add(CustomContainerSrollText);
 }
 
 mainscreenViewBase::~mainscreenViewBase()
@@ -32,6 +32,6 @@ mainscreenViewBase::~mainscreenViewBase()
 void mainscreenViewBase::setupScreen()
 {
     customContainerTopBar1.initialize();
-    customContainerTopBar_1_11.initialize();
     customContainerScrollTime1.initialize();
+    CustomContainerSrollText.initialize();
 }

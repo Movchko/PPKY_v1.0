@@ -14,6 +14,7 @@ CustomContainerScrollTimeBase::CustomContainerScrollTimeBase() :
     scrollableContainer1.enableVerticalScroll(false);
     scrollableContainer1.setScrollbarsColor(touchgfx::Color::getColorFromRGB(0, 0, 0));
     scrollableContainer1.setScrollbarsAlpha(255);
+    scrollableContainer1.setScrollbarsVisible(false);
     scrollWheel1.setPosition(0, 0, 72, 15);
     scrollWheel1.setHorizontal(false);
     scrollWheel1.setCircular(true);
@@ -55,13 +56,12 @@ void CustomContainerScrollTimeBase::handleTickEvent()
         //Interaction1
         //When every N tick execute C++ code
         //Execute C++ code
-    	uint8_t current = scrollWheel1.getSelectedItem();
-    	current ^= 1;
-    	scrollWheel1.animateToItem(current, -1);
-
         /*
         wrire code here
         */
+            	uint8_t current = scrollWheel1.getSelectedItem();
+            	current ^= 1;
+            	scrollWheel1.animateToItem(current, 0);
         frameCountInteraction1Interval = 0;
     }
 }

@@ -2,6 +2,9 @@
 #include "app.hpp"
 #include "button.h"
 #include "beeper.h"
+#include "device_config.h"
+
+struct PPKYCfg PPKYConfig;
 
 PControl *Power[2];
 
@@ -15,6 +18,8 @@ GPIO_TypeDef   *POWER_OUT_PORT[2] = {KEY_1_GPIO_Port, KEY_2_GPIO_Port};
 uint16_t  		POWER_OUT_PIN[2] = {KEY_1_Pin, KEY_2_Pin};
 
 bool isAppInit = 0;
+
+extern SPIF_HandleTypeDef hFlash;
 
 uint8_t PControlGetSTCB(uint8_t ch) {
 	uint8_t st = 0;
@@ -33,6 +38,8 @@ void PControlSetOutCB(uint8_t ch, uint8_t out) {
 }
 
 void AppInit() {
+
+	SPIF_ReadAddress(&hFlash, 0, (uint8_t *)&PPKYConfig, sizeof(PPKYConfig)); // чтение конфигурации
 
 	Button_Init();
 	Beeper_Init();
@@ -83,4 +90,31 @@ void AppTimer10ms() {
 	Button_Process();
 	Beeper_Process();
 }
+
+void FlashWriteData(uint8_t *ConfigPtr, uint16_t ConfigSize, uint8_t *MConfigPtr, uint16_t MConfigSize) {
+	SPIF_EraseSector(&hFlash, 0);
+	SPIF_WriteAddress(&hFlash, 0, MConfigPtr, MConfigSize);
+	SPIF_WriteAddress(&hFlash, MConfigSize, ConfigPtr, ConfigSize);
+}
+
+void SetApp(uint32_t dst_adr, uint32_t src_adr, uint32_t sz) {
+
+}
+/*
+uint32_t GetID() {
+	uint32_t idPart1 = STM32_UUID[0];
+	uint32_t idPart2 = STM32_UUID[1];
+	uint32_t idPart3 = STM32_UUID[2];
+	return (idPart1 ^ idPart2 ^ idPart3);
+}
+*/
+void ResetMCU() {
+	NVIC_SystemReset();
+}
+
+void ResetMemory() {
+	SPIF_EraseSector(&hFlash, 0);
+}
+
+
 

@@ -125,13 +125,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-
 	//Каждую 1 мс
 	if(htim->Instance == TIM1)
 		is1ms = 1;
 	if(htim->Instance == TIM2)
 		is10ms = 1;
-
 }
 
 void HAL_FDCAN_RxFifoCallback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo) {
@@ -141,8 +139,6 @@ void HAL_FDCAN_RxFifoCallback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo) {
 		if(HAL_FDCAN_GetRxMessage(hfdcan, RxFifo, &msg, Data) != HAL_OK)
 			break;
 		ProtocolParse(msg.Identifier, Data);
-
-
 
 		 //LED_TOGGLE;
 	}

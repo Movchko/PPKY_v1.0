@@ -6,6 +6,12 @@
   <Texts>
     <TextGroup Id="Group1" />
     <TextGroup Id="Unsorted">
+      <Text Id="ru" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">йцукенгшщзхъфывапролджэячсмитьбю ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ</Translation>
+      </Text>
+      <Text Id="alphabet" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">QWERTYUIOPASDFGHJKLZXCVBNM qwertyuiopasdfghjklzxcvbnm</Translation>
+      </Text>
       <Text Id="__SingleUse_D1VE" Alignment="Left" TypographyId="Small">
         <Translation Language="GB">&lt;value&gt;</Translation>
       </Text>
@@ -16,7 +22,7 @@
         <Translation Language="GB">01:01:01&#10;&#10;</Translation>
       </Text>
       <Text Id="__SingleUse_YQF0" Alignment="Left" TypographyId="Small">
-        <Translation Language="GB">12345678901234</Translation>
+        <Translation Language="GB">12345678901234567890123456789</Translation>
       </Text>
       <Text Id="__SingleUse_XB5O" Alignment="Left" TypographyId="Small">
         <Translation Language="GB">12345678901234</Translation>

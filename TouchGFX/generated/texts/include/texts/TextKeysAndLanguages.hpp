@@ -12,6 +12,8 @@ enum LANGUAGES
 
 enum TEXTS
 {
+    T_RU,
+    T_ALPHABET,
     T___SINGLEUSE_D1VE,
     T_DATA,
     T_TIME,

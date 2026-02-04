@@ -36,12 +36,12 @@
     <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerTopBarBase.cpp"/>
     <ClCompile Include="..\..\gui\src\containers\CustomContainerTopBar_1.cpp"/>
     <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerTopBar_1Base.cpp"/>
-    <ClCompile Include="..\..\gui\src\containers\CustomContainerTopBar_1_1.cpp"/>
-    <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerTopBar_1_1Base.cpp"/>
     <ClCompile Include="..\..\gui\src\containers\CustomContainerTime.cpp"/>
     <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerTimeBase.cpp"/>
     <ClCompile Include="..\..\gui\src\containers\CustomContainerScrollTime.cpp"/>
     <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerScrollTimeBase.cpp"/>
+    <ClCompile Include="..\..\gui\src\containers\CustomContainerSollText.cpp"/>
+    <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerSollTextBase.cpp"/>
   </ItemGroup>
   <ItemGroup>
     <None Include="$(ApplicationRoot)\assets\texts\texts.xml"/>
@@ -207,12 +207,12 @@
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerTopBarBase.hpp"/>
     <ClInclude Include="..\..\gui\include\gui\containers\CustomContainerTopBar_1.hpp"/>
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerTopBar_1Base.hpp"/>
-    <ClInclude Include="..\..\gui\include\gui\containers\CustomContainerTopBar_1_1.hpp"/>
-    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerTopBar_1_1Base.hpp"/>
     <ClInclude Include="..\..\gui\include\gui\containers\CustomContainerTime.hpp"/>
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerTimeBase.hpp"/>
     <ClInclude Include="..\..\gui\include\gui\containers\CustomContainerScrollTime.hpp"/>
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerScrollTimeBase.hpp"/>
+    <ClInclude Include="..\..\gui\include\gui\containers\CustomContainerSollText.hpp"/>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerSollTextBase.hpp"/>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="$(ApplicationRoot)\generated\simulator\touchgfx.rc"/>

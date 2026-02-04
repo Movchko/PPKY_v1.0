@@ -297,12 +297,6 @@
     <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerTopBar_1Base.cpp">
       <Filter>Source Files\generated\gui_generated\containers</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\gui\src\containers\CustomContainerTopBar_1_1.cpp">
-      <Filter>Source Files\gui\containers</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerTopBar_1_1Base.cpp">
-      <Filter>Source Files\generated\gui_generated\containers</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\gui\src\containers\CustomContainerTime.cpp">
       <Filter>Source Files\gui\containers</Filter>
     </ClCompile>
@@ -313,6 +307,12 @@
       <Filter>Source Files\gui\containers</Filter>
     </ClCompile>
     <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerScrollTimeBase.cpp">
+      <Filter>Source Files\generated\gui_generated\containers</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\containers\CustomContainerSollText.cpp">
+      <Filter>Source Files\gui\containers</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerSollTextBase.cpp">
       <Filter>Source Files\generated\gui_generated\containers</Filter>
     </ClCompile>
   </ItemGroup>
@@ -802,12 +802,6 @@
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerTopBar_1Base.hpp">
       <Filter>Header Files\generated\gui_generated\containers</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\gui\include\gui\containers\CustomContainerTopBar_1_1.hpp">
-      <Filter>Header Files\gui\containers</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerTopBar_1_1Base.hpp">
-      <Filter>Header Files\generated\gui_generated\containers</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\gui\include\gui\containers\CustomContainerTime.hpp">
       <Filter>Header Files\gui\containers</Filter>
     </ClInclude>
@@ -818,6 +812,12 @@
       <Filter>Header Files\gui\containers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerScrollTimeBase.hpp">
+      <Filter>Header Files\generated\gui_generated\containers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\containers\CustomContainerSollText.hpp">
+      <Filter>Header Files\gui\containers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerSollTextBase.hpp">
       <Filter>Header Files\generated\gui_generated\containers</Filter>
     </ClInclude>
   </ItemGroup>

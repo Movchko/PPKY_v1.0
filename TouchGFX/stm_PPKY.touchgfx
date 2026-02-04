@@ -19,18 +19,18 @@
           },
           {
             "Type": "CustomContainerInstance",
-            "Name": "customContainerTopBar_1_11",
-            "Y": 15,
-            "Width": 128,
-            "Height": 50,
-            "CustomContainerDefinitionName": "CustomContainerTopBar_1_1"
-          },
-          {
-            "Type": "CustomContainerInstance",
             "Name": "customContainerScrollTime1",
             "Width": 72,
             "Height": 15,
             "CustomContainerDefinitionName": "CustomContainerScrollTime"
+          },
+          {
+            "Type": "CustomContainerInstance",
+            "Name": "CustomContainerSrollText",
+            "Y": 46,
+            "Width": 128,
+            "Height": 18,
+            "CustomContainerDefinitionName": "CustomContainerSollText"
           }
         ],
         "Interactions": []
@@ -221,17 +221,17 @@
         "Interactions": []
       },
       {
-        "Name": "CustomContainerTopBar_1_1",
-        "Y": 14,
+        "Name": "CustomContainerSollText",
+        "Y": 46,
         "Width": 128,
-        "Height": 50,
+        "Height": 18,
         "Components": [
           {
             "Type": "TextArea",
             "Name": "textAreatime",
-            "Y": 3,
-            "Width": 126,
-            "Height": 15,
+            "X": 1,
+            "Width": 427,
+            "Height": 16,
             "TextId": "__SingleUse_YQF0",
             "TextRotation": "0",
             "Color": {
@@ -239,7 +239,8 @@
               "Green": 255,
               "Blue": 255
             },
-            "AutoSize": true
+            "Draggable": true,
+            "Moveable": true
           }
         ],
         "Interactions": []
@@ -278,7 +279,6 @@
             "Width": 79,
             "Height": 15,
             "HorizontalScrollEnabled": true,
-            "ScrollbarsVisibleOnPressed": true,
             "ScrollbarsAlpha": 255,
             "Components": [
               {
@@ -303,11 +303,11 @@
             "InteractionName": "Interaction1",
             "Trigger": {
               "Type": "TriggerOnEveryTick",
-              "TickCount": 400
+              "TickCount": 800
             },
             "Action": {
               "Type": "ActionExecuteCode",
-              "Code": "/*\r\nwrire code here\r\n*/\r\n    \tuint8_t current = scrollWheel1.getSelectedItem();\r\n    \tcurrent ^= 1;\r\n    \tscrollWheel1.animateToItem(current, -1);"
+              "Code": "/*\r\nwrire code here\r\n*/\r\n    \tuint8_t current = scrollWheel1.getSelectedItem();\r\n    \tcurrent ^= 1;\r\n    \tscrollWheel1.animateToItem(current, 0);"
             }
           }
         ],

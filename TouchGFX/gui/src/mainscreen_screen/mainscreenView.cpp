@@ -8,6 +8,8 @@ mainscreenView::mainscreenView()
 void mainscreenView::setupScreen()
 {
     mainscreenViewBase::setupScreen();
+
+    CustomContainerSrollText.setText("Наша бегущая строка не больше 64 символов 123456789123456789123456734634673475478548ш");
 }
 
 void mainscreenView::tearDownScreen()
@@ -22,10 +24,6 @@ void mainscreenView::setDateTime(uint8_t hour, uint8_t min, uint8_t sec, uint8_t
 
 #ifndef SIMULATOR
 void mainscreenView::SetTime(uint32_t time) {
-
-	/*
-	 * TODO: при наличии RTC распаковать time или получить время из модели и вызвать setDateTime(...)
-	 */
 
 };
 #endif
