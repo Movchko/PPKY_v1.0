@@ -18,9 +18,30 @@ public:
         modelListener = listener;
     }
 
+    /** Текущий слушатель (привязанный презентер активного экрана) */
+    ModelListener* getModelListener() { return modelListener; }
+
     void tick();
+
+    /** Состояние параметра «звук включен/выключен» в модели */
+    void setSoundOn(bool on) { soundOn = on; }
+    bool getSoundOn() const { return soundOn; }
+
+#ifndef SIMULATOR
+    /** Колбэк: приложение узнаёт, что звук включён/выключен (сохранение — в приложении) */
+    typedef void (*SoundToggledCallback)(bool soundOn);
+    void setSoundToggledCallback(SoundToggledCallback cb) { soundToggledCallback = cb; }
+    void notifySoundToggled(bool soundOn);
+#endif
+
 protected:
     ModelListener* modelListener;
+
+    bool soundOn;
+
+#ifndef SIMULATOR
+    SoundToggledCallback soundToggledCallback;
+#endif
 };
 
 #endif // MODEL_HPP

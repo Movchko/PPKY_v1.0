@@ -18,6 +18,8 @@ public:
     virtual void SetupMenuChangePos(unsigned char val) {};
     virtual void SetTime(long val) {};
     virtual void setDateTime(uint8_t hour, uint8_t min, uint8_t sec, uint8_t day, uint8_t month, uint8_t year) {}
+    /** Кнопка нажата: but = BUT_ENTER/BUT_ESC/BUT_UP/BUT_DOWN/..., state = ButtonStatePress */
+    virtual void handleButton(uint8_t but, uint8_t state) {}
 #endif
 protected:
     Model* model;

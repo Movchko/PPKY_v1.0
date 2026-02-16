@@ -5,9 +5,11 @@
 #include "stm32h5xx_hal_rtc.h"
 #endif
 
-Model::Model() : modelListener(0)
+Model::Model() : modelListener(0), soundOn(true)
 {
-
+#ifndef SIMULATOR
+    soundToggledCallback = 0;
+#endif
 }
 unsigned char pos = 0;
 void Model::tick()
@@ -42,3 +44,11 @@ void Model::tick()
 	}
 #endif
 }
+
+#ifndef SIMULATOR
+void Model::notifySoundToggled(bool soundOn)
+{
+    if (soundToggledCallback)
+        soundToggledCallback(soundOn);
+}
+#endif

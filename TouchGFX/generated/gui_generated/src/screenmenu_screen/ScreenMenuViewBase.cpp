@@ -3,6 +3,7 @@
 /*********************************************************************************/
 #include <gui_generated/screenmenu_screen/ScreenMenuViewBase.hpp>
 #include <touchgfx/Color.hpp>
+#include <texts/TextKeysAndLanguages.hpp>
 
 ScreenMenuViewBase::ScreenMenuViewBase() :
     updateItemCallback(this, &ScreenMenuViewBase::updateItemCallbackHandler)
@@ -11,12 +12,15 @@ ScreenMenuViewBase::ScreenMenuViewBase() :
     __background.setColor(touchgfx::Color::getColorFromRGB(0, 0, 0));
     add(__background);
 
-    customContainerTopBar_11_1.setXY(0, 49);
-    add(customContainerTopBar_11_1);
-
     box1.setPosition(0, 0, 128, 64);
     box1.setColor(touchgfx::Color::getColorFromRGB(0, 0, 0));
     add(box1);
+
+    textAreatime_2.setPosition(0, 49, 36, 15);
+    textAreatime_2.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
+    textAreatime_2.setLinespacing(0);
+    textAreatime_2.setTypedText(touchgfx::TypedText(T___SINGLEUSE_WSFU));
+    add(textAreatime_2);
 
     scrollableContainer1.setPosition(0, 15, 128, 30);
     scrollableContainer1.enableVerticalScroll(false);
@@ -41,9 +45,6 @@ ScreenMenuViewBase::ScreenMenuViewBase() :
 
     customContainerTopBar1.setXY(0, 0);
     add(customContainerTopBar1);
-
-    customContainerTopBar_11.setXY(0, 49);
-    add(customContainerTopBar_11);
 
     scrollableContainer1_1.setPosition(0, 0, 79, 15);
     scrollableContainer1_1.enableVerticalScroll(false);
@@ -73,14 +74,12 @@ ScreenMenuViewBase::~ScreenMenuViewBase()
 
 void ScreenMenuViewBase::setupScreen()
 {
-    customContainerTopBar_11_1.initialize();
     scrollWheel1.initialize();
     for (int i = 0; i < scrollWheel1ListItems.getNumberOfDrawables(); i++)
     {
         scrollWheel1ListItems[i].initialize();
     }
     customContainerTopBar1.initialize();
-    customContainerTopBar_11.initialize();
     scrollWheel1_1.initialize();
     for (int i = 0; i < scrollWheel1_1ListItems.getNumberOfDrawables(); i++)
     {

@@ -25,6 +25,7 @@
 #include "Display/display.h"
 #include "stdlib.h"
 #include "app.hpp"
+#include "led.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -359,7 +360,7 @@ int main(void)
   uint32_t gfx_tick = HAL_GetTick();
   uint32_t led_tick = HAL_GetTick();
 
-  LedInit();
+  Led_Init();
 
   AppInit();
 
@@ -368,8 +369,8 @@ int main(void)
 
 
   isMainInit = 1;
-  uint8_t led_power = 100;
-  LedSetAll(led_power);
+  //uint8_t led_power = 100;
+  //LedSetAll(led_power);
 
 
 
@@ -1150,7 +1151,7 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 1000;
+  htim2.Init.Prescaler = 100;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim2.Init.Period = 24799;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;

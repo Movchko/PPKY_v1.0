@@ -27,12 +27,19 @@ public:
 
     virtual ~ScreenMenuPresenter() {}
 #ifndef SIMULATOR
-    virtual void SetupMenuChangePos(uint8_t val);
+    virtual void SetupMenuChangePos(unsigned char val);
+    virtual void handleButton(uint8_t but, uint8_t state) override;
 #endif
 private:
     ScreenMenuPresenter();
 
     ScreenMenuView& view;
+
+#ifndef SIMULATOR
+    static const int MENU_ITEMS = 6;
+    bool soundOn;  // состояние «ЗВУК» (пункт 1)
+    int16_t currentIndex;
+#endif
 };
 
 #endif // SCREENMENUPRESENTER_HPP

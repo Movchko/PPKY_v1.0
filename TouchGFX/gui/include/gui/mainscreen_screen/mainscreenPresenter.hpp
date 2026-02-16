@@ -32,6 +32,7 @@ public:
 
 #ifndef SIMULATOR
     virtual void SetTime(uint32_t time);
+    virtual void handleButton(uint8_t but, uint8_t state) override;
 #endif
 private:
     mainscreenPresenter();

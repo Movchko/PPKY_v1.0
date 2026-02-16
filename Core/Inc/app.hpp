@@ -10,7 +10,8 @@
 
 #include "main.h"
 
-
+#define FLASH_CFG_NUM_SECTOR 10
+#define FLASH_CFG_START_SECTOR 0
 
 
 

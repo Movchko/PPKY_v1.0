@@ -51,7 +51,9 @@ void Button_Process() {
 					Beeper_ShortBeep();
 				else if((i == BUT_ENTER))
 					Beeper_DoubleShortBeep();
-				else
+				else if(i == BUT_FIRE) {
+					Led_TestToogle();
+				} else
 					Beeper_LongBeep();
 
 			}

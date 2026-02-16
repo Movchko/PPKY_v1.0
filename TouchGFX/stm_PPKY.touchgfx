@@ -39,18 +39,24 @@
         "Name": "ScreenMenu",
         "Components": [
           {
-            "Type": "CustomContainerInstance",
-            "Name": "customContainerTopBar_11_1",
-            "Y": 49,
-            "Width": 128,
-            "Height": 15,
-            "CustomContainerDefinitionName": "CustomContainerTopBar_1"
-          },
-          {
             "Type": "Box",
             "Name": "box1",
             "Width": 128,
             "Height": 64
+          },
+          {
+            "Type": "TextArea",
+            "Name": "textAreatime_2",
+            "Y": 49,
+            "Width": 36,
+            "Height": 15,
+            "TextId": "__SingleUse_WSFU",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            }
           },
           {
             "Type": "ScrollableContainer",
@@ -84,14 +90,6 @@
             "Width": 128,
             "Height": 15,
             "CustomContainerDefinitionName": "CustomContainerTopBar"
-          },
-          {
-            "Type": "CustomContainerInstance",
-            "Name": "customContainerTopBar_11",
-            "Y": 49,
-            "Width": 128,
-            "Height": 15,
-            "CustomContainerDefinitionName": "CustomContainerTopBar_1"
           },
           {
             "Type": "ScrollableContainer",
@@ -255,7 +253,7 @@
             "Type": "TextArea",
             "Name": "textAreatime",
             "Width": 126,
-            "Height": 15,
+            "Height": 18,
             "TextId": "__SingleUse_XB5O",
             "TextRotation": "0",
             "Color": {

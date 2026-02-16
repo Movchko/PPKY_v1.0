@@ -13,12 +13,23 @@ public:
     FrontendApplication(Model& m, FrontendHeap& heap);
     virtual ~FrontendApplication() { }
 
-    virtual void handleTickEvent()
-    {
-        model.tick();
-        FrontendApplicationBase::handleTickEvent();
-    }
+    virtual void handleTickEvent() override;
+
+    /** Переход на экран меню */
+    void gotoScreenMenuScreenNoTransition();
+
+    /** Доступ к модели (для колбэков настроек и т.д.) */
+    Model& getModel() { return model; }
+
 private:
+    void gotoScreenMenuScreenNoTransitionImpl();
+
+    touchgfx::Callback<FrontendApplication> screenMenuTransitionCallback;
+
+#ifndef SIMULATOR
+    static const int NUM_BUTTONS = 7;
+    uint8_t prevButtonStates[NUM_BUTTONS];
+#endif
 };
 
 #endif // FRONTENDAPPLICATION_HPP

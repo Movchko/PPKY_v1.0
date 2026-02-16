@@ -25,6 +25,8 @@ static BeeperState_t beeper_state = BEEPER_STATE_IDLE;
 static uint16_t beeper_counter = 0;
 static uint8_t beep_phase = 0;  // Фаза для двойного пищания (0 - первое, 1 - пауза, 2 - второе)
 
+static uint8_t beep_sound = 1;
+
 /***********************************************************************************************************/
 /* Внутренние функции */
 /***********************************************************************************************************/
@@ -34,6 +36,9 @@ static uint8_t beep_phase = 0;  // Фаза для двойного пищани
  */
 static void Beeper_On(void)
 {
+	if(beep_sound == 0)
+		return;
+
 	HAL_GPIO_WritePin(SOUND_GPIO_Port, SOUND_Pin, GPIO_PIN_SET);
 }
 
@@ -137,6 +142,8 @@ void Beeper_ContinuousToggle(void)
  */
 void Beeper_Process(void)
 {
+
+
 	switch (beeper_state)
 	{
 		case BEEPER_STATE_IDLE:
@@ -214,4 +221,8 @@ void Beeper_Process(void)
 			Beeper_Off();
 			break;
 	}
+}
+
+void Beeper_SoundOnOff(bool soundOn) {
+	beep_sound = soundOn;
 }

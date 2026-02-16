@@ -1,5 +1,8 @@
 #include <gui/mainscreen_screen/mainscreenView.hpp>
 #include <gui/mainscreen_screen/mainscreenPresenter.hpp>
+#include <gui/common/FrontendApplication.hpp>
+#include <touchgfx/Application.hpp>
+#include "button.h"
 
 mainscreenPresenter::mainscreenPresenter(mainscreenView& v)
     : view(v)
@@ -25,5 +28,14 @@ void mainscreenPresenter::setDateTime(uint8_t hour, uint8_t min, uint8_t sec, ui
 #ifndef SIMULATOR
 void mainscreenPresenter::SetTime(uint32_t time) {
 	view.SetTime(time);
-};
+}
+
+void mainscreenPresenter::handleButton(uint8_t but, uint8_t state)
+{
+    if (but == BUT_ENTER && state == (uint8_t)ButtonStatePress)
+    {
+        FrontendApplication* app = static_cast<FrontendApplication*>(touchgfx::Application::getInstance());
+        app->gotoScreenMenuScreenNoTransition();
+    }
+}
 #endif

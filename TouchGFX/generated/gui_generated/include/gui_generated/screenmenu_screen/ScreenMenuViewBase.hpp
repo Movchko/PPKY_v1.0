@@ -8,7 +8,7 @@
 #include <mvp/View.hpp>
 #include <gui/screenmenu_screen/ScreenMenuPresenter.hpp>
 #include <touchgfx/widgets/Box.hpp>
-#include <gui/containers/CustomContainerTopBar_1.hpp>
+#include <touchgfx/widgets/TextArea.hpp>
 #include <touchgfx/containers/ScrollableContainer.hpp>
 #include <touchgfx/containers/scrollers/ScrollWheel.hpp>
 #include <gui/containers/mainmenu.hpp>
@@ -50,13 +50,12 @@ protected:
      * Member Declarations
      */
     touchgfx::Box __background;
-    CustomContainerTopBar_1 customContainerTopBar_11_1;
     touchgfx::Box box1;
+    touchgfx::TextArea textAreatime_2;
     touchgfx::ScrollableContainer scrollableContainer1;
     touchgfx::ScrollWheel scrollWheel1;
     touchgfx::DrawableListItems<mainmenu, 2> scrollWheel1ListItems;
     CustomContainerTopBar customContainerTopBar1;
-    CustomContainerTopBar_1 customContainerTopBar_11;
     touchgfx::ScrollableContainer scrollableContainer1_1;
     touchgfx::ScrollWheel scrollWheel1_1;
     touchgfx::DrawableListItems<CustomContainerTime, 2> scrollWheel1_1ListItems;

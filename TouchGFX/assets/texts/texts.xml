@@ -6,6 +6,15 @@
   <Texts>
     <TextGroup Id="Group1" />
     <TextGroup Id="Unsorted">
+      <Text Id="__SingleUse_WSFU" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">....</Translation>
+      </Text>
+      <Text Id="turnon" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">Вкл</Translation>
+      </Text>
+      <Text Id="turnoff" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">Откл</Translation>
+      </Text>
       <Text Id="ru" Alignment="Left" TypographyId="Small">
         <Translation Language="GB">йцукенгшщзхъфывапролджэячсмитьбю ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ</Translation>
       </Text>

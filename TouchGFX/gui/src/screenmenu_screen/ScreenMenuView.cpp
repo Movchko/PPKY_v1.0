@@ -1,8 +1,34 @@
 #include <gui/screenmenu_screen/ScreenMenuView.hpp>
+#include <texts/TextKeysAndLanguages.hpp>
+#include <touchgfx/TypedText.hpp>
 #include <cstdio>
+
 ScreenMenuView::ScreenMenuView()
 {
 
+}
+
+int16_t ScreenMenuView::getSelectedMenuIndex() const
+{
+    return (int16_t)scrollWheel1.getSelectedItem();
+}
+
+void ScreenMenuView::setMenuIndex(int16_t index)
+{
+    scrollWheel1.animateToItem(index, 10);
+}
+
+void ScreenMenuView::updateParameterLine(int16_t selectedIndex, bool soundOn)
+{
+    if (selectedIndex == 1) // ЗВУК
+    {
+        textAreatime_2.setTypedText(touchgfx::TypedText(soundOn ? T_TURNON : T_TURNOFF));
+    }
+    else
+    {
+        textAreatime_2.setTypedText(touchgfx::TypedText(T___SINGLEUSE_WSFU)); // placeholder/пусто
+    }
+    textAreatime_2.invalidate();
 }
 
 void ScreenMenuView::setupScreen()
@@ -40,10 +66,10 @@ void ScreenMenuView::SetupMenuChangePos(uint8_t val) {
 
 
     scrollWheel1_1.itemChanged(i);
-    scrollWheel1_1ListItems[i].updateText(i, val+ 10, 39, 16, 3, 2, 26);
+   // scrollWheel1_1ListItems[i].updateText(i, val+ 10, 39, 16, 3, 2, 26);
 
 
-	scrollWheel1_1.animateToItem(i, -1);
+	//scrollWheel1_1.animateToItem(i, -1);
 
 
 	//scrollWheel1.invalidate();

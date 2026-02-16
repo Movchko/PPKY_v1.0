@@ -11,6 +11,16 @@ public:
     virtual ~ScreenMenuView() {}
     virtual void setupScreen();
     virtual void tearDownScreen();
+
+    /** Текущий выбранный пункт меню (0..5: РЕЖИМ, ЗВУК, ТЕСТ, СВЯЗЬ, ЖУРНАЛ, НАСТРОЙКИ) */
+    int16_t getSelectedMenuIndex() const;
+
+    /** Установить (прокрутить к) указанному пункту меню */
+    void setMenuIndex(int16_t index);
+
+    /** Обновить нижнюю строку (textAreatime_2): для пункта 1 (ЗВУК) — turnon/turnoff, для остальных — пусто/placeholder */
+    void updateParameterLine(int16_t selectedIndex, bool soundOn);
+
 #ifndef SIMULATOR
     virtual void SetupMenuChangePos(uint8_t val);
     virtual void scrollWheel1UpdateItem(mainmenu& item, int16_t itemIndex);

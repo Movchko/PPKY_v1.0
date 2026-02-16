@@ -12,6 +12,9 @@ enum LANGUAGES
 
 enum TEXTS
 {
+    T___SINGLEUSE_WSFU,
+    T_TURNON,
+    T_TURNOFF,
     T_RU,
     T_ALPHABET,
     T___SINGLEUSE_D1VE,
