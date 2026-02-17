@@ -10,7 +10,15 @@
 
 #include "main.h"
 
-#define FLASH_CFG_NUM_SECTOR 10
+/*
+ * 6 кб имена зон
+ *
+ * 256 байт конфиг одного вирт устройства
+ * 32 вирт устрйоства на 1 мку 8192 байт
+ * 32мку на 1 линии
+ */
+
+#define FLASH_CFG_NUM_SECTOR 256// 1мб //SPIF_SECTOR_SIZE 0x1000 (4096)
 #define FLASH_CFG_START_SECTOR 0
 
 

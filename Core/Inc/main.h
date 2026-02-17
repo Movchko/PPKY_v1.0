@@ -33,6 +33,7 @@ extern "C" {
 /* USER CODE BEGIN Includes */
 #include "spif.h"
 #include "backend.h"
+#include "can_bus.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/

@@ -8,7 +8,7 @@
 #include "gui/common/FrontendHeap.hpp"
 
 struct PPKYCfg PPKYConfig;       // локальная (рабочая) конфигурация
-static struct PPKYCfg SavedPPKYConfig; // копия сохранённой конфигурации из Flash
+struct PPKYCfg SavedPPKYConfig; // копия сохранённой конфигурации из Flash
 
 
 

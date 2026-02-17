@@ -26,6 +26,8 @@
 #include "stdlib.h"
 #include "app.hpp"
 #include "led.h"
+#include "can_bus.h"
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -133,60 +135,25 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 		is10ms = 1;
 }
 
-void HAL_FDCAN_RxFifoCallback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo) {
+/* Читает все сообщения из FIFO и передаёт в модуль can_bus */
+static void can_rx_drain_fifo(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo, uint8_t can_bus) {
 	uint8_t Data[8];
 	FDCAN_RxHeaderTypeDef msg;
-	while(HAL_FDCAN_GetRxFifoFillLevel(hfdcan, RxFifo) > 0) {
-		if(HAL_FDCAN_GetRxMessage(hfdcan, RxFifo, &msg, Data) != HAL_OK)
+	while (HAL_FDCAN_GetRxFifoFillLevel(hfdcan, RxFifo) > 0) {
+		if (HAL_FDCAN_GetRxMessage(hfdcan, RxFifo, &msg, Data) != HAL_OK)
 			break;
-		ProtocolParse(msg.Identifier, Data);
-
-		 //LED_TOGGLE;
+		CanRxPush(msg.Identifier, Data, can_bus);
 	}
 }
 
-
-void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifoITs)
-{
-//	uint8_t Data[64];
-//	FDCAN_RxHeaderTypeDef msg;
-
-	uint32_t fifo = FDCAN_RX_FIFO1;
-	HAL_FDCAN_RxFifoCallback(hfdcan, fifo);
-
-	//TODO:: delete
-	 //HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader,/*&Buf[4]*/TxData);
-
-/*
-		while(HAL_FDCAN_GetRxFifoFillLevel(hfdcan, fifo) > 0) {
-			if(HAL_FDCAN_GetRxMessage(hfdcan, fifo, &msg, Data) != HAL_OK)
-				break;
-			ProtocolParse(msg.Identifier, Data);
-			 //LED_TOGGLE;
-		}
-		*/
+void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifoITs) {
+	(void)RxFifoITs;
+	can_rx_drain_fifo(hfdcan, FDCAN_RX_FIFO0, CAN_BUS_1);
 }
 
-
-void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifoITs)
-{
-//	uint8_t Data[64];
-//	FDCAN_RxHeaderTypeDef msg;
-	uint32_t fifo = FDCAN_RX_FIFO0;
-	HAL_FDCAN_RxFifoCallback(hfdcan, fifo);
-	//TODO:: delete
-	 //HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader,/*&Buf[4]*/TxData);
-
-
-	/*
-		while(HAL_FDCAN_GetRxFifoFillLevel(hfdcan, fifo) > 0) {
-			if(HAL_FDCAN_GetRxMessage(hfdcan, fifo, &msg, Data) != HAL_OK)
-				break;
-			ProtocolParse(msg.Identifier, Data);
-			// LED_TOGGLE;
-		}
-*/
-
+void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifoITs) {
+	(void)RxFifoITs;
+	can_rx_drain_fifo(hfdcan, FDCAN_RX_FIFO1, CAN_BUS_2);
 }
 
 static void check_can_bus(FDCAN_HandleTypeDef *hfdcan) {
@@ -430,6 +397,7 @@ int main(void)
 	 if(is1ms) {
 		 is1ms = 0;
 		 AppTimer1ms();
+		 CanProcess();
 	 }
 	 if(is10ms) {
 		 is10ms = 0;
