@@ -155,7 +155,7 @@ void CanProcess(void)
 		//	continue;
 
 		/* Уникальный пакет: разобрать один раз, ждать дубликат с другой шины */
-		ProtocolParse(e->id, e->data);
+		ProtocolParse(e->id, e->data, BUS_CAN12); // BUS_CAN12 поскольку парсим только один раз и нам всё-равно по какому пришло. выше и так есть проверки на активность каждой линии
 
 		*last_id_cur = e->id;
 		memcpy(last_data_cur, e->data, 8);

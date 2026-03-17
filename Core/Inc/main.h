@@ -87,8 +87,10 @@ void LedOffAll();
 #define BT_FIRE_GPIO_Port GPIOB
 #define ST2_MK_Pin GPIO_PIN_14
 #define ST2_MK_GPIO_Port GPIOB
+#define ST2_MK_EXTI_IRQn EXTI14_IRQn
 #define ST1_MK_Pin GPIO_PIN_15
 #define ST1_MK_GPIO_Port GPIOB
+#define ST1_MK_EXTI_IRQn EXTI15_IRQn
 #define LED_Pin GPIO_PIN_8
 #define LED_GPIO_Port GPIOA
 #define ESP32_EN_Pin GPIO_PIN_15
@@ -103,7 +105,7 @@ void LedOffAll();
 #define DISP_D_C_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
-#define GFX_RATIO_MS 5
+#define GFX_RATIO_MS 10
 #define LED_TOGGLE HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 
 extern uint8_t setup_change;
@@ -111,6 +113,8 @@ extern RTC_HandleTypeDef hrtc;
 
 #define NUM_ADC_CHANNEL 5
 #define FILTERSIZE 128
+
+#define RTC_BKP_MAGIC  0xAABB
 
 extern uint16_t ADC_VAL[NUM_ADC_CHANNEL];
 /* USER CODE END Private defines */

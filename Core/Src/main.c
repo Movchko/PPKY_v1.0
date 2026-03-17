@@ -105,34 +105,14 @@ uint8_t is1ms = 0;
 uint8_t is10ms = 0;
 FDCAN_TxHeaderTypeDef TxHeader;
 
-//TODO:: delete
-uint8_t uart_buf[10];
-uint8_t uart_send_buf[2] = {0xAA, 0xBB};
-uint8_t uart_rcv_buf[10];
 
-void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart) {
-	//uart_send_buf[0]++;
-	//uart_send_buf[1]++;
-	uart_rcv_buf[0] = uart_buf[0];
-	uart_rcv_buf[1] = uart_buf[1];
-}
-
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-	uart_send_buf[0]++;
-	uart_send_buf[1]++;
-
-	//uart_rcv_buf[0] = uart_buf[0];
-	//uart_rcv_buf[1] = uart_buf[1];
-
-	HAL_UART_Receive_DMA(&huart2, uart_buf, 2);
-}
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	//Каждую 1 мс
 	if(htim->Instance == TIM1)
-		is1ms = 1;
+		is1ms++;
 	if(htim->Instance == TIM2)
-		is10ms = 1;
+		is10ms++;
 }
 
 /* Читает все сообщения из FIFO и передаёт в модуль can_bus */
@@ -204,14 +184,14 @@ void CANSendData(uint8_t *Buf) {
 	HAL_StatusTypeDef status;
 
 	if(HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1) > 0) {
-		TxHeader.Identifier = 0x1AAAAAAA;
+		//TxHeader.Identifier = 0x1AAAAAAA;
 		 status = HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader,/*&Buf[4]*/TxData);
 
 	} else
 		check_can_bus(&hfdcan1);
 
 	if(HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0) {
-		TxHeader.Identifier = 0x1BBBBBBB;
+		//TxHeader.Identifier = 0x1BBBBBBB;
 		for(uint8_t i = 0; i < 8; i++) {
 			TxData[i] = Buf[4 + i] + 1;
 		}
@@ -341,7 +321,7 @@ int main(void)
 
 
 
-  HAL_UART_Receive_DMA(&huart2, uart_buf, 2);
+//  HAL_UART_Receive_DMA(&huart2, uart_buf, 2);
 
 
 
@@ -370,7 +350,7 @@ int main(void)
 			 *
 			 */
 
-		  HAL_UART_Transmit(&huart2, uart_send_buf, 2, 0);
+		  //HAL_UART_Transmit(&huart2, uart_send_buf, 2, 0);
 
 		  setup_change = 1;
 		  /*
@@ -383,7 +363,7 @@ int main(void)
 
 	  // end test
 
-	 if(abs(cur_tick - gfx_tick) >= GFX_RATIO_MS) { // условие чтобы MX_TouchGFX_Process не спамилось слишком часто
+	 if((cur_tick - gfx_tick) >= GFX_RATIO_MS) { // условие чтобы MX_TouchGFX_Process не спамилось слишком часто
     /* USER CODE END WHILE */
 
   MX_TouchGFX_Process();
@@ -395,14 +375,15 @@ int main(void)
 
 
 	 if(is1ms) {
-		 is1ms = 0;
+		 is1ms--;
 		 AppTimer1ms();
-		 CanProcess();
+
 	 }
 	 if(is10ms) {
-		 is10ms = 0;
+		 is10ms--;
 		 AppTimer10ms();
 	 }
+	 CanProcess();
   }
   /* USER CODE END 3 */
 }
@@ -422,28 +403,32 @@ void SystemClock_Config(void)
 
   while(!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
 
+  /** Configure LSE Drive Capability
+  *  Warning : Only applied when the LSE is disabled.
+  */
+  HAL_PWR_EnableBkUpAccess();
+  __HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
+
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI
-                              |RCC_OSCILLATORTYPE_HSE|RCC_OSCILLATORTYPE_CSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_HSE
+                              |RCC_OSCILLATORTYPE_LSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.LSEState = RCC_LSE_ON;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSIDiv = RCC_HSI_DIV2;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
-  RCC_OscInitStruct.CSIState = RCC_CSI_ON;
-  RCC_OscInitStruct.CSICalibrationValue = RCC_CSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLL1_SOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 1;
   RCC_OscInitStruct.PLL.PLLN = 62;
   RCC_OscInitStruct.PLL.PLLP = 2;
-  RCC_OscInitStruct.PLL.PLLQ = 4;
+  RCC_OscInitStruct.PLL.PLLQ = 5;
   RCC_OscInitStruct.PLL.PLLR = 2;
   RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1_VCIRANGE_3;
   RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1_VCORANGE_WIDE;
-  RCC_OscInitStruct.PLL.PLLFRACN = 0;
+  RCC_OscInitStruct.PLL.PLLFRACN = 4096;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -461,6 +446,15 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB3CLKDivider = RCC_HCLK_DIV1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+   /* Select SysTick source clock */
+  HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
+
+   /* Re-Initialize Tick with new clock source */
+  if (HAL_InitTick(TICK_INT_PRIORITY) != HAL_OK)
   {
     Error_Handler();
   }
@@ -618,11 +612,11 @@ static void MX_FDCAN1_Init(void)
   hfdcan1.Init.AutoRetransmission = DISABLE;
   hfdcan1.Init.TransmitPause = DISABLE;
   hfdcan1.Init.ProtocolException = DISABLE;
-  hfdcan1.Init.NominalPrescaler = 62;
+  hfdcan1.Init.NominalPrescaler = 8;
   hfdcan1.Init.NominalSyncJumpWidth = 1;
-  hfdcan1.Init.NominalTimeSeg1 = 6;
+  hfdcan1.Init.NominalTimeSeg1 = 2;
   hfdcan1.Init.NominalTimeSeg2 = 1;
-  hfdcan1.Init.DataPrescaler = 4;
+  hfdcan1.Init.DataPrescaler = 1;
   hfdcan1.Init.DataSyncJumpWidth = 1;
   hfdcan1.Init.DataTimeSeg1 = 21;
   hfdcan1.Init.DataTimeSeg2 = 1;
@@ -688,11 +682,11 @@ static void MX_FDCAN2_Init(void)
   hfdcan2.Init.AutoRetransmission = DISABLE;
   hfdcan2.Init.TransmitPause = DISABLE;
   hfdcan2.Init.ProtocolException = DISABLE;
-  hfdcan2.Init.NominalPrescaler = 62;
+  hfdcan2.Init.NominalPrescaler = 8;
   hfdcan2.Init.NominalSyncJumpWidth = 1;
-  hfdcan2.Init.NominalTimeSeg1 = 6;
+  hfdcan2.Init.NominalTimeSeg1 = 2;
   hfdcan2.Init.NominalTimeSeg2 = 1;
-  hfdcan2.Init.DataPrescaler = 4;
+  hfdcan2.Init.DataPrescaler = 1;
   hfdcan2.Init.DataSyncJumpWidth = 1;
   hfdcan2.Init.DataTimeSeg1 = 21;
   hfdcan2.Init.DataTimeSeg2 = 1;
@@ -705,23 +699,21 @@ static void MX_FDCAN2_Init(void)
   }
   /* USER CODE BEGIN FDCAN2_Init 2 */
 
-/*
+  /* Принимать все расширенные кадры во FIFO1 */
+  {
     FDCAN_FilterTypeDef  sFilterConfig;
-
-    sFilterConfig.IdType = FDCAN_EXTENDED_ID;
-    sFilterConfig.FilterIndex = 0;
-    sFilterConfig.FilterType = FDCAN_FILTER_MASK;
+    sFilterConfig.IdType       = FDCAN_EXTENDED_ID;
+    sFilterConfig.FilterIndex  = 0;
+    sFilterConfig.FilterType   = FDCAN_FILTER_MASK;
     sFilterConfig.FilterConfig = FDCAN_FILTER_TO_RXFIFO1;
-    sFilterConfig.FilterID1 = 0x000;
-    sFilterConfig.FilterID2 = 0x000;
+    sFilterConfig.FilterID1    = 0x00000000U; /* ID */
+    sFilterConfig.FilterID2    = 0x00000000U; /* MASK = 0 => принимать всё */
 
-    if((HAL_FDCAN_ConfigFilter(&hfdcan2, &sFilterConfig))!= HAL_OK)
+    if (HAL_FDCAN_ConfigFilter(&hfdcan2, &sFilterConfig) != HAL_OK)
     {
-      // Filter configuration Error
       Error_Handler();
     }
-*/
-
+  }
 
   if (HAL_FDCAN_Start(&hfdcan2) != HAL_OK)
   {
@@ -892,6 +884,8 @@ static void MX_RTC_Init(void)
 
   /* USER CODE BEGIN RTC_Init 0 */
 
+    HAL_PWR_EnableBkUpAccess();
+
   /* USER CODE END RTC_Init 0 */
 
   RTC_PrivilegeStateTypeDef privilegeState = {0};
@@ -928,7 +922,8 @@ static void MX_RTC_Init(void)
   }
 
   /* USER CODE BEGIN Check_RTC_BKUP */
-
+  if (HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR0) != RTC_BKP_MAGIC)
+  {
   /* USER CODE END Check_RTC_BKUP */
 
   /** Initialize RTC and set the Time and Date
@@ -952,7 +947,12 @@ static void MX_RTC_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN RTC_Init 2 */
+  HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR0, RTC_BKP_MAGIC);
+  } else {
+	  hrtc.Instance = RTC;
+	  HAL_RTC_Init(&hrtc);  // только инициализация структуры, без SetTime/SetDate
 
+  }
   /* USER CODE END RTC_Init 2 */
 
 }
@@ -1028,7 +1028,7 @@ static void MX_SPI3_Init(void)
   hspi3.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi3.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi3.Init.NSS = SPI_NSS_SOFT;
-  hspi3.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+  hspi3.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
   hspi3.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi3.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi3.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -1072,9 +1072,9 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 10;
+  htim1.Init.Prescaler = 100-1;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 24799;
+  htim1.Init.Period = 2499;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
@@ -1119,9 +1119,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 100;
+  htim2.Init.Prescaler = 1000-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 24799;
+  htim2.Init.Period = 2499;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -1311,7 +1311,7 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pins : ST2_MK_Pin ST1_MK_Pin */
   GPIO_InitStruct.Pin = ST2_MK_Pin|ST1_MK_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
@@ -1328,6 +1328,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI14_IRQn, 3, 0);
+  HAL_NVIC_EnableIRQ(EXTI14_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI15_IRQn, 3, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
   /* USER CODE END MX_GPIO_Init_2 */
