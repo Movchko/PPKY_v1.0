@@ -37,10 +37,38 @@ s_fire fire;
 
 PControl *Power[2];
 
+#define PPKY_MAX_ACTIVE_VDEVS_PER_MCU 16
+
 typedef struct {
 	Device dev;
 	uint32_t last_seen_ms;
 	uint8_t online;
+	uint8_t can_status_mask; /* маска активности CAN (из статуса МКУ cmd=0) */
+
+	/* Виртуальные устройства, которые находятся "внутри" данного МКУ */
+	uint8_t vdev_count;
+
+	struct s_active_vdev {
+		uint32_t last_seen_ms;
+		uint8_t online;
+
+		uint8_t v_d_type; /* DEVICE_* виртуального устройства */
+		uint8_t v_l_adr;  /* виртуальный номер (l_adr) */
+
+		/* raw статус, как приходит в CAN payload */
+		uint8_t status_cmd;    /* MsgData[0] */
+		uint8_t status_params[7]; /* MsgData[1..7] */
+
+		uint8_t prev_status_cmd;   /* предыдущий статус (до последнего обновления) */
+		uint8_t status_changed;    /* 1 если статус изменился с прошлого обновления */
+
+		/* часто используемые декодированные поля (для удобства отладки) */
+		uint8_t line_state;     /* для DPT/IGNITER */
+		uint16_t resistance_ohm; /* для DPT */
+		int16_t max_temp_c;    /* для DPT */
+		uint8_t max_fault;     /* для DPT */
+		uint8_t ack_flags;     /* для IGNITER */
+	} vdevs[PPKY_MAX_ACTIVE_VDEVS_PER_MCU];
 } ActiveDeviceInfo;
 
 static ActiveDeviceInfo g_active_devices[32];
@@ -184,7 +212,6 @@ void PPKY_GetLastPowerOnDate(RTC_DateTypeDef *out_date, RTC_TimeTypeDef *out_tim
 
 void CommandCB(uint8_t Dev, uint8_t Command, uint8_t *Parameters) {
 	(void)Dev;
-	(void)Parameters;
 	switch(Command) {
 	case 10: {
 		// Запуск механизма установки адресов (работаем только по CAN0).
@@ -196,6 +223,29 @@ void CommandCB(uint8_t Dev, uint8_t Command, uint8_t *Parameters) {
 	case 11: {
 		/* Сохранить состояние системы: список найденных МКУ на шине */
 		SaveSystemStateFromActiveDevices();
+	}break;
+	case 12: {
+		/* Перезапуск устройств на шине.
+		 * Parameters[0]: 0 = мягкий (софт‑ресет), 1 = жёсткий (хард‑ресет). */
+		uint8_t mode = Parameters ? Parameters[0] : 0u;
+		if (mode == 0u) {
+			/* Софт‑ресет: широковещательный ServiceCmd_ResetMCU по обеим шинам. */
+			uint8_t data[7] = {0};
+			SendAllMessage(ServiceCmd_ResetMCU, data, SEND_NOW, BUS_CAN12);
+		} else {
+			/* Хард‑ресет: отключить питание на 1 с и снова включить. */
+			for (uint8_t i = 0; i < 2; i++) {
+				if (Power[i] != nullptr) {
+					Power[i]->PControlSetOut(i, false);
+				}
+			}
+			HAL_Delay(1000);
+			for (uint8_t i = 0; i < 2; i++) {
+				if (Power[i] != nullptr) {
+					Power[i]->PControlSetOut(i, true);
+				}
+			}
+		}
 	}break;
 
 	default: break;
@@ -300,6 +350,9 @@ static void UpdateActiveDeviceList(uint32_t msg_id, uint32_t now_ms) {
 		g_active_devices[g_active_devices_count].dev = dev;
 		g_active_devices[g_active_devices_count].last_seen_ms = now_ms;
 		g_active_devices[g_active_devices_count].online = 1;
+		g_active_devices[g_active_devices_count].can_status_mask = 0u;
+		g_active_devices[g_active_devices_count].vdev_count = 0u;
+		/* vdevs[] уже обнулены при memset в AddrAuto_ClearActiveDevices() */
 		g_active_devices_count++;
 	}
 }
@@ -309,7 +362,150 @@ static void RefreshActiveDevices(uint32_t now_ms) {
 		if (g_active_devices[i].online &&
 		    (now_ms - g_active_devices[i].last_seen_ms) > 5000u) {
 			g_active_devices[i].online = 0;
+			g_active_devices[i].can_status_mask = 0u;
+			g_active_devices[i].vdev_count = 0u;
+			memset(g_active_devices[i].vdevs, 0, sizeof(g_active_devices[i].vdevs));
 		}
+	}
+}
+
+static int FindActiveMcuExactIndex(uint8_t zone, uint8_t h_adr, uint8_t l_adr, uint8_t d_type) {
+	for (uint8_t i = 0; i < g_active_devices_count; i++) {
+		if (!g_active_devices[i].online)
+			continue;
+		if (g_active_devices[i].dev.zone == zone &&
+		    g_active_devices[i].dev.h_adr == h_adr &&
+		    g_active_devices[i].dev.l_adr == l_adr &&
+		    g_active_devices[i].dev.d_type == d_type) {
+			return (int)i;
+		}
+	}
+	return -1;
+}
+
+static int FindActiveMcuByZoneHAdrIndex(uint8_t zone, uint8_t h_adr) {
+	for (uint8_t i = 0; i < g_active_devices_count; i++) {
+		if (!g_active_devices[i].online)
+			continue;
+		if (g_active_devices[i].dev.zone == zone &&
+		    g_active_devices[i].dev.h_adr == h_adr) {
+			return (int)i;
+		}
+	}
+	return -1;
+}
+
+static void UpdateMcuCanStatus(uint32_t MsgID, uint8_t *MsgData) {
+	can_ext_id_t id;
+	id.ID = MsgID;
+
+	/* Только МКУ и только их статус (cmd=0) */
+	if (id.field.d_type != DEVICE_MCU_IGN_TYPE && id.field.d_type != DEVICE_MCU_TC_TYPE)
+		return;
+	if (MsgData[0] != 0u)
+		return;
+
+	uint8_t zone  = (uint8_t)(id.field.zone & 0x7Fu);
+	uint8_t h_adr = (uint8_t)id.field.h_adr;
+	uint8_t l_adr = (uint8_t)(id.field.l_adr & 0x3Fu);
+	uint8_t d_type = (uint8_t)id.field.d_type;
+
+	int idx = FindActiveMcuExactIndex(zone, h_adr, l_adr, d_type);
+	if (idx < 0)
+		return;
+
+	/* В MsgData:
+	 * MsgData[0] = cmd (0)
+	 * MsgData[1..7] = Data[0..6] из SendMessage()
+	 * В Data[4] находится CAN mask (CAN1_Active | CAN2_Active<<1)
+	 * => MsgData[5] */
+	g_active_devices[idx].can_status_mask = MsgData[5];
+}
+
+static void UpdateActiveVirtualDevices(uint32_t MsgID, uint8_t *MsgData, uint32_t now_ms) {
+	can_ext_id_t id;
+	id.ID = MsgID;
+
+	if (id.field.dir == 0)
+		return;
+
+	/* Физические устройства МКУ игнорируем — виртуальные приходят как d_type=DEVICE_*TYPE */
+	uint8_t v_d_type = (uint8_t)id.field.d_type;
+	if (v_d_type == DEVICE_MCU_IGN_TYPE || v_d_type == DEVICE_MCU_TC_TYPE)
+		return;
+
+	/* Принимаем только известные виртуальные типы из device_lib.
+	 * Для «любых других типов» нужен реальный декодер под них —
+	 * пока храним raw status_params. */
+	if (v_d_type != DEVICE_IGNITER_TYPE &&
+	    v_d_type != DEVICE_DPT_TYPE &&
+	    v_d_type != DEVICE_BUTTON_TYPE &&
+	    v_d_type != DEVICE_LSWITCH_TYPE) {
+		return;
+	}
+
+	uint8_t zone  = (uint8_t)(id.field.zone & 0x7Fu);
+	uint8_t h_adr = (uint8_t)id.field.h_adr;
+	uint8_t v_l_adr = (uint8_t)(id.field.l_adr & 0x3Fu);
+
+	int mcu_idx = FindActiveMcuByZoneHAdrIndex(zone, h_adr);
+	if (mcu_idx < 0)
+		return;
+
+	ActiveDeviceInfo *m = &g_active_devices[mcu_idx];
+	if (m->vdev_count >= PPKY_MAX_ACTIVE_VDEVS_PER_MCU)
+		return;
+
+	/* поиск существующего виртуального устройства */
+	uint8_t v_idx = 0xFFu;
+	for (uint8_t i = 0; i < m->vdev_count; i++) {
+		if (m->vdevs[i].v_d_type == v_d_type && m->vdevs[i].v_l_adr == v_l_adr) {
+			v_idx = i;
+			break;
+		}
+	}
+
+	if (v_idx == 0xFFu) {
+		v_idx = m->vdev_count;
+		m->vdev_count++;
+		memset(&m->vdevs[v_idx], 0, sizeof(m->vdevs[v_idx]));
+		m->vdevs[v_idx].v_d_type = v_d_type;
+		m->vdevs[v_idx].v_l_adr = v_l_adr;
+	}
+
+	/* Обновляем raw-статус */
+	uint8_t new_status_cmd = MsgData[0];
+
+	uint8_t was_online = m->vdevs[v_idx].online;
+	uint8_t old_status_cmd = m->vdevs[v_idx].status_cmd;
+
+	m->vdevs[v_idx].online = 1u;
+	m->vdevs[v_idx].last_seen_ms = now_ms;
+	m->vdevs[v_idx].prev_status_cmd = old_status_cmd;
+	/* Липкий флаг: если уже был 1 — не сбрасываем. Становится 1 только при реальной смене статуса. */
+	if (m->vdevs[v_idx].status_changed == 0u) {
+		m->vdevs[v_idx].status_changed = (was_online ? (old_status_cmd != new_status_cmd) : 0u);
+	}
+	m->vdevs[v_idx].status_cmd = new_status_cmd;
+	memcpy(m->vdevs[v_idx].status_params, &MsgData[1], 7u);
+
+	/* Декодинг удобных полей для популярных типов */
+	if (v_d_type == DEVICE_IGNITER_TYPE) {
+		/* status_params[0] = LineState
+		 * status_params[1] = ack_flags */
+		m->vdevs[v_idx].line_state = m->vdevs[v_idx].status_params[0];
+		m->vdevs[v_idx].ack_flags  = m->vdevs[v_idx].status_params[1];
+	} else if (v_d_type == DEVICE_DPT_TYPE) {
+		/* status_params[0] = LineState
+		 * status_params[1..2] = resistance (LE)
+		 * status_params[3] = max_temp low byte (int8)
+		 * status_params[4] = max_fault */
+		m->vdevs[v_idx].line_state = m->vdevs[v_idx].status_params[0];
+		m->vdevs[v_idx].resistance_ohm =
+			(uint16_t)m->vdevs[v_idx].status_params[1] |
+			((uint16_t)m->vdevs[v_idx].status_params[2] << 8);
+		m->vdevs[v_idx].max_temp_c = (int16_t)(int8_t)m->vdevs[v_idx].status_params[3];
+		m->vdevs[v_idx].max_fault = m->vdevs[v_idx].status_params[4];
 	}
 }
 
@@ -549,9 +745,12 @@ void ResetMCU() {
 
 // посылки от устройств
 void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
-	(void)MsgData;
 	uint32_t now = HAL_GetTick();
 	UpdateActiveDeviceList(MsgID, now);
+
+	/* Обновляем CAN-состояние МКУ и статусы его виртуальных устройств */
+	UpdateMcuCanStatus(MsgID, MsgData);
+	UpdateActiveVirtualDevices(MsgID, MsgData, now);
 
 	uint8_t Command = MsgData[0];
 	if(Command >= ServiceCmd_SetStatusFire && Command <= ServiceCmd_StopExtinguishment) {

@@ -105,6 +105,89 @@ uint8_t is1ms = 0;
 uint8_t is10ms = 0;
 FDCAN_TxHeaderTypeDef TxHeader;
 
+/* -------- CAN TX кольцо (аналогично МКУ) -------- */
+typedef struct {
+	uint32_t id;
+	uint8_t  data[8];
+	uint8_t  bus_mask; /* BUS_CAN0/BUS_CAN1 */
+} CanTxEntry;
+
+#define CAN_TX_RING_SIZE 256
+static CanTxEntry can_tx_ring[CAN_TX_RING_SIZE];
+static volatile uint8_t can_tx_head = 0;
+static volatile uint8_t can_tx_tail = 0;
+
+/* forward declaration: используется в App_CanTxProcess ниже */
+static void check_can_bus(FDCAN_HandleTypeDef *hfdcan);
+
+static void CanTxEnqueue(uint32_t id, const uint8_t *data, uint8_t bus_mask)
+{
+	uint8_t next = (uint8_t)(can_tx_head + 1u);
+	if (next >= CAN_TX_RING_SIZE)
+		next = 0u;
+
+	/* Переполнение — затираем самый старый пакет */
+	if (next == can_tx_tail) {
+		can_tx_tail++;
+		if (can_tx_tail >= CAN_TX_RING_SIZE)
+			can_tx_tail = 0u;
+	}
+
+	can_tx_ring[can_tx_head].id = id;
+	can_tx_ring[can_tx_head].bus_mask = bus_mask;
+	for (uint8_t i = 0; i < 8u; i++) {
+		can_tx_ring[can_tx_head].data[i] = data[i];
+	}
+	can_tx_head = next;
+}
+
+void App_CanTxProcess(void)
+{
+	if (isMainInit == 0)
+		return;
+
+	while (can_tx_head != can_tx_tail) {
+		CanTxEntry *e = &can_tx_ring[can_tx_tail];
+
+		uint8_t need_can0 = (e->bus_mask & BUS_CAN0) ? 1u : 0u;
+		uint8_t need_can1 = (e->bus_mask & BUS_CAN1) ? 1u : 0u;
+		uint8_t sent_can0 = 0u;
+		uint8_t sent_can1 = 0u;
+
+		TxHeader.Identifier = e->id;
+
+		if (need_can0) {
+			if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1) > 0U) {
+				if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, e->data) == HAL_OK) {
+					sent_can0 = 1u;
+				}
+			} else {
+				check_can_bus(&hfdcan1);
+			}
+		}
+
+		if (need_can1) {
+			if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0U) {
+				if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, e->data) == HAL_OK) {
+					sent_can1 = 1u;
+				}
+			} else {
+				check_can_bus(&hfdcan2);
+			}
+		}
+
+		/* Удаляем из очереди, только когда отправили во все требуемые шины */
+		if ((need_can0 == 0u || sent_can0) && (need_can1 == 0u || sent_can1)) {
+			can_tx_tail++;
+			if (can_tx_tail >= CAN_TX_RING_SIZE)
+				can_tx_tail = 0u;
+		} else {
+			/* Нельзя отправить — пробуем позже */
+			break;
+		}
+	}
+}
+
 
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
@@ -173,35 +256,16 @@ void CANSendData(uint8_t *Buf) {
 
 	if(isMainInit == 0) return;
 
-	uint8_t TxData[8];
+	/* Buf layout как в backend:
+	 *  [0..3]   -> uint32_t id
+	 *  [4..11]  -> 8 байт данных
+	 *  [12]      -> bus_mask (BUS_CAN0/BUS_CAN1)
+	 */
+	uint32_t id = (*(uint32_t *)Buf);
+	const uint8_t *data = &Buf[4];
+	uint8_t bus_mask = Buf[4 + 8];
 
-	TxHeader.Identifier = (*(uint32_t*)Buf);
-	for(uint8_t i = 0; i < 8; i++) {
-		TxData[i] = Buf[4 + i];
-	}
-	//memcpy(&TxHeader.Identifier, Buf, 4);
-
-	HAL_StatusTypeDef status;
-
-	if(HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1) > 0) {
-		//TxHeader.Identifier = 0x1AAAAAAA;
-		 status = HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader,/*&Buf[4]*/TxData);
-
-	} else
-		check_can_bus(&hfdcan1);
-
-	if(HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0) {
-		//TxHeader.Identifier = 0x1BBBBBBB;
-		for(uint8_t i = 0; i < 8; i++) {
-			TxData[i] = Buf[4 + i] + 1;
-		}
-		 status = HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader,/*&Buf[4]*/TxData);
-
-	} else
-		check_can_bus(&hfdcan2);
-
-
-
+	CanTxEnqueue(id, data, bus_mask);
 }
 
 /* USER CODE END 0 */
@@ -393,6 +457,7 @@ int main(void)
 		 AppTimer10ms();
 	 }
 	 CanProcess();
+	 App_CanTxProcess();
 
 	 /* Раз в минуту сохраняем текущую дату/время в свободный BKP-регистр RTC.
 	  * Формат хранения: 0xMMDDHHmm (BCD) в RTC_BKP_DR1. */
