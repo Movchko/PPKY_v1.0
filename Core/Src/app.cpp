@@ -8,9 +8,31 @@
 #include "gui/common/FrontendHeap.hpp"
 
 
+
 struct PPKYCfg PPKYConfig;       // локальная (рабочая) конфигурация
 struct PPKYCfg SavedPPKYConfig; // копия сохранённой конфигурации из Flash
 
+extern SPIF_HandleTypeDef hFlash;
+
+/*
+ * fire param
+ *
+ *
+ *
+ */
+struct s_fire {
+	uint8_t isfire;
+	RTC_TimeTypeDef t;
+	RTC_DateTypeDef d;
+	uint8_t zone;
+	can_ext_id_t dev;
+};
+
+s_fire fire;
+
+/*
+ * end fire param
+ */
 
 
 PControl *Power[2];
@@ -35,6 +57,25 @@ typedef enum {
 static AddrAutoState g_addr_auto_state = ADDR_AUTO_IDLE;
 static uint32_t g_addr_auto_phase_start_ms = 0;
 
+
+
+GPIO_TypeDef   *POWER_ST_PORT[2] = {ST1_MK_GPIO_Port, ST2_MK_GPIO_Port};
+uint16_t  		POWER_ST_PIN[2] = {ST1_MK_Pin, ST2_MK_Pin};
+GPIO_TypeDef   *POWER_OUT_PORT[2] = {KEY_1_GPIO_Port, KEY_2_GPIO_Port};
+uint16_t  		POWER_OUT_PIN[2] = {KEY_1_Pin, KEY_2_Pin};
+
+bool isAppInit = 0;
+
+
+
+extern int32_t CHANNEL_VAL[NUM_ADC_CHANNEL];
+
+uint8_t status_sec_cnt = 0;
+
+uint8_t uart_send_buf[32] = {0};
+
+extern UART_HandleTypeDef huart2;
+
 static void AddrAuto_ClearActiveDevices(void) {
 	memset(g_active_devices, 0, sizeof(g_active_devices));
 	g_active_devices_count = 0;
@@ -45,7 +86,7 @@ static void AddrAuto_Start(void) {
 	// Широковещательно: остановить ретрансляцию на CAN0
 	uint8_t data[7] = {0};
 	data[0] = 1u; // 1 = стоп
-	SendAllMessage(ServiceCmd_StopStartReTranslate, data, SEND_NOW, BUS_CAN0);
+	SendAllMessage(ServiceCmd_StopStartReTranslate, data, SEND_NOW, BUS_CAN12);
 
 	g_addr_auto_state = ADDR_AUTO_WAIT_AFTER_STOP;
 	g_addr_auto_phase_start_ms = HAL_GetTick();
@@ -72,7 +113,7 @@ static void AddrAuto_Process(uint32_t now_ms) {
 		if ((now_ms - g_addr_auto_phase_start_ms) >= 500u) {
 			//uint8_t data[7] = {0};
 			//data[0] = 0u; // 0 = старт ретрансляции
-			//SendAllMessage(ServiceCmd_StopStartReTranslate, data, SEND_NOW, BUS_CAN0);
+			//SendAllMessage(ServiceCmd_StopStartReTranslate, data, SEND_NOW, BUS_CAN12);
 
 			// адреса изменились — очищаем список активных устройств, он будет заполнен заново
 			AddrAuto_ClearActiveDevices();
@@ -98,6 +139,49 @@ static void AddrAuto_Process(uint32_t now_ms) {
 
 
 void USBSendData(uint8_t *Buf) {};
+
+static void SaveSystemStateFromActiveDevices(void)
+{
+	/* Заполняем PPKYConfig.CfgDevices по текущим активным МКУ на шине.
+	 * Пока сохраняем только Device (devId) без конфигураций МКУ и виртуальных устройств. */
+	memset(PPKYConfig.CfgDevices, 0, sizeof(PPKYConfig.CfgDevices));
+
+	uint8_t out_i = 0;
+	for (uint8_t i = 0; i < g_active_devices_count && out_i < 32; i++) {
+		if (g_active_devices[i].online == 0u) {
+			continue;
+		}
+		PPKYConfig.CfgDevices[out_i].UId.devId = g_active_devices[i].dev;
+		out_i++;
+	}
+
+	/* После сохранения списка считаем, что флаг несовпадения можно пересчитать */
+	g_mku_mismatch_flag = 0;
+	SaveConfig();
+}
+
+void PPKY_GetLastPowerOnDate(RTC_DateTypeDef *out_date, RTC_TimeTypeDef *out_time)
+{
+	uint32_t v = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR1);
+
+	/* Формат BKP-регистра: 0xMMDDHHmm (BCD) */
+	if (out_date != nullptr) {
+		RTC_DateTypeDef d = {};
+		d.Month = (uint8_t)((v >> 24) & 0xFFu);  // BCD-месяц
+		d.Date  = (uint8_t)((v >> 16) & 0xFFu);  // BCD-день
+		// Год и день недели не сохраняем
+		*out_date = d;
+	}
+
+	if (out_time != nullptr) {
+		RTC_TimeTypeDef t = {};
+		t.Hours   = (uint8_t)((v >> 8)  & 0xFFu);  // BCD-часы
+		t.Minutes = (uint8_t)((v >> 0)  & 0xFFu);  // BCD-минуты
+		// Секунды не сохраняем
+		*out_time = t;
+	}
+}
+
 void CommandCB(uint8_t Dev, uint8_t Command, uint8_t *Parameters) {
 	(void)Dev;
 	(void)Parameters;
@@ -109,6 +193,10 @@ void CommandCB(uint8_t Dev, uint8_t Command, uint8_t *Parameters) {
 			AddrAuto_Start();
 		}
 	}break;
+	case 11: {
+		/* Сохранить состояние системы: список найденных МКУ на шине */
+		SaveSystemStateFromActiveDevices();
+	}break;
 
 	default: break;
 	}
@@ -116,22 +204,7 @@ void CommandCB(uint8_t Dev, uint8_t Command, uint8_t *Parameters) {
 
 }
 
-GPIO_TypeDef   *POWER_ST_PORT[2] = {ST1_MK_GPIO_Port, ST2_MK_GPIO_Port};
-uint16_t  		POWER_ST_PIN[2] = {ST1_MK_Pin, ST2_MK_Pin};
-GPIO_TypeDef   *POWER_OUT_PORT[2] = {KEY_1_GPIO_Port, KEY_2_GPIO_Port};
-uint16_t  		POWER_OUT_PIN[2] = {KEY_1_Pin, KEY_2_Pin};
 
-bool isAppInit = 0;
-
-extern SPIF_HandleTypeDef hFlash;
-
-extern int32_t CHANNEL_VAL[NUM_ADC_CHANNEL];
-
-uint8_t status_sec_cnt = 0;
-
-uint8_t uart_send_buf[32] = {0};
-
-extern UART_HandleTypeDef huart2;
 
 static void UartSendPpkyTime(void) {
 	// Формат: "PPKY " + 6 цифр BCD (HHMMSS) + "\r\n"
@@ -167,7 +240,9 @@ static void UartSendPpkyTime(void) {
 	HAL_UART_Transmit(&huart2, uart_send_buf, 13, 10);
 }
 
-void RcvStatusFire() {}
+void RcvStatusFire() {
+
+}
 void RcvReplyStatusFire(){}
 void RcvStartExtinguishment(){}
 void RcvStopExtinguishment(){}
@@ -303,27 +378,45 @@ void AppInit() {
 	// Чтение сохранённой конфигурации из Flash (область конфигурации)
 	uint32_t cfg_addr = SPIF_SectorToAddress(FLASH_CFG_START_SECTOR);
 	PPKYConfigHeader hdr;
+
+	//SPIF_EraseChip(&hFlash);
+/*
+	for (uint32_t s = 0; s < FLASH_CFG_SECTORS_USED; s++) {
+		SPIF_EraseSector(&hFlash, FLASH_CFG_START_SECTOR + s);
+	}
+*/
 	SPIF_ReadAddress(&hFlash, cfg_addr, (uint8_t *)&hdr, sizeof(hdr));
 
 	bool header_ok = (hdr.magic == PPKY_CFG_HEADER_MAGIC) &&
 			         (hdr.size  == sizeof(PPKYConfig));
 
+	//ReadSavedConfig();
+
 	if (header_ok) {
+
+
+		ReadSavedConfig();
+/*
 		// Заголовок валиден — читаем полезную часть
 		SPIF_ReadAddress(&hFlash,
 				         cfg_addr + sizeof(PPKYConfigHeader),
 						 (uint8_t *)&SavedPPKYConfig,
 						 sizeof(SavedPPKYConfig));
+						 */
 		PPKYConfig = SavedPPKYConfig;
 	} else {
 		// Заголовок мусор: считаем, что конфигурации нет
 		// Сбрасываем на значения по умолчанию и сохраняем в область конфигурации
-		DefaultConfig();
+		//DefaultConfig();
 
-		//FillConfigTemplate();
+		FillConfigTemplate();
 
 		SaveConfig();
 	}
+
+	//FillConfigTemplate();
+
+	//SaveConfig();
 
 	// Передаём указатели в backend (для сервисных команд работы с конфигурацией)
 	SetConfigPtr((uint8_t *)&SavedPPKYConfig, (uint8_t *)&PPKYConfig);
@@ -331,6 +424,8 @@ void AppInit() {
 	// Список устройств по аналогии с МКУ: 0-й элемент — сама плата ППКУ
 	extern Device BoardDevicesList[];
 	extern uint8_t nDevs;
+
+	if(PPKYConfig.UId.devId.h_adr == 0) PPKYConfig.UId.devId.h_adr = 1;
 
 	nDevs = 1; /* Dev 0 — ППКУ */
 	BoardDevicesList[0].zone  = PPKYConfig.UId.devId.zone & 0x7Fu;
@@ -403,25 +498,7 @@ void AppTimer10ms() {
 	Led_Process();
 }
 
-void FlashWriteData(uint8_t *ConfigPtr, uint16_t ConfigSize) {
-	// Конфигурация: FLASH_CFG_START_SECTOR, заголовок PPKYConfigHeader, затем PPKYCfg.
-	// Стираем только нужное кол-во секторов (ускоряет сохранение).
-	uint32_t cfg_addr = SPIF_SectorToAddress(FLASH_CFG_START_SECTOR);
 
-	for (uint32_t s = 0; s < FLASH_CFG_SECTORS_USED; s++) {
-		SPIF_EraseSector(&hFlash, FLASH_CFG_START_SECTOR + s);
-	}
-
-	PPKYConfigHeader hdr;
-	hdr.magic   = PPKY_CFG_HEADER_MAGIC;
-	hdr.version = 1;
-	hdr.size    = ConfigSize;
-
-	// Сначала пишем заголовок
-	SPIF_WriteAddress(&hFlash, cfg_addr, (uint8_t *)&hdr, sizeof(hdr));
-	// Затем полезные данные конфигурации сразу после заголовка
-	SPIF_WriteAddress(&hFlash, cfg_addr + sizeof(PPKYConfigHeader), ConfigPtr, ConfigSize);
-}
 
 void SetApp(uint32_t dst_adr, uint32_t src_adr, uint32_t sz) {
 
@@ -467,175 +544,33 @@ void ResetMCU() {
 	NVIC_SystemReset();
 }
 
-void DefaultConfig() {
-	// Установка конфигурации по умолчанию в локальный буфер (PPKYConfig)
-	memset(&PPKYConfig, 0, sizeof(PPKYConfig));
 
-	// Заполняем UniqId из уникального идентификатора STM
-	uint32_t uid0 = HAL_GetUIDw0();
-	uint32_t uid1 = HAL_GetUIDw1();
-	uint32_t uid2 = HAL_GetUIDw2();
 
-	PPKYConfig.UId.UId0 = uid0;
-	PPKYConfig.UId.UId1 = uid1;
-	PPKYConfig.UId.UId2 = uid2;
-	PPKYConfig.UId.UId3 = HAL_GetDEVID();
-	PPKYConfig.UId.UId4 = 1;
-
-	PPKYConfig.UId.devId.zone  = 0;
-	PPKYConfig.UId.devId.l_adr = 0;
-
-	uint8_t hadr = (uint8_t)(uid0 & 0xFF);
-	if (hadr == 0) {
-		hadr = (uint8_t)(uid1 & 0xFF);
-		if (hadr == 0) {
-			hadr = 1; // на всякий случай, чтобы не был 0
-		}
-	}
-	PPKYConfig.UId.devId.h_adr = hadr;
-	PPKYConfig.UId.devId.d_type = DEVICE_PPKY_TYPE;
-
-	// Примеры значений по умолчанию
-	PPKYConfig.beep = 1; // звук включен
-
-	// Имена зон очищаем (пустые строки)
-	for (uint16_t i = 0; i < ZONE_NUMBER; i++) {
-		memset(PPKYConfig.zone_name[i], 0, ZONE_NAME_SIZE);
-	}
-
-	// reserv оставляем нулевым
-}
-
-/** Простой LCG для псевдослучайных ID МКУ (без rand) */
-static uint32_t mku_id_seed(uint32_t seed, uint32_t i) {
-	return seed + i * 7919u;  /* простое число для разброса */
-}
-
-void FillConfigTemplate(void) {
-	/* Сохраняем ID ППКУ */
-	UniqId ppky_uid = PPKYConfig.UId;
-	uint8_t ppky_beep = PPKYConfig.beep;
-
-	/* Обнуляем карту МКУ и зоны */
-	memset(&PPKYConfig.CfgDevices, 0, sizeof(PPKYConfig.CfgDevices));
-	for (uint16_t z = 0; z < ZONE_NUMBER; z++) {
-		memset(PPKYConfig.zone_name[z], 0, ZONE_NAME_SIZE);
-	}
-
-	uint32_t seed = HAL_GetUIDw0() ^ HAL_GetUIDw1();
-
-	/* Шаблон: 9 МКУ, H_adr 1..9
-	 * Зона 1: МКУ_ТС (h_adr=1), МКУ_игнитер (2), МКУ_игнитер (3)
-	 * Зона 2: МКУ_ТС (4), МКУ_игнитер (5), МКУ_игнитер (6)
-	 * Зона 3: МКУ_ТС (7), МКУ_игнитер (8), МКУ_игнитер (9) */
-	const uint8_t zone_map[]   = {1, 1, 1, 2, 2, 2, 3, 3, 3};
-	const uint8_t h_adr_map[]  = {1, 2, 3, 4, 5, 6, 7, 8, 9};
-	const uint8_t mcu_type[]   = {DEVICE_MCU_TC_TYPE, DEVICE_MCU_IGN_TYPE, DEVICE_MCU_IGN_TYPE,
-	                              DEVICE_MCU_TC_TYPE, DEVICE_MCU_IGN_TYPE, DEVICE_MCU_IGN_TYPE,
-	                              DEVICE_MCU_TC_TYPE, DEVICE_MCU_IGN_TYPE, DEVICE_MCU_IGN_TYPE};
-
-	for (uint8_t i = 0; i < 9u; i++) {
-		MKUCfg *m = &PPKYConfig.CfgDevices[i];
-		m->UId.UId0 = mku_id_seed(0x10000000u, i);
-		m->UId.UId1 = mku_id_seed(0x20000000u, i);
-		m->UId.UId2 = mku_id_seed(0x30000000u, i);
-		m->UId.UId3 = mku_id_seed(seed, i);
-		m->UId.UId4 = (uint32_t)(i + 1u);
-
-		m->UId.devId.zone  = zone_map[i] & 0x7Fu;
-		m->UId.devId.h_adr = h_adr_map[i];
-		m->UId.devId.l_adr = 0;
-		m->UId.devId.d_type = mcu_type[i];
-
-		if (mcu_type[i] == DEVICE_MCU_IGN_TYPE) {
-			m->VDtype[0] = DT_IGN;
-			m->VDtype[1] = DT_DPT;
-		} else {
-			m->VDtype[0] = DT_DPT;
-		}
-	}
-
-	/* Имена зон */
-	strncpy((char *)PPKYConfig.zone_name[0], "зона 1", ZONE_NAME_SIZE - 1);
-	PPKYConfig.zone_name[0][ZONE_NAME_SIZE - 1] = '\0';
-	strncpy((char *)PPKYConfig.zone_name[1], "зона 2", ZONE_NAME_SIZE - 1);
-	PPKYConfig.zone_name[1][ZONE_NAME_SIZE - 1] = '\0';
-	strncpy((char *)PPKYConfig.zone_name[2], "зона 3", ZONE_NAME_SIZE - 1);
-	PPKYConfig.zone_name[2][ZONE_NAME_SIZE - 1] = '\0';
-
-	/* Восстанавливаем ID ППКУ и beep */
-	PPKYConfig.UId = ppky_uid;
-	PPKYConfig.beep = ppky_beep;
-}
 
 // посылки от устройств
 void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 	(void)MsgData;
 	uint32_t now = HAL_GetTick();
 	UpdateActiveDeviceList(MsgID, now);
-}
 
-// Размер конфигурации (в байтах)
-uint16_t GetConfigSize() { // get config size in bytes
-	return (uint16_t)sizeof(PPKYConfig);
-}
-
-// Чтение 4-байтового слова из локальной конфигурации (big-endian)
-uint32_t GetConfigWord(uint16_t num) { // get 4 bytes
-	uint32_t byte_index = (uint32_t)num * 4U;
-	uint16_t cfg_size = GetConfigSize();
-
-	if (byte_index + 4U > cfg_size) {
-		// За пределами диапазона – возвращаем 0
-		return 0;
-	}
-
-	uint8_t *p = (uint8_t *)&PPKYConfig;
-	uint32_t word = 0;
-	word |= ((uint32_t)p[byte_index + 0] << 24);
-	word |= ((uint32_t)p[byte_index + 1] << 16);
-	word |= ((uint32_t)p[byte_index + 2] << 8);
-	word |= ((uint32_t)p[byte_index + 3] << 0);
-
-	return word;
-}
-
-// Запись 4-байтового слова в локальную конфигурацию (big-endian)
-void SetConfigWord(uint16_t num, uint32_t word) { // set 4 bytes
-	uint32_t byte_index = (uint32_t)num * 4U;
-	uint16_t cfg_size = GetConfigSize();
-
-	if (byte_index + 4U > cfg_size) {
-		// За пределами диапазона – игнорируем
-		return;
-	}
-
-	uint8_t *p = (uint8_t *)&PPKYConfig;
-	p[byte_index + 0] = (uint8_t)((word >> 24) & 0xFF);
-	p[byte_index + 1] = (uint8_t)((word >> 16) & 0xFF);
-	p[byte_index + 2] = (uint8_t)((word >> 8)  & 0xFF);
-	p[byte_index + 3] = (uint8_t)((word >> 0)  & 0xFF);
-}
-
-// Сохранение локальной конфигурации в Flash и обновление копии SavedPPKYConfig
-void SaveConfig() {
-	uint16_t size = GetConfigSize();
-	FlashWriteData((uint8_t *)&PPKYConfig, size);
-
-	// Читаем обратно из Flash в SavedPPKYConfig — проверяем, что запись прошла
-	uint32_t cfg_addr = SPIF_SectorToAddress(FLASH_CFG_START_SECTOR);
-	PPKYConfigHeader hdr;
-	SPIF_ReadAddress(&hFlash, cfg_addr, (uint8_t *)&hdr, sizeof(hdr));
-
-	if ((hdr.magic == PPKY_CFG_HEADER_MAGIC) && (hdr.size == size)) {
-		SPIF_ReadAddress(&hFlash,
-				         cfg_addr + sizeof(PPKYConfigHeader),
-						 (uint8_t *)&SavedPPKYConfig,
-						 size);
-	} else {
-		// Что-то пошло не так, оставляем SavedPPKYConfig равным локальной конфигурации
-		SavedPPKYConfig = PPKYConfig;
+	uint8_t Command = MsgData[0];
+	if(Command >= ServiceCmd_SetStatusFire && Command <= ServiceCmd_StopExtinguishment) {
+		if(Command == ServiceCmd_SetStatusFire) {
+			HAL_RTC_GetDate(&hrtc, &fire.d, RTC_FORMAT_BIN);
+			HAL_RTC_GetTime(&hrtc, &fire.t, RTC_FORMAT_BIN);
+			fire.isfire = 1;
+			fire.dev.ID = MsgID & 0xFFFFFFF;
+			fire.zone = fire.dev.field.zone;
+		}
 	}
 }
+
+
+
+
+
+
+
+
 
 

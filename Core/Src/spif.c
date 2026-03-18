@@ -74,10 +74,10 @@
 
 void SPIF_Lock(SPIF_HandleTypeDef *Handle)
 {
-	while (Handle->Lock)
-	{
-		SPIF_Delay(1);
-	}
+	//while (Handle->Lock)
+	//{
+	//	SPIF_Delay(1);
+	//}
 	Handle->Lock = 1;
 }
 
@@ -657,7 +657,9 @@ bool SPIF_ReadFn(SPIF_HandleTypeDef *Handle, uint32_t Address, uint8_t *Data, ui
 #if SPIF_DEBUG != SPIF_DEBUG_DISABLE
 		uint32_t dbgTime = HAL_GetTick();
 #endif
+		#if SPIF_DEBUG != SPIF_DEBUG_DISABLE
 		dprintf("SPIF_ReadAddress() START ADDRESS %ld\r\n", Address);
+		#endif
 		SPIF_CsPin(Handle, 0);
 		if (Handle->BlockCnt >= 512)
 		{
@@ -684,13 +686,32 @@ bool SPIF_ReadFn(SPIF_HandleTypeDef *Handle, uint32_t Address, uint8_t *Data, ui
 				break;
 			}
 		}
-		if (SPIF_Receive(Handle, Data, Size, 2000) == false)
+		/* Некоторые конфигурации HAL/SPI работают нестабильно при чтении
+		 * больших буферов за один вызов HAL_SPI_Receive().
+		 * Поэтому читаем в несколько приёмов по SPIF_PAGE_SIZE (256 байт). */
 		{
-			SPIF_CsPin(Handle, 1);
-			break;
+			uint32_t remaining = Size;
+			uint8_t *p = Data;
+			while (remaining > 0u)
+			{
+				uint32_t chunk = SPIF_PAGE_SIZE;
+				if (chunk > remaining)
+				{
+					chunk = remaining;
+				}
+				if (SPIF_Receive(Handle, p, chunk, 2000) == false)
+				{
+					SPIF_CsPin(Handle, 1);
+					goto exit_read;
+				}
+				p += chunk;
+				remaining -= chunk;
+			}
 		}
 		SPIF_CsPin(Handle, 1);
+		#if SPIF_DEBUG != SPIF_DEBUG_DISABLE
 		dprintf("SPIF_ReadAddress() %d BYTES READ DONE AFTER %ld ms\r\n", (uint16_t)Size, HAL_GetTick() - dbgTime);
+		#endif
 #if SPIF_DEBUG == SPIF_DEBUG_FULL
 		dprintf("{\r\n0x%02X", Data[0]);
 		for (int i = 1; i < Size; i++)
@@ -706,6 +727,7 @@ bool SPIF_ReadFn(SPIF_HandleTypeDef *Handle, uint32_t Address, uint8_t *Data, ui
 		retVal = true;
 
 	} while (0);
+exit_read:
 
 	return retVal;
 }

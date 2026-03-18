@@ -309,6 +309,13 @@ int main(void)
 
   Led_Init();
 
+  // ниже принудительно запускаем touch gfx, чтобы загрузить лого на экран.
+  MX_TouchGFX_Process();
+  TGFX_SignalVSync();
+  Display_Enable(true);
+  MX_TouchGFX_Process();
+  TGFX_SignalVSync();
+
   AppInit();
 
   HAL_TIM_Base_Start_IT(&htim1);
@@ -328,7 +335,8 @@ int main(void)
 
   //HAL_GPIO_WritePin(SOUND_GPIO_Port, SOUND_Pin, GPIO_PIN_SET);
  // while(1);
-  uint8_t display_turn_on = 0;
+  //uint8_t display_turn_on = 0;
+  uint32_t last_rtc_bkp_tick = HAL_GetTick();
   while (1)
   {
 	  uint32_t cur_tick = HAL_GetTick();
@@ -341,11 +349,12 @@ int main(void)
 		   * дисплей стартует раньше, чем touchgsx успевает заполнить буфер новыми данными
 		   * без задержки можно вручную залить картинку
 		   */
+		  /*
 		  if(display_turn_on == 0) {
 			  Display_Enable(true);
 			  display_turn_on = 1;
 		  }
-
+		   */
 			/* test
 			 *
 			 */
@@ -384,6 +393,25 @@ int main(void)
 		 AppTimer10ms();
 	 }
 	 CanProcess();
+
+	 /* Раз в минуту сохраняем текущую дату/время в свободный BKP-регистр RTC.
+	  * Формат хранения: 0xMMDDHHmm (BCD) в RTC_BKP_DR1. */
+	 if ((cur_tick - last_rtc_bkp_tick) >= 60000u) {
+		 last_rtc_bkp_tick = cur_tick;
+
+		 RTC_TimeTypeDef rtc_time;
+		 RTC_DateTypeDef rtc_date;
+		 if (HAL_RTC_GetTime(&hrtc, &rtc_time, RTC_FORMAT_BCD) == HAL_OK &&
+		     HAL_RTC_GetDate(&hrtc, &rtc_date, RTC_FORMAT_BCD) == HAL_OK) {
+			 uint32_t packed =
+					 ((uint32_t)rtc_date.Month << 24) |
+					 ((uint32_t)rtc_date.Date  << 16) |
+					 ((uint32_t)rtc_time.Hours << 8)  |
+					 ((uint32_t)rtc_time.Minutes)  ;
+			 HAL_PWR_EnableBkUpAccess();
+			 HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR1, packed);
+		 }
+	 }
   }
   /* USER CODE END 3 */
 }
@@ -980,7 +1008,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -1292,7 +1320,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : FLASH_CS_Pin */
   GPIO_InitStruct.Pin = FLASH_CS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(FLASH_CS_GPIO_Port, &GPIO_InitStruct);
 

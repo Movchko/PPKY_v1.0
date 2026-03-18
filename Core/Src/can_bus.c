@@ -10,9 +10,9 @@
 #include "stm32h5xx_hal.h"
 #include <string.h>
 
-#define CAN_RX_RING_SIZE      64
-#define CAN_NO_RX_TIMEOUT_MS  2000
-#define CAN_DUP_WINDOW_MS     20
+#define CAN_RX_RING_SIZE      256
+#define CAN_NO_RX_TIMEOUT_MS  3000
+#define CAN_DUP_WINDOW_MS     30
 
 typedef struct {
 	uint32_t id;
@@ -151,8 +151,8 @@ void CanProcess(void)
 
 
 		/* Один и тот же пакет дважды с одной шины — пропустить ?????? пока не вижу смысла в пропуске, возможно стоит сигнализировать об этом, т.к это ненормально */
-		//if (*last_id_cur != CAN_ID_NONE && e->id == *last_id_cur && memcmp(e->data, last_data_cur, 8) == 0)
-		//	continue;
+		if (*last_id_cur != CAN_ID_NONE && e->id == *last_id_cur && memcmp(e->data, last_data_cur, 8) == 0)
+			continue;
 
 		/* Уникальный пакет: разобрать один раз, ждать дубликат с другой шины */
 		ProtocolParse(e->id, e->data, BUS_CAN12); // BUS_CAN12 поскольку парсим только один раз и нам всё-равно по какому пришло. выше и так есть проверки на активность каждой линии
