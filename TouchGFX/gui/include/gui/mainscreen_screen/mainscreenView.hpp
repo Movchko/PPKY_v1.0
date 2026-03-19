@@ -20,6 +20,9 @@ public:
 #ifndef SIMULATOR
     virtual void SetTime(uint32_t time);
 #endif
+
+    /** Обновление отображения пожара: "ПОЖАР NNс: <имя зоны>" в бегущей строке. */
+    void updateFireStatus(bool active, uint8_t zone, uint8_t remaining_s, const char* zoneName);
 protected:
 };
 

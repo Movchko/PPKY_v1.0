@@ -12,6 +12,10 @@ enum LANGUAGES
 
 enum TEXTS
 {
+    T_RESOURCEID2,
+    T_RUH,
+    T___SINGLEUSE_9MQN,
+    T___SINGLEUSE_MF0S,
     T___SINGLEUSE_WSFU,
     T_TURNON,
     T_TURNOFF,

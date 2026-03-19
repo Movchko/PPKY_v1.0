@@ -1,5 +1,6 @@
 #include <gui/model/Model.hpp>
 #include <gui/model/ModelListener.hpp>
+#include <cstring>
 
 #ifndef SIMULATOR
 #include "stm32h5xx_hal_rtc.h"
@@ -30,6 +31,9 @@ void Model::tick()
 				(uint8_t)sDate.Month,
 				(uint8_t)sDate.Year);
 		}
+
+		/* Проксируем актуальный статус пожара на активный экран каждый tick */
+		modelListener->onFireStatusChanged(fireActive, fireZone, fireRemaining, fireZoneName);
 	}
 
 	if(setup_change) {
@@ -50,5 +54,18 @@ void Model::notifySoundToggled(bool soundOn)
 {
     if (soundToggledCallback)
         soundToggledCallback(soundOn);
+}
+
+void Model::setFireStatusFromApp(bool active, uint8_t zone, uint8_t remaining_s, const char* zoneName)
+{
+	fireActive = active;
+	fireZone = zone;
+	fireRemaining = remaining_s;
+	if (zoneName) {
+		std::strncpy(fireZoneName, zoneName, sizeof(fireZoneName) - 1);
+		fireZoneName[sizeof(fireZoneName) - 1] = '\0';
+	} else {
+		fireZoneName[0] = '\0';
+	}
 }
 #endif

@@ -108,6 +108,10 @@ void Led_OffAll() {
 void Led_Set(uint8_t led, uint8_t st) {
     // st – только 2 бита
     st &= 0x03;
+    if (cur_led_state[led] == st) {
+        /* Состояние не изменилось – нет смысла дёргать I2C */
+        return;
+    }
     cur_led_state[led] = st;
 
     uint8_t group = led / 4;          // номер группы (0..3)

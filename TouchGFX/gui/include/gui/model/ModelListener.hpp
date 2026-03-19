@@ -20,6 +20,9 @@ public:
     virtual void setDateTime(uint8_t hour, uint8_t min, uint8_t sec, uint8_t day, uint8_t month, uint8_t year) {}
     /** Кнопка нажата: but = BUT_ENTER/BUT_ESC/BUT_UP/BUT_DOWN/..., state = ButtonStatePress */
     virtual void handleButton(uint8_t but, uint8_t state) {}
+
+    /** Обновление состояния пожара: вызывается из модели по запросу приложения ППКУ. */
+    virtual void onFireStatusChanged(bool active, uint8_t zone, uint8_t remaining_s, const char* zoneName) {}
 #endif
 protected:
     Model* model;

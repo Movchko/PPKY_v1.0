@@ -31,6 +31,25 @@
             "Width": 128,
             "Height": 18,
             "CustomContainerDefinitionName": "CustomContainerSollText"
+          },
+          {
+            "Type": "TextArea",
+            "Name": "textArea1",
+            "Y": 18,
+            "Width": 128,
+            "Height": 25,
+            "TextId": "__SingleUse_MF0S",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            },
+            "Wildcard1": {
+              "TextId": "__SingleUse_9MQN",
+              "UseBuffer": true,
+              "BufferSize": 10
+            }
           }
         ],
         "Interactions": []

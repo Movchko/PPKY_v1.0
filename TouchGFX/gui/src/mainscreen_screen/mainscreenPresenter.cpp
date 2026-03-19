@@ -38,4 +38,9 @@ void mainscreenPresenter::handleButton(uint8_t but, uint8_t state)
         app->gotoScreenMenuScreenNoTransition();
     }
 }
+
+void mainscreenPresenter::onFireStatusChanged(bool active, uint8_t zone, uint8_t remaining_s, const char* zoneName)
+{
+	view.updateFireStatus(active, zone, remaining_s, zoneName);
+}
 #endif

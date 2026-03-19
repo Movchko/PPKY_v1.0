@@ -6,6 +6,7 @@
 #include "led.h"
 #include "backend.h"
 #include "gui/common/FrontendHeap.hpp"
+#include "fire.h"
 
 
 
@@ -13,27 +14,6 @@ struct PPKYCfg PPKYConfig;       // локальная (рабочая) конф
 struct PPKYCfg SavedPPKYConfig; // копия сохранённой конфигурации из Flash
 
 extern SPIF_HandleTypeDef hFlash;
-
-/*
- * fire param
- *
- *
- *
- */
-struct s_fire {
-	uint8_t isfire;
-	RTC_TimeTypeDef t;
-	RTC_DateTypeDef d;
-	uint8_t zone;
-	can_ext_id_t dev;
-};
-
-s_fire fire;
-
-/*
- * end fire param
- */
-
 
 PControl *Power[2];
 
@@ -94,6 +74,8 @@ uint16_t  		POWER_OUT_PIN[2] = {KEY_1_Pin, KEY_2_Pin};
 
 bool isAppInit = 0;
 
+extern Device BoardDevicesList[];
+extern uint8_t nDevs;
 
 
 extern int32_t CHANNEL_VAL[NUM_ADC_CHANNEL];
@@ -538,6 +520,7 @@ static void CheckMkuConfigMismatch(void) {
 	}
 }
 
+/* Отправить ServiceCmd_StartExtinguishment всем МКУ указанной зоны */
 void SetHAdr(uint8_t h_adr) {
 	extern Device BoardDevicesList[];
 	PPKYConfig.UId.devId.h_adr = h_adr;
@@ -650,6 +633,9 @@ void AppInit() {
 	isListener = true;
 	extern uint8_t isMaster;
 	isMaster = 1;
+
+	/* Инициализация FSM пожара */
+	Fire_Init();
 }
 
 volatile uint8_t set[2] = {1, 1};
@@ -679,6 +665,7 @@ void AppTimer1ms() {
 	AppProcess(now);
 	RefreshActiveDevices(now);
 	CheckMkuConfigMismatch();
+	Fire_Timer1ms();
 	counter1s++;
 	if(counter1s >= 1000) {
 		counter1s = 0;
@@ -690,6 +677,7 @@ void AppTimer1ms() {
 
 void AppTimer10ms() {
 	Button_Process();
+	Fire_Timer10ms();
 	Beeper_Process();
 	Led_Process();
 }
@@ -755,13 +743,24 @@ void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 	uint8_t Command = MsgData[0];
 	if(Command >= ServiceCmd_SetStatusFire && Command <= ServiceCmd_StopExtinguishment) {
 		if(Command == ServiceCmd_SetStatusFire) {
-			HAL_RTC_GetDate(&hrtc, &fire.d, RTC_FORMAT_BIN);
-			HAL_RTC_GetTime(&hrtc, &fire.t, RTC_FORMAT_BIN);
-			fire.isfire = 1;
-			fire.dev.ID = MsgID & 0xFFFFFFF;
-			fire.zone = fire.dev.field.zone;
+			Fire_OnStatusFire(MsgID);
+		} else if (Command == ServiceCmd_ReplyStatusFire) {
+			Fire_OnReplyStatusFire(MsgID);
+		} else if (Command == ServiceCmd_StopExtinguishment) {
+			Fire_OnStopExtinguishment(MsgID);
 		}
 	}
+}
+
+extern "C" void Fire_UiUpdate(uint8_t active, uint8_t zone, uint8_t remaining_s) {
+	const char* zoneName = nullptr;
+	static char zone_name_buf[ZONE_NAME_SIZE + 1];
+	if (active && zone < ZONE_NUMBER) {
+		memcpy(zone_name_buf, PPKYConfig.zone_name[zone], ZONE_NAME_SIZE);
+		zone_name_buf[ZONE_NAME_SIZE] = '\0';
+		zoneName = zone_name_buf;
+	}
+	FrontendHeap::getInstance().model.setFireStatusFromApp(active != 0, zone, remaining_s, zoneName);
 }
 
 

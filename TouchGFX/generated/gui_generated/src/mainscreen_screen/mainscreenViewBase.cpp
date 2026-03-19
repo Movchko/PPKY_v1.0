@@ -3,6 +3,7 @@
 /*********************************************************************************/
 #include <gui_generated/mainscreen_screen/mainscreenViewBase.hpp>
 #include <touchgfx/Color.hpp>
+#include <texts/TextKeysAndLanguages.hpp>
 
 mainscreenViewBase::mainscreenViewBase()
 {
@@ -22,6 +23,14 @@ mainscreenViewBase::mainscreenViewBase()
 
     CustomContainerSrollText.setXY(0, 46);
     add(CustomContainerSrollText);
+
+    textArea1.setPosition(0, 18, 128, 25);
+    textArea1.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
+    textArea1.setLinespacing(0);
+    Unicode::snprintf(textArea1Buffer, TEXTAREA1_SIZE, "%s", touchgfx::TypedText(T___SINGLEUSE_9MQN).getText());
+    textArea1.setWildcard(textArea1Buffer);
+    textArea1.setTypedText(touchgfx::TypedText(T___SINGLEUSE_MF0S));
+    add(textArea1);
 }
 
 mainscreenViewBase::~mainscreenViewBase()

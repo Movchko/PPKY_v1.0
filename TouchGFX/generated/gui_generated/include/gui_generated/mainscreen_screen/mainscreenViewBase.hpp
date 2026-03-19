@@ -11,6 +11,7 @@
 #include <gui/containers/CustomContainerTopBar.hpp>
 #include <gui/containers/CustomContainerScrollTime.hpp>
 #include <gui/containers/CustomContainerSollText.hpp>
+#include <touchgfx/widgets/TextAreaWithWildcard.hpp>
 
 class mainscreenViewBase : public touchgfx::View<mainscreenPresenter>
 {
@@ -32,6 +33,13 @@ protected:
     CustomContainerTopBar customContainerTopBar1;
     CustomContainerScrollTime customContainerScrollTime1;
     CustomContainerSollText CustomContainerSrollText;
+    touchgfx::TextAreaWithOneWildcard textArea1;
+
+    /*
+     * Wildcard Buffers
+     */
+    static const uint16_t TEXTAREA1_SIZE = 10;
+    touchgfx::Unicode::UnicodeChar textArea1Buffer[TEXTAREA1_SIZE];
 
 private:
 

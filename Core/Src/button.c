@@ -46,7 +46,7 @@ void Button_Process() {
 			if((Buttons[i].press_counter >= SHORT_PRESS_COUNT) && (Buttons[i].state == ButtonStateReset)) {
 				Buttons[i].state = ButtonStatePress;
 
-
+				/*
 				if((i == BUT_UP) || (i == BUT_DOWN) || (i == BUT_ESC))
 					Beeper_ShortBeep();
 				else if((i == BUT_ENTER))
@@ -55,6 +55,7 @@ void Button_Process() {
 					Led_TestToogle();
 				} else
 					Beeper_LongBeep();
+					*/
 
 			}
 
