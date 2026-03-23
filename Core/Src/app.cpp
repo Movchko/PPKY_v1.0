@@ -24,6 +24,7 @@ typedef struct {
 	uint32_t last_seen_ms;
 	uint8_t online;
 	uint8_t can_status_mask; /* маска активности CAN (из статуса МКУ cmd=0) */
+	uint8_t u24_01v;         /* измеренное U24 (0.1V), из статуса МКУ cmd=0 */
 
 	/* Виртуальные устройства, которые находятся "внутри" данного МКУ */
 	uint8_t vdev_count;
@@ -44,9 +45,11 @@ typedef struct {
 
 		/* часто используемые декодированные поля (для удобства отладки) */
 		uint8_t line_state;     /* для DPT/IGNITER */
-		uint16_t resistance_ohm; /* для DPT */
-		int16_t max_temp_c;    /* для DPT */
-		uint8_t max_fault;     /* для DPT */
+		uint16_t resistance_ohm; /* для DPT/Button/LSwitch */
+		uint16_t igniter_resistance_ohm; /* для IGNITER */
+		int16_t max_temp_c;    /* для DPT/Button/LSwitch (термопара MAX) */
+		int16_t max_internal_temp_c; /* для DPT/Button/LSwitch (внутренняя MAX) */
+		uint8_t max_fault_mask;     /* для DPT/Button/LSwitch (битовая маска MAX) */
 		uint8_t ack_flags;     /* для IGNITER */
 	} vdevs[PPKY_MAX_ACTIVE_VDEVS_PER_MCU];
 } ActiveDeviceInfo;
@@ -307,7 +310,12 @@ static void UpdateActiveDeviceList(uint32_t msg_id, uint32_t now_ms) {
 	// интересуют только устройства МКУ (13, 14) и посылки dir=1
 	if (id.field.dir == 0)
 		return;
-	if (id.field.d_type != DEVICE_MCU_IGN_TYPE && id.field.d_type != DEVICE_MCU_TC_TYPE)
+	if (id.field.d_type != DEVICE_MCU_IGN_TYPE &&
+	    id.field.d_type != DEVICE_MCU_TC_TYPE &&
+	    id.field.d_type != DEVICE_MCU_K1 &&
+	    id.field.d_type != DEVICE_MCU_K2 &&
+	    id.field.d_type != DEVICE_MCU_K3 &&
+	    id.field.d_type != DEVICE_MCU_KR)
 		return;
 
 	Device dev;
@@ -333,6 +341,7 @@ static void UpdateActiveDeviceList(uint32_t msg_id, uint32_t now_ms) {
 		g_active_devices[g_active_devices_count].last_seen_ms = now_ms;
 		g_active_devices[g_active_devices_count].online = 1;
 		g_active_devices[g_active_devices_count].can_status_mask = 0u;
+		g_active_devices[g_active_devices_count].u24_01v = 0u;
 		g_active_devices[g_active_devices_count].vdev_count = 0u;
 		/* vdevs[] уже обнулены при memset в AddrAuto_ClearActiveDevices() */
 		g_active_devices_count++;
@@ -345,6 +354,7 @@ static void RefreshActiveDevices(uint32_t now_ms) {
 		    (now_ms - g_active_devices[i].last_seen_ms) > 5000u) {
 			g_active_devices[i].online = 0;
 			g_active_devices[i].can_status_mask = 0u;
+			g_active_devices[i].u24_01v = 0u;
 			g_active_devices[i].vdev_count = 0u;
 			memset(g_active_devices[i].vdevs, 0, sizeof(g_active_devices[i].vdevs));
 		}
@@ -382,7 +392,12 @@ static void UpdateMcuCanStatus(uint32_t MsgID, uint8_t *MsgData) {
 	id.ID = MsgID;
 
 	/* Только МКУ и только их статус (cmd=0) */
-	if (id.field.d_type != DEVICE_MCU_IGN_TYPE && id.field.d_type != DEVICE_MCU_TC_TYPE)
+	if (id.field.d_type != DEVICE_MCU_IGN_TYPE &&
+	    id.field.d_type != DEVICE_MCU_TC_TYPE &&
+	    id.field.d_type != DEVICE_MCU_K1 &&
+	    id.field.d_type != DEVICE_MCU_K2 &&
+	    id.field.d_type != DEVICE_MCU_K3 &&
+	    id.field.d_type != DEVICE_MCU_KR)
 		return;
 	if (MsgData[0] != 0u)
 		return;
@@ -400,8 +415,11 @@ static void UpdateMcuCanStatus(uint32_t MsgID, uint8_t *MsgData) {
 	 * MsgData[0] = cmd (0)
 	 * MsgData[1..7] = Data[0..6] из SendMessage()
 	 * В Data[4] находится CAN mask (CAN1_Active | CAN2_Active<<1)
-	 * => MsgData[5] */
+	 * => MsgData[5]
+	 * В Data[5] находится U24 (0.1V)
+	 * => MsgData[6] */
 	g_active_devices[idx].can_status_mask = MsgData[5];
+	g_active_devices[idx].u24_01v = MsgData[6];
 }
 
 static void UpdateActiveVirtualDevices(uint32_t MsgID, uint8_t *MsgData, uint32_t now_ms) {
@@ -413,7 +431,12 @@ static void UpdateActiveVirtualDevices(uint32_t MsgID, uint8_t *MsgData, uint32_
 
 	/* Физические устройства МКУ игнорируем — виртуальные приходят как d_type=DEVICE_*TYPE */
 	uint8_t v_d_type = (uint8_t)id.field.d_type;
-	if (v_d_type == DEVICE_MCU_IGN_TYPE || v_d_type == DEVICE_MCU_TC_TYPE)
+	if (v_d_type == DEVICE_MCU_IGN_TYPE ||
+	    v_d_type == DEVICE_MCU_TC_TYPE ||
+	    v_d_type == DEVICE_MCU_K1 ||
+	    v_d_type == DEVICE_MCU_K2 ||
+	    v_d_type == DEVICE_MCU_K3 ||
+	    v_d_type == DEVICE_MCU_KR)
 		return;
 
 	/* Принимаем только известные виртуальные типы из device_lib.
@@ -474,20 +497,28 @@ static void UpdateActiveVirtualDevices(uint32_t MsgID, uint8_t *MsgData, uint32_
 	/* Декодинг удобных полей для популярных типов */
 	if (v_d_type == DEVICE_IGNITER_TYPE) {
 		/* status_params[0] = LineState
-		 * status_params[1] = ack_flags */
+		 * status_params[1] = ack_flags
+		 * status_params[2..3] = измерение линии (LE, 2 байта) */
 		m->vdevs[v_idx].line_state = m->vdevs[v_idx].status_params[0];
 		m->vdevs[v_idx].ack_flags  = m->vdevs[v_idx].status_params[1];
-	} else if (v_d_type == DEVICE_DPT_TYPE) {
+		m->vdevs[v_idx].igniter_resistance_ohm =
+			(uint16_t)m->vdevs[v_idx].status_params[2] |
+			((uint16_t)m->vdevs[v_idx].status_params[3] << 8);
+	} else if (v_d_type == DEVICE_DPT_TYPE ||
+	           v_d_type == DEVICE_BUTTON_TYPE ||
+	           v_d_type == DEVICE_LSWITCH_TYPE) {
 		/* status_params[0] = LineState
 		 * status_params[1..2] = resistance (LE)
-		 * status_params[3] = max_temp low byte (int8)
-		 * status_params[4] = max_fault */
+		 * status_params[3] = max_temp_tc (int8)
+		 * status_params[4] = max_fault_mask (bitmask)
+		 * status_params[5] = max_internal_temp (int8) */
 		m->vdevs[v_idx].line_state = m->vdevs[v_idx].status_params[0];
 		m->vdevs[v_idx].resistance_ohm =
 			(uint16_t)m->vdevs[v_idx].status_params[1] |
 			((uint16_t)m->vdevs[v_idx].status_params[2] << 8);
 		m->vdevs[v_idx].max_temp_c = (int16_t)(int8_t)m->vdevs[v_idx].status_params[3];
-		m->vdevs[v_idx].max_fault = m->vdevs[v_idx].status_params[4];
+		m->vdevs[v_idx].max_fault_mask = m->vdevs[v_idx].status_params[4];
+		m->vdevs[v_idx].max_internal_temp_c = (int16_t)(int8_t)m->vdevs[v_idx].status_params[5];
 	}
 }
 

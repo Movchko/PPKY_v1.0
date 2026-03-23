@@ -36,9 +36,9 @@ typedef struct {
 	uint8_t   zone;              /* зона пожара */
 	uint8_t   reply_received;    /* пришёл ReplyStatusFire */
 
-	/* Удержание ПУСК СП (3с) */
-	uint8_t   sp_hold_active;
-	uint16_t  sp_hold_ms;
+	/* Удержание ПУСК Общий (3с) */
+	uint8_t   all_hold_active;
+	uint16_t  all_hold_ms;
 
 	uint32_t  state_start_ms;    /* старт текущего состояния (для авто-таймера) */
 	uint32_t  led_toggle_ms;     /* последний тик мигания LED_FIRE */
@@ -171,7 +171,8 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		g_fire.state = FIRE_STATE_IDLE;
 		break;
 	case FIRE_EVENT_BTN_FORCE:
-		/* Реальный запуск ПУСК СП – только после удержания 3с (см. Fire_Timer10ms) */
+		/* ПУСК СП:
+		 * запуск только по зоне, в которой пришёл пожар (g_fire.zone). */
 		if (g_fire.state == FIRE_STATE_WAIT_AUTO || g_fire.state == FIRE_STATE_WAIT_MANUAL) {
 			if (g_fire.zone != 0xFFu) {
 				Fire_SendStartForZone(g_fire.zone);
@@ -180,6 +181,8 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		}
 		break;
 	case FIRE_EVENT_BTN_FIRE:
+		/* ПУСК Общий:
+		 * запуск во всех зонах, где есть МКУ. */
 		if (g_fire.state == FIRE_STATE_WAIT_AUTO || g_fire.state == FIRE_STATE_WAIT_MANUAL) {
 			Fire_SendStartAllZones();
 			g_fire.state = FIRE_STATE_EXTINGUISHING;
@@ -209,10 +212,10 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		}
 	}
 
-	/* Если удерживаем ПУСК СП (до старта) — на экране показываем отсчёт 3..1 */
+	/* Если удерживаем ПУСК Общий (до старта) — на экране показываем отсчёт 3..1 */
 	if ((g_fire.state == FIRE_STATE_WAIT_AUTO || g_fire.state == FIRE_STATE_WAIT_MANUAL) &&
-	    g_fire.sp_hold_active && g_fire.sp_hold_ms < 3000u) {
-		uint32_t rem_ms = 3000u - g_fire.sp_hold_ms;
+	    g_fire.all_hold_active && g_fire.all_hold_ms < 3000u) {
+		uint32_t rem_ms = 3000u - g_fire.all_hold_ms;
 		ui_remaining = (uint8_t)((rem_ms + 999u) / 1000u); /* ceil */
 	}
 
@@ -236,11 +239,12 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		Fire_SetIdleIndication();
 	} else {
 		Fire_ApplyStateLeds();
-		/* Во время удержания ПУСК СП мигает надпись 0.5 Гц */
+		/* Во время удержания ПУСК Общий мигает надпись 0.5 Гц */
 		if ((g_fire.state == FIRE_STATE_WAIT_AUTO || g_fire.state == FIRE_STATE_WAIT_MANUAL) &&
-		    g_fire.sp_hold_active) {
+		    g_fire.all_hold_active) {
 			uint8_t blink_on = (((now_ms / 500u) & 1u) != 0u) ? 1u : 0u;
-			Led_Set(LED_STR_START_SP, blink_on);
+			Led_Set(LED_BUT_START_ALL, 1u);
+			Led_Set(LED_STR_START_ALL, blink_on);
 		}
 		ui_active = 1u;
 		ui_zone = g_fire.zone;
@@ -259,7 +263,12 @@ static void Fire_SendStartForZone(uint8_t zone)
 
 	for (uint8_t i = 0; i < nDevs; i++) {
 		uint8_t d_type = BoardDevicesList[i].d_type;
-		if (d_type != DEVICE_MCU_IGN_TYPE && d_type != DEVICE_MCU_TC_TYPE)
+		if (d_type != DEVICE_MCU_IGN_TYPE &&
+		    d_type != DEVICE_MCU_TC_TYPE &&
+		    d_type != DEVICE_MCU_K1 &&
+		    d_type != DEVICE_MCU_K2 &&
+		    d_type != DEVICE_MCU_K3 &&
+		    d_type != DEVICE_MCU_KR)
 			continue;
 		if (BoardDevicesList[i].zone != zone)
 			continue;
@@ -281,7 +290,12 @@ static void Fire_SendStartAllZones(void)
 
 	for (uint8_t i = 0; i < nDevs; i++) {
 		uint8_t d_type = BoardDevicesList[i].d_type;
-		if (d_type != DEVICE_MCU_IGN_TYPE && d_type != DEVICE_MCU_TC_TYPE)
+		if (d_type != DEVICE_MCU_IGN_TYPE &&
+		    d_type != DEVICE_MCU_TC_TYPE &&
+		    d_type != DEVICE_MCU_K1 &&
+		    d_type != DEVICE_MCU_K2 &&
+		    d_type != DEVICE_MCU_K3 &&
+		    d_type != DEVICE_MCU_KR)
 			continue;
 
 		uint8_t zone = BoardDevicesList[i].zone;
@@ -315,38 +329,39 @@ void Fire_Timer10ms(void)
 	if (g_fire.state == FIRE_STATE_IDLE)
 		return;
 
-	/* ПУСК СП: логика удержания 3 секунды с обратным отсчётом.
-	 * В твоей прошивке кнопка, которая соответствует "ПУСК СП", сейчас читается как BUT_FIRE. */
-	ButtonState st_force = Button_GetState(BUT_FIRE);
-	if (st_force == ButtonStatePress || st_force == ButtonStateLongPress) {
-		if (!g_fire.sp_hold_active) {
-			g_fire.sp_hold_active = 1u;
-			g_fire.sp_hold_ms = 0u;
+	/* Кнопка ПУСК Общий (BUT_FORCE):
+	 * удержание 3 секунды, затем FIRE_EVENT_BTN_FIRE -> Fire_SendStartAllZones(). */
+	ButtonState st_all = Button_GetState(BUT_FORCE);
+	if (st_all == ButtonStatePress || st_all == ButtonStateLongPress) {
+		if (!g_fire.all_hold_active) {
+			g_fire.all_hold_active = 1u;
+			g_fire.all_hold_ms = 0u;
 			g_fire.state_start_ms = HAL_GetTick(); /* для синхронизации UI-обратного отсчёта */
 		} else {
-			if (g_fire.sp_hold_ms < 3000u) {
-				g_fire.sp_hold_ms += 10u; /* шаг 10 мс */
+			if (g_fire.all_hold_ms < 3000u) {
+				g_fire.all_hold_ms += 10u; /* шаг 10 мс */
 			}
-			if (g_fire.sp_hold_ms >= 3000u) {
-				/* Удержание выполнено — генерируем событие BTN_FORCE один раз */
+			if (g_fire.all_hold_ms >= 3000u) {
+				/* Удержание выполнено — генерируем событие BTN_FIRE один раз */
 				if (g_fire.btn_force_latched == 0u) {
 					g_fire.btn_force_latched = 1u;
-					Fire_Transition(FIRE_EVENT_BTN_FORCE, HAL_GetTick());
+					Fire_Transition(FIRE_EVENT_BTN_FIRE, HAL_GetTick());
 				}
 			}
 		}
 	} else {
-		/* Отпустили ПУСК СП до 3с – сбрасываем счётчик и флаг */
-		g_fire.sp_hold_active = 0u;
-		g_fire.sp_hold_ms = 0u;
+		/* Отпустили ПУСК Общий до 3с – сбрасываем счётчик и флаг */
+		g_fire.all_hold_active = 0u;
+		g_fire.all_hold_ms = 0u;
 		g_fire.btn_force_latched = 0u;
 	}
 
-	/* Обновляем индикацию/текст для удержания кнопки ПУСК СП */
+	/* Обновляем индикацию/текст для удержания кнопки ПУСК Общий */
 	Fire_Transition(FIRE_EVENT_TICK_1MS, HAL_GetTick());
-	/* ПУСК Общий: сразу, кнопка BUT_FORCE */
-	if (Fire_ButtonPressedEvent(BUT_FORCE, &g_fire.btn_start_all_latched)) {
-		Fire_Transition(FIRE_EVENT_BTN_FIRE, HAL_GetTick());
+	/* Кнопка ПУСК СП (BUT_FIRE):
+	 * мгновенно FIRE_EVENT_BTN_FORCE -> Fire_SendStartForZone(g_fire.zone). */
+	if (Fire_ButtonPressedEvent(BUT_FIRE, &g_fire.btn_start_all_latched)) {
+		Fire_Transition(FIRE_EVENT_BTN_FORCE, HAL_GetTick());
 	}
 	if (Fire_ButtonPressedEvent(BUT_STOP, &g_fire.btn_stop_latched)) {
 		Fire_Transition(FIRE_EVENT_BTN_STOP, HAL_GetTick());
