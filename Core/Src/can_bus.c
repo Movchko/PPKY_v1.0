@@ -105,7 +105,7 @@ void CanProcess(void)
 		pending_timeout[d] = 0;
 	}
 
-	while (can_rx_head != can_rx_tail) {
+	/*while*/if (can_rx_head != can_rx_tail) {
 		CanRxEntry *e = &can_rx_ring[can_rx_tail];
 		can_rx_tail++;
 		if (can_rx_tail >= CAN_RX_RING_SIZE)
@@ -146,13 +146,13 @@ void CanProcess(void)
 			memcpy(last_data_cur, e->data, 8);
 			pending_timeout[dev] = 0;
 			device_can_error[dev] &= (uint8_t)(~(1 << (e->can_bus - 1)));
-			continue;
+			return;//continue;
 		}
 
 
 		/* Один и тот же пакет дважды с одной шины — пропустить ?????? пока не вижу смысла в пропуске, возможно стоит сигнализировать об этом, т.к это ненормально */
 		if (*last_id_cur != CAN_ID_NONE && e->id == *last_id_cur && memcmp(e->data, last_data_cur, 8) == 0)
-			continue;
+			return;//continue;
 
 		/* Уникальный пакет: разобрать один раз, ждать дубликат с другой шины */
 		ProtocolParse(e->id, e->data, BUS_CAN12); // BUS_CAN12 поскольку парсим только один раз и нам всё-равно по какому пришло. выше и так есть проверки на активность каждой линии

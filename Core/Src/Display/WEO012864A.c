@@ -142,6 +142,7 @@ void Display_UpdateRect(uint8_t *framebuffer, uint16_t x, uint16_t y, uint16_t w
 	
 	// TouchGFX framebuffer stride (bytes per row)
 	uint16_t fb_stride = (DISP_WIDTH + 7) / 8; // 16 bytes per row for 128px width
+	uint32_t max_fb_idx = (uint32_t)height * (uint32_t)fb_stride;
 	
 	// Calculate page addresses for display
 	uint8_t page_start = y / 8;
@@ -157,45 +158,32 @@ void Display_UpdateRect(uint8_t *framebuffer, uint16_t x, uint16_t y, uint16_t w
 		// Calculate vertical range within this page
 		uint8_t page_row_start = (page == page_start) ? (y % 8) : 0;
 		uint8_t page_row_end = (page == page_end) ? ((y + height - 1) % 8) : 7;
+		int32_t rel_base = (int32_t)page * 8 - (int32_t)y; // rel_row = rel_base + bit
 		
 		// For each column in the rectangle
 		for (uint16_t col = 0; col < width; col++) {
 			uint8_t pixel_data = 0;
-			
-			// Convert from TouchGFX format (row-by-row) to SSD1309 format (page-by-page)
-			// framebuffer points to the rect start, so we need to calculate relative addresses
-			for (uint8_t bit = 0; bit < 8; bit++) {
-				// Absolute display row
-				uint16_t abs_row = page * 8 + bit;
-				
-				// Check if this row is within the rectangle bounds
-				if (abs_row < y || abs_row >= (y + height)) {
-					continue;
+			uint16_t abs_col = x + col;
+			uint16_t fb_byte_offset = abs_col / 8;
+			uint8_t fb_bit_mask = (uint8_t)(1u << (7u - (abs_col % 8u))); // TouchGFX: MSB first
+
+			// Index of framebuffer byte for (rel_row = rel_base + page_row_start) and current column byte
+			// idx = rel_row * fb_stride + abs_col/8;
+			int32_t rel_row0 = rel_base + (int32_t)page_row_start; // guaranteed >= 0
+			uint32_t idx = (uint32_t)(rel_row0 * (int32_t)fb_stride + (int32_t)fb_byte_offset);
+
+			// Safety check: if start index is out of bounds, write zeros for this column.
+			if (idx >= max_fb_idx) {
+				Write_Data(0);
+				continue;
+			}
+
+			// Build vertical byte for SSD1309 page: bit position == row offset within the page.
+			for (uint8_t bit = page_row_start; bit <= page_row_end; bit++) {
+				if (framebuffer[idx] & fb_bit_mask) {
+					pixel_data |= (uint8_t)(1u << bit); // SSD1309: LSB = row 0
 				}
-				
-				// Check if this bit is within the current page range
-				if (bit < page_row_start || bit > page_row_end) {
-					continue;
-				}
-				
-				// Relative row within the rectangle (0 to height-1)
-				uint16_t rel_row = abs_row - y;
-				
-				// Absolute column
-				uint16_t abs_col = x + col;
-				
-				// Calculate framebuffer byte and bit position
-				// TouchGFX: MSB first, 8 horizontal pixels per byte
-				uint16_t fb_byte_idx = rel_row * fb_stride + (abs_col / 8);
-				uint8_t fb_bit_pos = 7 - (abs_col % 8);
-				
-				// Extract pixel from framebuffer
-				if (fb_byte_idx < (height * fb_stride)) {
-					uint8_t fb_byte = framebuffer[fb_byte_idx];
-					if (fb_byte & (1 << fb_bit_pos)) {
-						pixel_data |= (1 << bit); // SSD1309: LSB = row 0
-					}
-				}
+				idx += fb_stride; // next rel_row
 			}
 			
 			Write_Data(pixel_data);

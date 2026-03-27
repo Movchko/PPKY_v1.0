@@ -27,7 +27,7 @@ void FrontendApplication::handleTickEvent()
     model.tick();
 
 #ifndef SIMULATOR
-    Button_Process();
+    //Button_Process();
     ModelListener* listener = model.getModelListener();
     if (listener)
     {

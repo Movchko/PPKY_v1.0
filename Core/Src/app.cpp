@@ -17,46 +17,11 @@ extern SPIF_HandleTypeDef hFlash;
 
 PControl *Power[2];
 
-#define PPKY_MAX_ACTIVE_VDEVS_PER_MCU 16
 
-typedef struct {
-	Device dev;
-	uint32_t last_seen_ms;
-	uint8_t online;
-	uint8_t can_status_mask; /* маска активности CAN (из статуса МКУ cmd=0) */
-	uint8_t u24_01v;         /* измеренное U24 (0.1V), из статуса МКУ cmd=0 */
 
-	/* Виртуальные устройства, которые находятся "внутри" данного МКУ */
-	uint8_t vdev_count;
-
-	struct s_active_vdev {
-		uint32_t last_seen_ms;
-		uint8_t online;
-
-		uint8_t v_d_type; /* DEVICE_* виртуального устройства */
-		uint8_t v_l_adr;  /* виртуальный номер (l_adr) */
-
-		/* raw статус, как приходит в CAN payload */
-		uint8_t status_cmd;    /* MsgData[0] */
-		uint8_t status_params[7]; /* MsgData[1..7] */
-
-		uint8_t prev_status_cmd;   /* предыдущий статус (до последнего обновления) */
-		uint8_t status_changed;    /* 1 если статус изменился с прошлого обновления */
-
-		/* часто используемые декодированные поля (для удобства отладки) */
-		uint8_t line_state;     /* для DPT/IGNITER */
-		uint16_t resistance_ohm; /* для DPT/Button/LSwitch */
-		uint16_t igniter_resistance_ohm; /* для IGNITER */
-		int16_t max_temp_c;    /* для DPT/Button/LSwitch (термопара MAX) */
-		int16_t max_internal_temp_c; /* для DPT/Button/LSwitch (внутренняя MAX) */
-		uint8_t max_fault_mask;     /* для DPT/Button/LSwitch (битовая маска MAX) */
-		uint8_t ack_flags;     /* для IGNITER */
-	} vdevs[PPKY_MAX_ACTIVE_VDEVS_PER_MCU];
-} ActiveDeviceInfo;
-
-static ActiveDeviceInfo g_active_devices[32];
-static uint8_t g_active_devices_count = 0;
-static uint8_t g_mku_mismatch_flag = 0;
+ActiveDeviceInfo g_active_devices[32];
+uint8_t g_active_devices_count = 0;
+uint8_t g_mku_mismatch_flag = 0;
 
 /* --- Механизм автоматической установки адресов по команде 10 --- */
 typedef enum {
@@ -652,6 +617,7 @@ void AppInit() {
 	for(uint8_t i = 0; i < 2; i++) {
 		Power[i] = new PControl(i);
 		Power[i]->PControlInit(PControlGetSTCB, PControlGetADCCB, PControlSetOutCB);
+		Power[i]->SetEnable(1);
 	}
 /*
 	HAL_Delay(1000);
@@ -669,8 +635,6 @@ void AppInit() {
 	Fire_Init();
 }
 
-volatile uint8_t set[2] = {1, 1};
-volatile uint8_t st[2];
 extern "C" void PControl_OnStatusFault(uint8_t ch, uint32_t now_ms) {
 	if (ch < 2 && Power[ch] != nullptr) {
 		Power[ch]->OnStatusFault(now_ms);
@@ -683,9 +647,9 @@ void AppProcess(uint32_t now_ms) {
 	for (uint8_t i = 0; i < 2; i++) {
 		if (Power[i] == nullptr)
 			continue;
-		Power[i]->SetEnable(set[i] != 0);
+
 		Power[i]->Process(now_ms);
-		st[i] = Power[i]->PControlGetST(i);
+
 	}
 	// Неблокирующая машина состояний автозадания адресов по команде 10
 	AddrAuto_Process(now_ms);
@@ -697,20 +661,33 @@ void AppTimer1ms() {
 	RefreshActiveDevices(now);
 	CheckMkuConfigMismatch();
 	Fire_Timer1ms();
+	BackendProcess();
+
 	counter1s++;
+
 	if(counter1s >= 1000) {
 		counter1s = 0;
 		AppSetStatus();
 		status_sec_cnt++;
-
 	}
 }
 
 void AppTimer10ms() {
-	Button_Process();
+	/* Чтение кнопок делаем реже, чтобы не перегружать I2C.
+	 * Теперь Button_Process вызывается раз в ~с (при шаге AppTimer10ms ~10 мс). */
+	static uint8_t button_acc = 0;
+	button_acc++;
+	if (button_acc >= 1u) {
+		button_acc = 0;
+		Button_Process();
+	}
 	Fire_Timer10ms();
 	Beeper_Process();
 	Led_Process();
+	//for(uint8_t i = 0; i < 2; i++) {
+	//st[i] = Power[i]->PControlGetST(i);
+	//}
+
 }
 
 
@@ -775,6 +752,7 @@ void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 	if(Command >= ServiceCmd_SetStatusFire && Command <= ServiceCmd_StopExtinguishment) {
 		if(Command == ServiceCmd_SetStatusFire) {
 			Fire_OnStatusFire(MsgID);
+			SetReplyStatusFire();
 		} else if (Command == ServiceCmd_ReplyStatusFire) {
 			Fire_OnReplyStatusFire(MsgID);
 		} else if (Command == ServiceCmd_StopExtinguishment) {

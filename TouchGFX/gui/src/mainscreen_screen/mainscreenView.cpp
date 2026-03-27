@@ -30,6 +30,22 @@ void mainscreenView::SetTime(uint32_t time) {
 
 void mainscreenView::updateFireStatus(bool active, uint8_t zone, uint8_t remaining_s, const char* zoneName)
 {
+	/* Model::tick() вызывает onFireStatusChanged() на каждом touchgfx tick.
+	 * Чтобы не спамить invalidate()/пересборкой текста при неизменных данных,
+	 * кэшируем последние значения и выходим, если ничего не поменялось. */
+	static uint8_t lastActive = 0xFFu;
+	static uint8_t lastZone = 0xFFu;
+	static uint8_t lastRemaining = 0xFFu;
+	if (((uint8_t)active == lastActive) &&
+	    (zone == lastZone) &&
+	    (remaining_s == lastRemaining)) {
+		return;
+	}
+
+	lastActive = (uint8_t)active;
+	lastZone = zone;
+	lastRemaining = remaining_s;
+
 	if (!active) {
 		// Сбрасываем textArea1 и бегущую строку
 		for (uint16_t i = 0; i < TEXTAREA1_SIZE; i++) {

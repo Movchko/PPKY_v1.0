@@ -20,8 +20,14 @@
 #define BUT_STOP	5
 #define BUT_FIRE 	6
 
-#define LONG_PRESS_COUNT 20 // 2s. при таймере 10гц.
-#define SHORT_PRESS_COUNT 1 // 100ms. при таймере 10гц.
+/* Button_Process теперь вызывается раз в ~100 мс.
+ * Пороговые счётчики считаются в количествах вызовов Button_Process. */
+#define BUTTON_TICK_MS 10
+#define SHORT_PRESS_MS 50
+#define LONG_PRESS_MS 2000
+
+#define LONG_PRESS_COUNT  (LONG_PRESS_MS / BUTTON_TICK_MS)  /* 2s  */
+#define SHORT_PRESS_COUNT (SHORT_PRESS_MS / BUTTON_TICK_MS) /*  */
 
 #ifdef __cplusplus
 extern "C" {

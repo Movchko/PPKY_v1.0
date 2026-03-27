@@ -1,5 +1,7 @@
 #include "app.hpp"
 #include "device_config.h"
+#include "device.hpp"
+#include "device_cfg_common.h"
 #include "backend.h"
 
 extern struct PPKYCfg PPKYConfig;       // локальная (рабочая) конфигурация

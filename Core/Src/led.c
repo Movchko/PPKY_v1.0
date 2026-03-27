@@ -186,15 +186,13 @@ void Led_Process() {
 	 *   снова небольшая яркость
 	 */
 
-	bool any_pressed = false;
-
-	for (uint8_t i = 0; i < NUM_BUTTON; i++) {
-		ButtonState st = Button_GetState(i);
-		if ((st == ButtonStatePress) || (st == ButtonStateLongPress)) {
-			any_pressed = true;
-			break;
-		}
-	}
+	/* Подсветку ENTER/ESC делаем активной только от нажатий ENTER/ESC.
+	 * Иначе любые кнопки (например, ПУСК Общий) будут переключать яркость и
+	 * дергать I2C слишком часто. */
+	ButtonState st_enter = Button_GetState(BUT_ENTER);
+	ButtonState st_esc   = Button_GetState(BUT_ESC);
+	bool any_pressed = ((st_enter == ButtonStatePress) || (st_enter == ButtonStateLongPress) ||
+	                     (st_esc == ButtonStatePress)   || (st_esc == ButtonStateLongPress));
 
 	if (any_pressed) {
 		/* Есть нажатие – сразу делаем максимум и обнуляем таймер */

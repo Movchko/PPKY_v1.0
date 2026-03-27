@@ -18,18 +18,31 @@ void Model::tick()
 #ifndef SIMULATOR
 	if (modelListener)
 	{
-		RTC_TimeTypeDef sTime;
-		RTC_DateTypeDef sDate;
-		if (HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN) == HAL_OK &&
-		    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN) == HAL_OK)
-		{
-			modelListener->setDateTime(
-				(uint8_t)sTime.Hours,
-				(uint8_t)sTime.Minutes,
-				(uint8_t)sTime.Seconds,
-				(uint8_t)sDate.Date,
-				(uint8_t)sDate.Month,
-				(uint8_t)sDate.Year);
+		// Обновляем время на UI только раз в секунду (или когда реально поменялась секунда),
+		// чтобы не делать тяжёлые чтения RTC и invalidate() на каждом touchgfx tick.
+		static uint32_t lastRtcUpdateMs = 0;
+		static uint8_t lastSec = 0xFF;
+
+		uint32_t nowMs = HAL_GetTick();
+		if ((nowMs - lastRtcUpdateMs) >= 1000u) {
+			lastRtcUpdateMs = nowMs;
+
+			RTC_TimeTypeDef sTime;
+			RTC_DateTypeDef sDate;
+			if (HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN) == HAL_OK &&
+			    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN) == HAL_OK) {
+				uint8_t sec = (uint8_t)sTime.Seconds;
+				if (sec != lastSec) {
+					lastSec = sec;
+					modelListener->setDateTime(
+						(uint8_t)sTime.Hours,
+						(uint8_t)sTime.Minutes,
+						sec,
+						(uint8_t)sDate.Date,
+						(uint8_t)sDate.Month,
+						(uint8_t)sDate.Year);
+				}
+			}
 		}
 
 		/* Проксируем актуальный статус пожара на активный экран каждый tick */
