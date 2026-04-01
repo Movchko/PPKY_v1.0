@@ -38,6 +38,7 @@ typedef enum {
 typedef struct {
 	FireState state;
 	uint8_t   zone;              /* зона пожара */
+	uint8_t   zone_delay;        /* задержка зоны */
 	uint8_t   reply_received;    /* пришёл ReplyStatusFire */
 
 	/* Удержание ПУСК Общий (3с) */
@@ -226,8 +227,8 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		}
 		break;
 	case FIRE_EVENT_BTN_STOP:
-		/* После подтверждения от МКУ останов кнопкой блокируем */
-		if (!g_fire.reply_received && PPKYConfig.fire_mode != 2u) {
+		/*  останов кнопкой блокируем */
+		if (g_fire.state != FIRE_STATE_EXTINGUISHING) {
 			PPKYConfig.fire_mode = 2u;
 			g_fire.state = FIRE_STATE_WAIT_MANUAL;
 		}
@@ -261,7 +262,7 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		Led_Set(LED_FIRE, 0);
 		g_fire.led_fire_on = 0;
 	} else {
-		if (g_fire.reply_received) {
+		if (/*g_fire.reply_received*/0) { // здесь обработать приход команды подтверждения запуска, пока нет подтверждения запуска - мигаем
 			g_fire.led_fire_on = 1u;
 			Led_Set(LED_FIRE, 1u);
 		} else if ((now_ms - g_fire.led_toggle_ms) >= 500u) {
@@ -410,7 +411,11 @@ void Fire_OnStatusFire(uint32_t msg_id)
 	can_ext_id_t id;
 	id.ID = msg_id & 0x0FFFFFFF;
 	g_fire.zone = (uint8_t)(id.field.zone & 0x7Fu);
+	if(g_fire.zone) g_fire.zone -= 1; // зона 0 - широковещательынй пакет, значит пожар по всем зонам
 	Fire_Transition(FIRE_EVENT_STATUS_FIRE, HAL_GetTick());
+
+	SetReplyStatusFire(g_fire.zone);
+
 }
 
 void Fire_OnReplyStatusFire(uint32_t msg_id)

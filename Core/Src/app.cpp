@@ -752,7 +752,6 @@ void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 	if(Command >= ServiceCmd_SetStatusFire && Command <= ServiceCmd_StopExtinguishment) {
 		if(Command == ServiceCmd_SetStatusFire) {
 			Fire_OnStatusFire(MsgID);
-			SetReplyStatusFire();
 		} else if (Command == ServiceCmd_ReplyStatusFire) {
 			Fire_OnReplyStatusFire(MsgID);
 		} else if (Command == ServiceCmd_StopExtinguishment) {

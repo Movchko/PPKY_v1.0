@@ -8,6 +8,8 @@ extern struct PPKYCfg PPKYConfig;       // локальная (рабочая) �
 extern struct PPKYCfg SavedPPKYConfig; // копия сохранённой конфигурации из Flash
 extern SPIF_HandleTypeDef hFlash;
 
+uint8_t debug_zone_delay[3] = {15, 30, 30};
+
 void ReadSavedConfig() {
 	/* Важно: SPIF_ReadAddress по большому объёму может работать нестабильно,
 	 * поэтому читаем кусками фиксированного размера. */
@@ -175,11 +177,11 @@ void FillConfigTemplate(void) {
 	}
 
 	/* Имена зон */
-	strncpy((char *)PPKYConfig.zone_name[0], "зона 1", ZONE_NAME_SIZE - 1);
+	strncpy((char *)PPKYConfig.zone_name[0], "Е-ПАНЕЛЬ", ZONE_NAME_SIZE - 1);
 	PPKYConfig.zone_name[0][ZONE_NAME_SIZE - 1] = '\0';
-	strncpy((char *)PPKYConfig.zone_name[1], "зона 2", ZONE_NAME_SIZE - 1);
+	strncpy((char *)PPKYConfig.zone_name[1], "КОНДИЦИОНЕР", ZONE_NAME_SIZE - 1);
 	PPKYConfig.zone_name[1][ZONE_NAME_SIZE - 1] = '\0';
-	strncpy((char *)PPKYConfig.zone_name[2], "зона 3", ZONE_NAME_SIZE - 1);
+	strncpy((char *)PPKYConfig.zone_name[2], "МОТОРНЫЙ ОТСЕК", ZONE_NAME_SIZE - 1);
 	PPKYConfig.zone_name[2][ZONE_NAME_SIZE - 1] = '\0';
 
 	/* Восстанавливаем ID ППКУ и beep */

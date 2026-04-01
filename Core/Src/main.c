@@ -278,7 +278,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+	 //MX_GPIO_Init();
+	// HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1);
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -290,6 +291,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
+
 
   /* USER CODE END Init */
 
@@ -312,12 +314,15 @@ int main(void)
   MX_UART4_Init();
   MX_USART2_UART_Init();
   MX_CRC_Init();
+  //+
   MX_RTC_Init();
+  //-
   MX_TIM1_Init();
   MX_FLASH_Init();
   MX_ICACHE_Init();
   MX_TIM2_Init();
   MX_TouchGFX_Init();
+
   /* USER CODE BEGIN 2 */
 
   /* ВАЖНО - включенное кеширование может понизить производительность, если
@@ -977,7 +982,7 @@ static void MX_RTC_Init(void)
 
   /* USER CODE BEGIN RTC_Init 0 */
 
-    HAL_PWR_EnableBkUpAccess();
+    HAL_PWR_EnableBkUpAccess();//+
 
   /* USER CODE END RTC_Init 0 */
 
@@ -1005,6 +1010,7 @@ static void MX_RTC_Init(void)
   {
     Error_Handler();
   }
+  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1);
   privilegeState.rtcPrivilegeFull = RTC_PRIVILEGE_FULL_NO;
   privilegeState.backupRegisterPrivZone = RTC_PRIVILEGE_BKUP_ZONE_NONE;
   privilegeState.backupRegisterStartZone2 = RTC_BKP_DR0;
@@ -1434,6 +1440,17 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+uint8_t SetUpdateWord(uint32_t num, uint32_t word)
+{ return 0;}
+uint32_t GetAppVersion(void)
+{
+    return 1;
+}
+
+uint8_t FinishUpdateTransmit(void) {
+	return 0;
+}
+
 
 /* USER CODE END 4 */
 
