@@ -8,8 +8,6 @@ extern struct PPKYCfg PPKYConfig;       // локальная (рабочая) �
 extern struct PPKYCfg SavedPPKYConfig; // копия сохранённой конфигурации из Flash
 extern SPIF_HandleTypeDef hFlash;
 
-uint8_t debug_zone_delay[3] = {15, 30, 30};
-
 void ReadSavedConfig() {
 	/* Важно: SPIF_ReadAddress по большому объёму может работать нестабильно,
 	 * поэтому читаем кусками фиксированного размера. */

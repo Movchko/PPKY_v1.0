@@ -46,7 +46,8 @@ void Model::tick()
 		}
 
 		/* Проксируем актуальный статус пожара на активный экран каждый tick */
-		modelListener->onFireStatusChanged(fireActive, fireZone, fireRemaining, fireZoneName);
+		modelListener->onFireStatusChanged(fireActive, fireZone, fireRemaining,
+						     fireZoneNameCount, fireZoneNames);
 	}
 
 	if(setup_change) {
@@ -69,16 +70,23 @@ void Model::notifySoundToggled(bool soundOn)
         soundToggledCallback(soundOn);
 }
 
-void Model::setFireStatusFromApp(bool active, uint8_t zone, uint8_t remaining_s, const char* zoneName)
+void Model::setFireStatusFromApp(bool active, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
+				 char (*zoneNames)[ZONE_NAME_SIZE + 1])
 {
 	fireActive = active;
 	fireZone = zone;
 	fireRemaining = remaining_s;
-	if (zoneName) {
-		std::strncpy(fireZoneName, zoneName, sizeof(fireZoneName) - 1);
-		fireZoneName[sizeof(fireZoneName) - 1] = '\0';
-	} else {
-		fireZoneName[0] = '\0';
+	if (nZoneNames > 16u) {
+		nZoneNames = 16u;
+	}
+	fireZoneNameCount = nZoneNames;
+	if (nZoneNames == 0u) {
+		std::memset(fireZoneNames, 0, sizeof(fireZoneNames));
+		return;
+	}
+	for (uint8_t i = 0u; i < nZoneNames; i++) {
+		std::strncpy(fireZoneNames[i], zoneNames[i], ZONE_NAME_SIZE);
+		fireZoneNames[i][ZONE_NAME_SIZE] = '\0';
 	}
 }
 #endif

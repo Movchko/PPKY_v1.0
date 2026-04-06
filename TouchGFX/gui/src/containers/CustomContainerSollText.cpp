@@ -1,6 +1,7 @@
 #include <gui/containers/CustomContainerSollText.hpp>
 #include <touchgfx/Application.hpp>
 #include <texts/TextKeysAndLanguages.hpp>
+#include <cstring>
 
 using namespace touchgfx;
 
@@ -8,6 +9,9 @@ CustomContainerSollText::CustomContainerSollText()
     : marqueeX(0),
       marqueeTextWidth(0),
       marqueeRunning(false),
+      marqueeFitsWidth(false),
+      frameCountInteraction1Interval(0),
+      delayframeCountInteraction1Interval(0),
       finishedCallback(0)
 {
 }
@@ -28,44 +32,67 @@ void CustomContainerSollText::initialize()
     // Используем TypedText с wildcard, как в CustomContainerTime
     marqueeText.setTypedText(TypedText(T___SINGLEUSE_D1VE));
     marqueeText.setWildcard(marqueeBuffer);
+    marqueeText.setWideTextAction(WIDE_TEXT_NONE);
 
     // Пустая строка по умолчанию
-    marqueeBuffer[0] = 0;
+    std::memset(marqueeBuffer, 0, sizeof(marqueeBuffer));
 
     add(marqueeText);
 
     // Регистрируем виджет для получения тиков
     Application::getInstance()->registerTimerWidget(this);
     frameCountInteraction1Interval = 0;
+    delayframeCountInteraction1Interval = 0;
 }
 
 void CustomContainerSollText::setText(const char* text)
 {
     if (!text)
     {
-        marqueeBuffer[0] = 0;
+        std::memset(marqueeBuffer, 0, sizeof(marqueeBuffer));
+        marqueeText.setWildcard(marqueeBuffer);
         marqueeText.invalidate();
         marqueeRunning = false;
+        marqueeFitsWidth = false;
+        marqueeTextWidth = 0;
+        delayframeCountInteraction1Interval = 0;
+        invalidate();
         return;
     }
 
-    // Переводим ASCII/UTF‑8 в Unicode буфер (ограничение 64 символа)
+    const int16_t lineY = textAreatime.getY();
+    const int16_t fallbackH = textAreatime.getHeight();
+
+    std::memset(marqueeBuffer, 0, sizeof(marqueeBuffer));
     Unicode::fromUTF8(reinterpret_cast<const uint8_t*>(text),
                       marqueeBuffer,
                       MARQUEE_BUFFER_SIZE);
     marqueeBuffer[MARQUEE_BUFFER_SIZE - 1] = 0;
 
-    marqueeText.invalidate();
+    /* Явно обновить wildcard и габариты: иначе getTextWidth()/отрисовка остаются от прошлой строки */
+    marqueeText.setWildcard(marqueeBuffer);
     marqueeText.resizeToCurrentText();
-    marqueeTextWidth = marqueeText.getTextWidth();
 
-    // Стартуем за правым краем видимой области контейнера
-    marqueeX = 0;//getWidth();
-    marqueeText.moveTo(marqueeX, marqueeText.getY());
+    uint16_t tw = marqueeText.getTextWidth();
+    uint16_t th = marqueeText.getTextHeight();
+    if (th == 0u) {
+        th = (uint16_t)(fallbackH > 0 ? fallbackH : 1);
+    }
+    marqueeText.setPosition(0, lineY, (int16_t)tw, (int16_t)th);
+    marqueeTextWidth = tw;
 
-    marqueeRunning = (marqueeTextWidth > 0);
+    const int16_t viewW = getWidth();
+    marqueeFitsWidth = (marqueeTextWidth <= (uint16_t)viewW);
+    marqueeX = 0;
+    marqueeText.moveTo(marqueeX, lineY);
+
+    /* Длиннее области — бегущая строка; пустой или короткий текст — статично */
+    marqueeRunning = (marqueeTextWidth > (uint16_t)viewW);
     frameCountInteraction1Interval = 0;
-    delayframeCountInteraction1Interval = 100;
+    delayframeCountInteraction1Interval = 0;
+
+    marqueeText.invalidate();
+    invalidate();
 }
 
 void CustomContainerSollText::restart()
@@ -75,10 +102,10 @@ void CustomContainerSollText::restart()
         return;
     }
     marqueeX = 0;
-    marqueeText.moveTo(marqueeX, marqueeText.getY());
+    marqueeText.moveTo(marqueeX, textAreatime.getY());
     marqueeRunning = true;
     frameCountInteraction1Interval = 0;
-    delayframeCountInteraction1Interval = 100;
+    delayframeCountInteraction1Interval = 0;
 }
 
 void CustomContainerSollText::handleTickEvent()
@@ -109,15 +136,15 @@ void CustomContainerSollText::handleTickEvent()
 			{
 				// Колбэка нет — запускаем бегущую строку заново
 				marqueeX = 0;
-				marqueeText.moveTo(marqueeX, marqueeText.getY());
-				delayframeCountInteraction1Interval = 100;
+				marqueeText.moveTo(marqueeX, textAreatime.getY());
+				delayframeCountInteraction1Interval = 0;
 			}
 			return;
 		}
 
 		// Двигаем текст влево на 1 пиксель за тик
 		marqueeX--;
-		marqueeText.moveTo(marqueeX, marqueeText.getY());
+		marqueeText.moveTo(marqueeX, textAreatime.getY());
 		frameCountInteraction1Interval = 0;
     }
 }

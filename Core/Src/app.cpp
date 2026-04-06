@@ -240,12 +240,12 @@ static void UartSendPpkyTime(void) {
 	HAL_UART_Transmit(&huart2, uart_send_buf, 13, 10);
 }
 
-void RcvStatusFire() {
+extern "C" void RcvStatusFire() {
 
 }
-void RcvReplyStatusFire(){}
-void RcvStartExtinguishment(){}
-void RcvStopExtinguishment(){}
+extern "C" void RcvReplyStatusFire(){}
+extern "C" void RcvStartExtinguishment(uint8_t *MsgData) { (void)MsgData; }
+extern "C" void RcvStopExtinguishment(){}
 
 void AppSetStatus() {
 
@@ -760,15 +760,10 @@ void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 	}
 }
 
-extern "C" void Fire_UiUpdate(uint8_t active, uint8_t zone, uint8_t remaining_s) {
-	const char* zoneName = nullptr;
-	static char zone_name_buf[ZONE_NAME_SIZE + 1];
-	if (active && zone < ZONE_NUMBER) {
-		memcpy(zone_name_buf, PPKYConfig.zone_name[zone], ZONE_NAME_SIZE);
-		zone_name_buf[ZONE_NAME_SIZE] = '\0';
-		zoneName = zone_name_buf;
-	}
-	FrontendHeap::getInstance().model.setFireStatusFromApp(active != 0, zone, remaining_s, zoneName);
+extern "C" void Fire_UiUpdate(uint8_t active, uint8_t remaining_s, uint8_t n_zones,
+			      char (*zone_names)[ZONE_NAME_SIZE + 1]) {
+	FrontendHeap::getInstance().model.setFireStatusFromApp(
+		active != 0, 0xFFu, remaining_s, n_zones, zone_names);
 }
 
 

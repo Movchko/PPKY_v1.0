@@ -4,6 +4,8 @@ FONT_GLYPH_LOCATION_FLASH_PRAGMA
 KEEP extern const uint8_t unicodes_MonospaceRegular_15_1bpp_0[] FONT_GLYPH_LOCATION_FLASH_ATTRIBUTE = {
     // Unicode: [0x0020, space]
     // (Has no glyph data)
+    // Unicode: [0x002D, hyphen]
+    0x3F,
     // Unicode: [0x002E, period]
     0x0F,
     // Unicode: [0x0030, zero]

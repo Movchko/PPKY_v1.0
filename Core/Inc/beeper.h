@@ -54,6 +54,16 @@ void Beeper_LongBeep(void);
 void Beeper_ContinuousOn(void);
 
 /**
+ * @brief Пожар: прерывистый сигнал (отдельный от непрерывного «пищит»).
+ */
+void Beeper_FireAlarmOn(void);
+
+/**
+ * @brief Выключить сигнал пожара (прерывистый).
+ */
+void Beeper_FireAlarmOff(void);
+
+/**
  * @brief Выключить постоянное пищание
  */
 void Beeper_ContinuousOff(void);

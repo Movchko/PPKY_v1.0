@@ -35,7 +35,8 @@ public:
     virtual void handleButton(uint8_t but, uint8_t state) override;
 
     /** Обновление состояния пожара для главного экрана. */
-    virtual void onFireStatusChanged(bool active, uint8_t zone, uint8_t remaining_s, const char* zoneName) override;
+    virtual void onFireStatusChanged(bool active, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
+				     char (*zoneNames)[ZONE_NAME_SIZE + 1]) override;
 #endif
 private:
     mainscreenPresenter();

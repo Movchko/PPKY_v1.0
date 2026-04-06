@@ -33,6 +33,8 @@
 
 /* Таймаут возврата к базовой яркости, в тиках Led_Process (10 мс) */
 #define LED_BUT_IDLE_TIMEOUT_TICKS 1000   /* 10 секунды при шаге 10 мс */
+/* Период синхронизации LED-состояний в I2C, в тиках Led_Process (10 мс) */
+#define LED_I2C_SYNC_PERIOD_TICKS   5u     /* 50 мс */
 
 #ifdef __cplusplus
 extern "C" {

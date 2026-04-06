@@ -17,10 +17,54 @@ extern I2C_HandleTypeDef hi2c1;
 #define LED_OFF 0
 
 uint8_t cur_led_state[NUM_LED];
+static uint8_t cur_led_power[NUM_LED];
+static uint8_t hw_led_state[NUM_LED];
+static uint8_t hw_led_power[NUM_LED];
+static uint8_t led_sync_tick = 0u;
 
 /* Счетчик неактивности кнопок для управления яркостью подсветки ENTER/ESC */
 static uint16_t led_but_idle_counter = 0;
 static uint8_t  led_but_is_bright = 0; /* 0 - базовая яркость, 1 - максимальная */
+
+static uint8_t Led_PackGroupState(const uint8_t *state_arr, uint8_t group)
+{
+	uint8_t base = (uint8_t)(group * 4u);
+	uint8_t val = 0u;
+	for (uint8_t i = 0u; i < 4u; i++) {
+		uint8_t idx = (uint8_t)(base + i);
+		uint8_t st = (idx < NUM_LED) ? state_arr[idx] : LED_OFF;
+		val |= ((st & 0x03u) << 1u) << (i * 2u);
+	}
+	return val;
+}
+
+static void Led_SyncToI2C(void)
+{
+	/* 1) Яркость по каналам */
+	for (uint8_t i = 0u; i < NUM_LED; i++) {
+		if (cur_led_power[i] != hw_led_power[i]) {
+			uint8_t pwr = cur_led_power[i];
+			HAL_I2C_Mem_Write(&hi2c1, 0xC0, (uint16_t)(2u + i), I2C_MEMADD_SIZE_8BIT, &pwr, sizeof(pwr), 20);
+			hw_led_power[i] = pwr;
+		}
+	}
+
+	/* 2) Состояния (регистры по 4 LED) */
+	for (uint8_t group = 0u; group < 4u; group++) {
+		uint8_t cur_val = Led_PackGroupState(cur_led_state, group);
+		uint8_t hw_val  = Led_PackGroupState(hw_led_state, group);
+		if (cur_val != hw_val) {
+			HAL_I2C_Mem_Write(&hi2c1, 0xC0, (uint16_t)(0x14u + group), I2C_MEMADD_SIZE_8BIT, &cur_val, sizeof(cur_val), 20);
+			uint8_t base = (uint8_t)(group * 4u);
+			for (uint8_t i = 0u; i < 4u; i++) {
+				uint8_t idx = (uint8_t)(base + i);
+				if (idx < NUM_LED) {
+					hw_led_state[idx] = cur_led_state[idx];
+				}
+			}
+		}
+	}
+}
 
 void Led_Init() {
 	  HAL_StatusTypeDef st = HAL_ERROR;
@@ -54,7 +98,9 @@ void Led_Init() {
 
 	  for(uint8_t i = 0; i < NUM_LED; i++) {
 		  cur_led_state[i] = LED_OFF;
-		  Led_SetBrightness(i, 0xFF);
+		  cur_led_power[i] = 0xFFu;
+		  hw_led_state[i] = 0xFFu; /* форсируем первую синхронизацию */
+		  hw_led_power[i] = 0xFFu; /* форсируем первую синхронизацию */
 	  }
 
 	  /* Подсветка кнопок ENTER/ESC по умолчанию включена с небольшой яркостью */
@@ -69,36 +115,19 @@ void Led_Init() {
 	  Led_SetBrightness(LED_NORM,  LED_BUT_DIM_BRIGHTNESS);
 
 	  led_but_is_bright = 0;
+	  led_sync_tick = LED_I2C_SYNC_PERIOD_TICKS;
 
 
 }
 
 void Led_SetAll(uint8_t power) {
-
-	uint8_t led = 0xff;
-
-
-	  for(uint8_t i = 2; i <= 0x10; i++) {
-		  HAL_I2C_Mem_Write(&hi2c1, 0xC0, i, I2C_MEMADD_SIZE_8BIT, &power, sizeof(power), 20); // включаем максимальную подстветку на каждом канале
-		  HAL_Delay(1);
-	  }
-
-	HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x14, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
-	HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x15, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
-	HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x16, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
-	HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x17, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
 	for(uint8_t i = 0; i < NUM_LED; i++) {
 		cur_led_state[i] = LED_ON;
+		cur_led_power[i] = power;
 	}
 }
 
 void Led_OffAll() {
-	uint8_t led = 0;
-
-	HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x14, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
-	HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x15, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
-	HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x16, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
-	HAL_I2C_Mem_Write(&hi2c1, 0xC0, 0x17, I2C_MEMADD_SIZE_8BIT, &led, sizeof(led), 20);
 	for(uint8_t i = 0; i < NUM_LED; i++) {
 		cur_led_state[i] = LED_OFF;
 	}
@@ -106,55 +135,29 @@ void Led_OffAll() {
 
 
 void Led_Set(uint8_t led, uint8_t st) {
+	if (led >= NUM_LED) {
+		return;
+	}
     // st – только 2 бита
     st &= 0x03;
     if (cur_led_state[led] == st) {
-        /* Состояние не изменилось – нет смысла дёргать I2C */
+        /* Состояние не изменилось */
         return;
     }
     cur_led_state[led] = st;
-
-    uint8_t group = led / 4;          // номер группы (0..3)
-    uint8_t base  = group * 4;        // базовый индекс в cur_led_state для этой группы
-
-    uint8_t val = 0;
-    for (uint8_t i = 0; i < 4; i++) {
-        // упаковываем 4 светодиода группы в байт: по 2 бита на светодиод
-        val |= ((cur_led_state[base + i] & 0x03) << 1) << (i * 2);
-    }
-
-    //Led_SetBrightness(LED_BUT_ENTER_UP, 10 + 10*led);
-    //Led_SetBrightness(LED_BUT_ESC_DW, 10 + 10*led);
-
-    HAL_I2C_Mem_Write(&hi2c1,
-                      0xC0,
-                      0x14 + group,            // адрес регистра для группы
-                      I2C_MEMADD_SIZE_8BIT,
-                      &val,
-                      sizeof(val),
-                      20);
-
-
-
 }
 
 void Led_Snake(uint8_t state) {
-	uint32_t delay = 50;
-	Led_Set(LED_BUT_ENTER_UP, state); 	HAL_Delay(delay);
-	Led_Set(LED_FIRE, state); 			HAL_Delay(delay);
-	Led_Set(LED_BUT_ESC_DW, state);		HAL_Delay(delay);
-	Led_Set(LED_AUTO_OFF, state);		HAL_Delay(delay);
-	Led_Set(LED_POWER, state);		HAL_Delay(delay);
-	Led_Set(LED_NORM, state);		HAL_Delay(delay);
-	Led_Set(LED_START, state);		HAL_Delay(delay);
-	Led_Set(LED_STOP, state);		HAL_Delay(delay);
-	Led_Set(LED_ERR, state);					HAL_Delay(delay);
-	Led_Set(LED_BUT_START_ALL, state);		HAL_Delay(delay);
-	Led_Set(LED_STR_START_ALL, state);		HAL_Delay(delay);
-	Led_Set(LED_STR_STOP, state);		HAL_Delay(delay);
-	Led_Set(LED_BUT_STOP, state);		HAL_Delay(delay);
-	Led_Set(LED_BUT_START_SP, state);		HAL_Delay(delay);
-	Led_Set(LED_STR_START_SP, state);		HAL_Delay(delay);
+	const uint8_t seq[] = {
+		LED_BUT_ENTER_UP, LED_FIRE, LED_BUT_ESC_DW, LED_AUTO_OFF, LED_POWER,
+		LED_NORM, LED_START, LED_STOP, LED_ERR, LED_BUT_START_ALL,
+		LED_STR_START_ALL, LED_STR_STOP, LED_BUT_STOP, LED_BUT_START_SP, LED_STR_START_SP
+	};
+	for (uint8_t i = 0u; i < (uint8_t)(sizeof(seq) / sizeof(seq[0])); i++) {
+		Led_Set(seq[i], state);
+		Led_SyncToI2C();
+		HAL_Delay(50);
+	}
 
 /*
 	for(uint8_t i = 0; i < NUM_LED; i++) {
@@ -218,17 +221,22 @@ void Led_Process() {
 			}
 		}
 	}
+
+	/* Периодическая синхронизация состояния/яркости в драйвер LED по I2C */
+	if (led_sync_tick < LED_I2C_SYNC_PERIOD_TICKS) {
+		led_sync_tick++;
+	}
+	if (led_sync_tick >= LED_I2C_SYNC_PERIOD_TICKS) {
+		led_sync_tick = 0u;
+		Led_SyncToI2C();
+	}
 }
 
 void Led_SetBrightness(uint8_t led, uint8_t power) {
-
-    HAL_I2C_Mem_Write(&hi2c1,
-                      0xC0,
-                      2 + led,
-                      I2C_MEMADD_SIZE_8BIT,
-                      &power,
-                      sizeof(power),
-                      20);
+	if (led >= NUM_LED) {
+		return;
+	}
+	cur_led_power[led] = power;
 }
 
 

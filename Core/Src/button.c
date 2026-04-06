@@ -78,10 +78,11 @@ void Button_ReadPin() {
 		}
 		return;
 	}
-	Buttons[BUT_ENTER].ispress 	= (but>>0) & 0x1;
-	Buttons[BUT_UP].ispress 	= (but>>1) & 0x1;
-	Buttons[BUT_DOWN].ispress	= (but>>2) & 0x1;
-	Buttons[BUT_ESC].ispress 	= (but>>3) & 0x1;
+	/* Логические номера BUT_* соответствуют битам расширителя I2C */
+	Buttons[BUT_ENTER].ispress 	= (but >> BUT_ENTER) & 0x1;
+	Buttons[BUT_UP].ispress 	= (but >> BUT_UP) & 0x1;
+	Buttons[BUT_DOWN].ispress	= (but >> BUT_DOWN) & 0x1;
+	Buttons[BUT_ESC].ispress 	= (but >> BUT_ESC) & 0x1;
 	Buttons[BUT_FORCE].ispress  = HAL_GPIO_ReadPin(BT_FORCE_ACT_GPIO_Port, BT_FORCE_ACT_Pin);
 	Buttons[BUT_STOP].ispress  = HAL_GPIO_ReadPin(BT_STOP_GPIO_Port, BT_STOP_Pin);
 	Buttons[BUT_FIRE].ispress  = HAL_GPIO_ReadPin(BT_FIRE_GPIO_Port, BT_FIRE_Pin);

@@ -10,10 +10,10 @@
         <Translation Language="GB">New Text</Translation>
       </Text>
       <Text Id="ruH" Alignment="Left" TypographyId="Large">
-        <Translation Language="GB" Alignment="Center">ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ 1234567890</Translation>
+        <Translation Language="GB" Alignment="Center">ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ 1234567890-</Translation>
       </Text>
       <Text Id="__SingleUse_9MQN" Alignment="Left" TypographyId="Large">
-        <Translation Language="GB">TEST</Translation>
+        <Translation Language="GB"></Translation>
       </Text>
       <Text Id="__SingleUse_MF0S" Alignment="Center" TypographyId="Large">
         <Translation Language="GB">&lt;value&gt;</Translation>
@@ -28,7 +28,7 @@
         <Translation Language="GB">Откл</Translation>
       </Text>
       <Text Id="ru" Alignment="Left" TypographyId="Small">
-        <Translation Language="GB">йцукенгшщзхъфывапролджэячсмитьбю ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ</Translation>
+        <Translation Language="GB">йцукенгшщзхъфывапролджэячсмитьбю ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ-</Translation>
       </Text>
       <Text Id="alphabet" Alignment="Left" TypographyId="Small">
         <Translation Language="GB">QWERTYUIOPASDFGHJKLZXCVBNM qwertyuiopasdfghjklzxcvbnm</Translation>

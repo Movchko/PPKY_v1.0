@@ -18,12 +18,18 @@ typedef enum
 	BEEPER_STATE_SHORT_BEEP,           // Одно короткое пищание
 	BEEPER_STATE_DOUBLE_SHORT_BEEP,    // Два коротких пищания
 	BEEPER_STATE_LONG_BEEP,            // Длинное пищание
-	BEEPER_STATE_CONTINUOUS             // Постоянное пищание
+	BEEPER_STATE_CONTINUOUS,            // Постоянное пищание
+	BEEPER_STATE_FIRE_ALARM             // Пожар: короткие включения с паузами
 } BeeperState_t;
+
+/* Пожар: ~200 мс звук, ~300 мс тишина (шаг 10 мс в Beeper_Process) */
+#define BEEPER_FIRE_ON_TICKS   20u
+#define BEEPER_FIRE_OFF_TICKS  30u
 
 static BeeperState_t beeper_state = BEEPER_STATE_IDLE;
 static uint16_t beeper_counter = 0;
 static uint8_t beep_phase = 0;  // Фаза для двойного пищания (0 - первое, 1 - пауза, 2 - второе)
+static uint8_t fire_alarm_sound = 1u; /* 1 = фаза «звук», 0 = пауза */
 
 static uint8_t beep_sound = 1;
 
@@ -107,6 +113,22 @@ void Beeper_ContinuousOn(void)
 	beeper_counter = 0;
 	beep_phase = 0;
 	Beeper_On();
+}
+
+void Beeper_FireAlarmOn(void)
+{
+	beeper_state = BEEPER_STATE_FIRE_ALARM;
+	fire_alarm_sound = 1u;
+	beeper_counter = BEEPER_FIRE_ON_TICKS;
+	Beeper_On();
+}
+
+void Beeper_FireAlarmOff(void)
+{
+	if (beeper_state == BEEPER_STATE_FIRE_ALARM) {
+		beeper_state = BEEPER_STATE_IDLE;
+		Beeper_Off();
+	}
 }
 
 /**
@@ -213,6 +235,22 @@ void Beeper_Process(void)
 
 		case BEEPER_STATE_CONTINUOUS:
 			// Постоянное пищание - ничего не делаем, звук уже включен
+			break;
+
+		case BEEPER_STATE_FIRE_ALARM:
+			if (beeper_counter > 0u) {
+				beeper_counter--;
+			} else {
+				if (fire_alarm_sound) {
+					Beeper_Off();
+					fire_alarm_sound = 0u;
+					beeper_counter = BEEPER_FIRE_OFF_TICKS;
+				} else {
+					Beeper_On();
+					fire_alarm_sound = 1u;
+					beeper_counter = BEEPER_FIRE_ON_TICKS;
+				}
+			}
 			break;
 
 		default:

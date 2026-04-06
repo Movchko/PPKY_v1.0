@@ -4,6 +4,10 @@
 #include <gui_generated/mainscreen_screen/mainscreenViewBase.hpp>
 #include <gui/mainscreen_screen/mainscreenPresenter.hpp>
 
+#ifndef SIMULATOR
+#include "device_config.h"
+#endif
+
 class mainscreenView : public mainscreenViewBase
 {
 public:
@@ -21,8 +25,18 @@ public:
     virtual void SetTime(uint32_t time);
 #endif
 
-    /** Обновление отображения пожара: "ПОЖАР NNс: <имя зоны>" в бегущей строке. */
-    void updateFireStatus(bool active, uint8_t zone, uint8_t remaining_s, const char* zoneName);
+#ifndef SIMULATOR
+    /** Таймер + имена зон по очереди (одно имя, ротация 3 с после полного показа). */
+    void updateFireStatus(bool active, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
+			  char (*zoneNames)[ZONE_NAME_SIZE + 1]);
+
+    /** Один полный проход бегущей строки (длинное имя) — пауза 3 с и смена зоны. */
+    void fireOnMarqueeOnePassDone();
+
+    /** Показать текущее имя зоны в бегущей строке (доступ к protected CustomContainerSrollText). */
+    void fireShowCurrentZone();
+#endif
+
 protected:
 };
 

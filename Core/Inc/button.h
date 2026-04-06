@@ -12,10 +12,10 @@
 
 #define NUM_BUTTON 	7
 
-#define BUT_ENTER 	0
+#define BUT_ENTER 	3
 #define BUT_UP 		1
 #define BUT_DOWN	2
-#define BUT_ESC		3
+#define BUT_ESC		0
 #define BUT_FORCE	4
 #define BUT_STOP	5
 #define BUT_FIRE 	6

@@ -16,9 +16,15 @@ public:
     virtual void initialize();
 
     /**
-     * Задать текст бегущей строки (ASCII/UTF-8, не более 64 символов).
+     * Задать текст бегущей строки (ASCII/UTF-8; буфер wildcard — см. MARQUEE_BUFFER_SIZE).
      */
     void setText(const char* text);
+
+    /** Ширина текста после последнего setText (пиксели). */
+    uint16_t getMarqueeTextWidth() const { return marqueeTextWidth; }
+
+    /** true, если после setText текст не шире области — без прокрутки. */
+    bool isMarqueeFitting() const { return marqueeFitsWidth; }
 
     /**
      * Установить колбэк, который вызывается один раз
@@ -36,14 +42,15 @@ public:
 
 protected:
 private:
-    static const uint16_t MARQUEE_BUFFER_SIZE = 65; // 64 символа + терминатор
+    static const uint16_t MARQUEE_BUFFER_SIZE = 129; // длинные имена зон (UTF-8) + терминатор
 
     touchgfx::TextAreaWithOneWildcard marqueeText;
     touchgfx::Unicode::UnicodeChar marqueeBuffer[MARQUEE_BUFFER_SIZE];
 
     int16_t marqueeX;
-    int16_t marqueeTextWidth;
+    uint16_t marqueeTextWidth;
     bool marqueeRunning;
+    bool marqueeFitsWidth;
     int32_t frameCountInteraction1Interval;
     int32_t delayframeCountInteraction1Interval;
     FinishedCallback finishedCallback;
