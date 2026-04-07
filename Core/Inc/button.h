@@ -52,6 +52,8 @@ void Button_Init();
 void Button_Process(); // таймер 10гц
 ButtonState Button_GetState(uint8_t but);
 void Button_ReadPin(); // чтение состояний
+/* Weak hook: переинициализация микросхемы чтения кнопок (пока может быть пустым). */
+void Button_ReinitReaderChip(void);
 
 #ifdef __cplusplus
 }

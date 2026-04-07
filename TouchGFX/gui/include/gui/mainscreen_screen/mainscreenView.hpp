@@ -29,15 +29,20 @@ public:
     /** Таймер + имена зон по очереди (одно имя, ротация 3 с после полного показа). */
     void updateFireStatus(bool active, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
 			  char (*zoneNames)[ZONE_NAME_SIZE + 1]);
+    void updateWarningStatus(bool active, uint8_t nItems, char (*bigTitles)[16],
+			     char (*details)[ZONE_NAME_SIZE + 1]);
 
     /** Один полный проход бегущей строки (длинное имя) — пауза 3 с и смена зоны. */
     void fireOnMarqueeOnePassDone();
 
     /** Показать текущее имя зоны в бегущей строке (доступ к protected CustomContainerSrollText). */
     void fireShowCurrentZone();
+    void warningOnMarqueeOnePassDone();
+    void warningShowCurrent();
 #endif
 
 protected:
+    bool fireUiActive = false;
 };
 
 #endif // MAINSCREENVIEW_HPP

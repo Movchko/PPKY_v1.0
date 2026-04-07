@@ -42,6 +42,10 @@ public:
      */
     void setFireStatusFromApp(bool active, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
 			      char (*zoneNames)[ZONE_NAME_SIZE + 1]);
+
+    /* Обновление предупреждений (неисправностей) для главного экрана. */
+    void setWarningStatusFromApp(bool active, uint8_t nItems, char (*bigTitles)[16],
+				 char (*details)[ZONE_NAME_SIZE + 1]);
 #endif
 
 protected:
@@ -57,6 +61,11 @@ protected:
     uint8_t fireRemaining = 0;
     uint8_t fireZoneNameCount = 0;
     char fireZoneNames[16][ZONE_NAME_SIZE + 1];
+
+    bool warningActive = false;
+    uint8_t warningCount = 0;
+    char warningBigTitles[16][16];
+    char warningDetails[16][ZONE_NAME_SIZE + 1];
 #endif
 };
 

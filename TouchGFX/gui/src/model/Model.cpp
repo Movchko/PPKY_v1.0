@@ -48,6 +48,7 @@ void Model::tick()
 		/* Проксируем актуальный статус пожара на активный экран каждый tick */
 		modelListener->onFireStatusChanged(fireActive, fireZone, fireRemaining,
 						     fireZoneNameCount, fireZoneNames);
+		modelListener->onWarningStatusChanged(warningActive, warningCount, warningBigTitles, warningDetails);
 	}
 
 	if(setup_change) {
@@ -87,6 +88,27 @@ void Model::setFireStatusFromApp(bool active, uint8_t zone, uint8_t remaining_s,
 	for (uint8_t i = 0u; i < nZoneNames; i++) {
 		std::strncpy(fireZoneNames[i], zoneNames[i], ZONE_NAME_SIZE);
 		fireZoneNames[i][ZONE_NAME_SIZE] = '\0';
+	}
+}
+
+void Model::setWarningStatusFromApp(bool active, uint8_t nItems, char (*bigTitles)[16],
+				    char (*details)[ZONE_NAME_SIZE + 1])
+{
+	warningActive = active;
+	if (nItems > 16u) {
+		nItems = 16u;
+	}
+	warningCount = nItems;
+	if (!active || nItems == 0u) {
+		std::memset(warningBigTitles, 0, sizeof(warningBigTitles));
+		std::memset(warningDetails, 0, sizeof(warningDetails));
+		return;
+	}
+	for (uint8_t i = 0u; i < nItems; i++) {
+		std::strncpy(warningBigTitles[i], bigTitles[i], 15u);
+		warningBigTitles[i][15] = '\0';
+		std::strncpy(warningDetails[i], details[i], ZONE_NAME_SIZE);
+		warningDetails[i][ZONE_NAME_SIZE] = '\0';
 	}
 }
 #endif

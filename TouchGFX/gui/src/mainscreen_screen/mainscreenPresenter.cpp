@@ -44,4 +44,10 @@ void mainscreenPresenter::onFireStatusChanged(bool active, uint8_t zone, uint8_t
 {
 	view.updateFireStatus(active, zone, remaining_s, nZoneNames, zoneNames);
 }
+
+void mainscreenPresenter::onWarningStatusChanged(bool active, uint8_t nItems, char (*bigTitles)[16],
+						 char (*details)[ZONE_NAME_SIZE + 1])
+{
+	view.updateWarningStatus(active, nItems, bigTitles, details);
+}
 #endif

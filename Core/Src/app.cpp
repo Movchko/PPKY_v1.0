@@ -7,6 +7,7 @@
 #include "backend.h"
 #include "gui/common/FrontendHeap.hpp"
 #include "fire.h"
+#include "warning.h"
 
 
 
@@ -76,7 +77,7 @@ static void AddrAuto_Process(uint32_t now_ms) {
 		break;
 	case ADDR_AUTO_WAIT_AFTER_STOP:
 		// ждём 100 мс после остановки ретрансляции, затем шлём CircSetAdr
-		if ((now_ms - g_addr_auto_phase_start_ms) >= 200u) {
+		if ((now_ms - g_addr_auto_phase_start_ms) >= 1000u) {
 			uint8_t data[7] = {0};
 			data[0] = 1u; // новый адрес = 1
 			SendAllMessage(ServiceCmd_CircSetAdr, data, SEND_NOW, BUS_CAN0);
@@ -88,7 +89,7 @@ static void AddrAuto_Process(uint32_t now_ms) {
 	case ADDR_AUTO_WAIT_AFTER_SET:
 		// ещё 100 мс, потом включаем ретрансляцию, очищаем список устройств
 		// и перезапускаем питание на обоих каналах
-		if ((now_ms - g_addr_auto_phase_start_ms) >= 500u) {
+		if ((now_ms - g_addr_auto_phase_start_ms) >= 5000u) {
 			//uint8_t data[7] = {0};
 			//data[0] = 0u; // 0 = старт ретрансляции
 			//SendAllMessage(ServiceCmd_StopStartReTranslate, data, SEND_NOW, BUS_CAN12);
@@ -516,7 +517,7 @@ static void CheckMkuConfigMismatch(void) {
 	}
 }
 
-/* Отправить ServiceCmd_StartExtinguishment всем МКУ указанной зоны */
+
 void SetHAdr(uint8_t h_adr) {
 	extern Device BoardDevicesList[];
 	PPKYConfig.UId.devId.h_adr = h_adr;
@@ -654,14 +655,23 @@ void AppProcess(uint32_t now_ms) {
 	// Неблокирующая машина состояний автозадания адресов по команде 10
 	AddrAuto_Process(now_ms);
 }
+
 uint32_t counter1s = 0;
+
+uint32_t warning_process_delay = 5000;
+
 void AppTimer1ms() {
 	uint32_t now = HAL_GetTick();
 	AppProcess(now);
 	RefreshActiveDevices(now);
 	CheckMkuConfigMismatch();
 	Fire_Timer1ms();
+
 	BackendProcess();
+	if(warning_process_delay)
+		warning_process_delay--;
+	else
+		WarningProcess1ms();
 
 	counter1s++;
 
@@ -764,6 +774,13 @@ extern "C" void Fire_UiUpdate(uint8_t active, uint8_t remaining_s, uint8_t n_zon
 			      char (*zone_names)[ZONE_NAME_SIZE + 1]) {
 	FrontendHeap::getInstance().model.setFireStatusFromApp(
 		active != 0, 0xFFu, remaining_s, n_zones, zone_names);
+}
+
+extern "C" void Warning_UiUpdate(uint8_t active, uint8_t n_items,
+				 char (*big_titles)[16],
+				 char (*details)[ZONE_NAME_SIZE + 1]) {
+	FrontendHeap::getInstance().model.setWarningStatusFromApp(
+		active != 0, n_items, big_titles, details);
 }
 
 

@@ -10,6 +10,48 @@
 
 struct Button Buttons[NUM_BUTTON];
 extern I2C_HandleTypeDef hi2c1;
+/* Интервал между попытками восстановления I2C (в тиках Button_Process, ~10 мс). */
+#define BUTTON_I2C_RECOVERY_RETRY_TICKS 10u
+
+static uint8_t s_btn_i2c_recovery_tick = BUTTON_I2C_RECOVERY_RETRY_TICKS;
+
+static void Button_SetAllError(void)
+{
+	for(uint8_t i = 0; i < NUM_BUTTON; i++) {
+		Buttons[i].state = ButtonStateError;
+	}
+}
+
+static void Button_ResetStates(void)
+{
+	for (uint8_t i = 0; i < NUM_BUTTON; i++) {
+		Buttons[i].state = ButtonStateReset;
+		Buttons[i].press_counter = 0;
+		Buttons[i].ispress = 0;
+	}
+}
+
+static uint8_t Button_ReinitI2CDriver(void)
+{
+	if (HAL_I2C_DeInit(&hi2c1) != HAL_OK) {
+		return 0u;
+	}
+	if (HAL_I2C_Init(&hi2c1) != HAL_OK) {
+		return 0u;
+	}
+	if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK) {
+		return 0u;
+	}
+	if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK) {
+		return 0u;
+	}
+	return 1u;
+}
+
+__attribute__((weak)) void Button_ReinitReaderChip(void)
+{
+	/* Задел под будущую программную реинициализацию внешней кнопочной микросхемы. */
+}
 
 void Button_Init() {
 	for(uint8_t i = 0; i < NUM_BUTTON; i++) {
@@ -31,9 +73,20 @@ void Button_Init() {
 void Button_Process() {
 	Button_ReadPin();
 	if(Buttons[0].state == ButtonStateError) {
-		Beeper_DoubleShortBeep();
+		if (s_btn_i2c_recovery_tick < BUTTON_I2C_RECOVERY_RETRY_TICKS) {
+			s_btn_i2c_recovery_tick++;
+			return;
+		}
+		s_btn_i2c_recovery_tick = 0u;
+		if (Button_ReinitI2CDriver()) {
+			Button_ReinitReaderChip();
+			Button_ResetStates();
+		} else {
+			Button_SetAllError();
+		}
 		return;
 	}
+	s_btn_i2c_recovery_tick = BUTTON_I2C_RECOVERY_RETRY_TICKS;
 
 	for(uint8_t i = 0; i < NUM_BUTTON; i++) {
 		if(Buttons[i].ispress == 0) {
@@ -73,9 +126,7 @@ void Button_ReadPin() {
 	uint8_t but = 0xFF;
 	st = HAL_I2C_Mem_Read(&hi2c1, 0x41<<1, 0x00, I2C_MEMADD_SIZE_8BIT, &but, sizeof(but), 10);
 	if(st != HAL_OK) {
-		for(uint8_t i = 0; i < NUM_BUTTON; i++) {
-			Buttons[i].state = ButtonStateError;
-		}
+		Button_SetAllError();
 		return;
 	}
 	/* Логические номера BUT_* соответствуют битам расширителя I2C */

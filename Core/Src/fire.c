@@ -84,29 +84,53 @@ typedef struct {
 
 static FireContext g_fire;
 
+/* Управляет яркостью кнопки/подписи ПУСК ОБЩИЙ (обычная/активная). */
 static void Fire_SetStartAllBrightness(uint8_t bright);
+/* Отправляет широкую команду STOP всем МКУ пожарного контура. */
 static void Fire_SendStopAllMcus(void);
+/* Отправляет фазу 1 запуска по конкретной зоне. */
 static void Fire_SendPhase1Zone(uint8_t zone);
+/* Отправляет фазу 2 запуска по конкретной зоне. */
 static void Fire_SendPhase2Zone(uint8_t zone);
+/* Запускает фазу 2 по всем слотам, где она ещё не отправлялась. */
 static void Fire_Phase2AllPending(void);
+/* Полностью очищает слоты пожара и флаги остановки таймеров. */
 static void Fire_ClearAllSlots(void);
+/* Синхронизирует состояние FSM исходя из состояния слотов/фаз. */
 static void Fire_SyncStateFromSlots(void);
+/* Нормализует номер зоны в диапазон debug-порогов. */
 static uint8_t Fire_DebugZoneIndex(uint8_t zone);
+/* Переводит номер зоны CAN (1..N) в индекс массива имён (0..N-1). */
+static uint8_t Fire_ZoneCanToIdx(uint8_t zone_can);
+/* Возвращает задержку зоны (сек) перед фазой 2. */
 static uint8_t Fire_ZoneDelaySec(uint8_t zone);
+/* Возвращает задержки модулей внутри зоны (две линии). */
 static void Fire_GetModuleDelays(uint8_t zone, uint8_t *m0, uint8_t *m1);
+/* Ищет слот по номеру зоны, возвращает индекс или -1. */
 static int8_t Fire_FindSlotZone(uint8_t zone);
+/* Выделяет свободный слот пожара, возвращает индекс или -1. */
 static int8_t Fire_AllocSlot(void);
 /** @return 1 если зона добавлена впервые в цикле, 0 если по этой зоне пожар уже учтён */
 static uint8_t Fire_TryAddNewFireZone(uint8_t zone, uint32_t now_ms);
+/* Есть ли хотя бы один активный слот пожара. */
 static uint8_t Fire_AnyActiveSlot(void);
+/* Считает зоны, где фаза 2 ещё не отправлена. */
 static uint8_t Fire_CountPendingPhase2(void);
+/* Минимальный оставшийся таймер (сек) среди pending-зон. */
 static uint8_t Fire_MinRemainingSec(uint32_t now_ms);
+/* Автообработка дедлайнов фазы 2 в автоматическом режиме. */
 static uint8_t Fire_ProcessAutoDeadlines(uint32_t now_ms);
+/* ПУСК ОБЩИЙ: старт по всем найденным igniter-зонам + отметка слотов. */
 static uint8_t Fire_StartAllExistingZonesAndMarkSlots(void);
+/* Формирует список имён зон для UI (уникальные, отсортированные). */
 static void Fire_FillZoneNamesForUi(char (*out_names)[FIRE_UI_NAME_LEN], uint8_t *out_n);
+/* Собирает отсортированный список igniter МКУ в заданной зоне. */
 static uint8_t Fire_CollectSortedIgniterIndices(uint8_t zone, uint8_t *out_idx, uint8_t max_out);
+/* Переводит пищалку в непрерывный тревожный режим. */
 static void Fire_BeeperEnterAlert(void);
+/* Переводит пищалку в дежурный периодический режим. */
 static void Fire_BeeperEnterDuty(uint32_t now_ms);
+/* Тик дежурного режима пищалки (короткий писк по периоду). */
 static void Fire_BeeperDutyTick(uint32_t now_ms);
 
 extern void Fire_UiUpdate(uint8_t active, uint8_t remaining_s, uint8_t n_zones,
@@ -140,10 +164,20 @@ static void Fire_BeeperDutyTick(uint32_t now_ms)
 	}
 }
 
+static uint8_t Fire_ZoneCanToIdx(uint8_t zone_can)
+{
+	/* В CAN зоне обычно приходят как 1..N; в UI/массивах имён используем 0..N-1. */
+	if (zone_can == 0u) {
+		return 0u;
+	}
+	return (uint8_t)(zone_can - 1u);
+}
+
 static uint8_t Fire_DebugZoneIndex(uint8_t zone)
 {
-	if (zone < FIRE_DEBUG_ZONES) {
-		return zone;
+	uint8_t idx = Fire_ZoneCanToIdx(zone);
+	if (idx < FIRE_DEBUG_ZONES) {
+		return idx;
 	}
 	return FIRE_DEBUG_ZONES - 1u;
 }
@@ -200,7 +234,7 @@ static void Fire_SendStartToIgniterIdx(uint8_t idx, uint8_t zone, uint8_t zd_sec
 	can_id.field.zone = ad->dev.zone & 0x7Fu;
 
 	data[0] = (uint8_t)ServiceCmd_StartExtinguishment;
-	data[1] = zone;
+	data[1] = 0; // command type
 	data[2] = zd_sec;
 	data[3] = md_sec;
 	SendMessageFull(can_id, data, 0, BUS_CAN12);
@@ -420,6 +454,9 @@ static uint8_t Fire_StartAllExistingZonesAndMarkSlots(void)
 		}
 	}
 
+	//TODO:: пока заглушка
+	any_started = 1;
+
 	return any_started;
 }
 
@@ -474,7 +511,8 @@ static void Fire_FillZoneNamesForUi(char (*out_names)[FIRE_UI_NAME_LEN], uint8_t
 	}
 	*out_n = nz;
 	for (uint8_t i = 0u; i < nz; i++) {
-		uint8_t zi = zones[i];
+		uint8_t z_can = zones[i];
+		uint8_t zi = Fire_ZoneCanToIdx(z_can);
 		char *dst = out_names[i];
 		if (zi >= ZONE_NUMBER) {
 			dst[0] = '\0';
@@ -491,7 +529,7 @@ static void Fire_FillZoneNamesForUi(char (*out_names)[FIRE_UI_NAME_LEN], uint8_t
 			}
 		}
 		if (name[0] == '\0') {
-			(void)snprintf(dst, (size_t)FIRE_UI_NAME_LEN, "Зона %u", (unsigned)zi + 1u);
+			(void)snprintf(dst, (size_t)FIRE_UI_NAME_LEN, "Зона %u", (unsigned)z_can);
 		} else {
 			(void)snprintf(dst, (size_t)FIRE_UI_NAME_LEN, "%s", name);
 		}
@@ -667,11 +705,20 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 	case FIRE_EVENT_BTN_START_ALL:
 		/* ПУСК ОБЩИЙ: запуск тушения всех существующих зон с module_delay (zone_delay=0),
 		 * независимо от статуса ПОЖАРА/слотов */
-		if (Fire_StartAllExistingZonesAndMarkSlots()) {
+		{
+			uint8_t any_started = Fire_StartAllExistingZonesAndMarkSlots();
+			/* Если есть активные пожарные слоты — ручной общий пуск должен
+			 * завершить их ожидание фазы 2 (таймер далее не идёт). */
+			if (Fire_CountPendingPhase2() > 0u) {
+				Fire_Phase2AllPending();
+				any_started = 1u;
+			}
+			if (any_started) {
 			g_fire.start_launch_pressed_latched = 1u;
 			g_fire.stop_launch_pressed_latched = 0u;
 			Fire_SyncStateFromSlots();
 			fire_processed = 1u;
+		}
 		}
 		break;
 	case FIRE_EVENT_BTN_STOP:
@@ -781,6 +828,7 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 	}
 }
 
+/* Инициализация модуля пожара: сброс FSM, слотов и базовой индикации. */
 void Fire_Init(void)
 {
 	/* Инициализация контекста пожара; полный сброс слотов только при старте/перезапуске. */
@@ -796,6 +844,7 @@ void Fire_Init(void)
 	g_fire.last_ui_nzones = 0u;
 }
 
+/* Периодический тик 1 мс: FSM, таймеры автопуска и UI-обновления. */
 void Fire_Timer1ms(void)
 {
 	/* 1мс-путь: крутит FSM при активном сценарии или удержании ПУСК ОБЩИЙ. */
@@ -806,6 +855,7 @@ void Fire_Timer1ms(void)
 	Fire_Transition(FIRE_EVENT_TICK_1MS, now);
 }
 
+/* Периодический тик 10 мс: обработка кнопок и удержания ПУСК ОБЩИЙ. */
 void Fire_Timer10ms(void)
 {
 	/* 10мс-путь: кнопки (в т.ч. удержание ПУСК ОБЩИЙ 3с) и edge-trigger событий. */
@@ -844,15 +894,15 @@ void Fire_Timer10ms(void)
 	}
 }
 
+/* Входящее событие ПОЖАР от МКУ: добавляет зону и запускает сценарий. */
 void Fire_OnStatusFire(uint32_t msg_id)
 {
 	/* Вход статуса пожара от МКУ: зона -> слот -> фаза 1 -> событие FSM + ReplyStatusFire. */
 	can_ext_id_t id;
 	id.ID = msg_id & 0x0FFFFFFF;
+	/* zone в формате CAN (обычно 1..N), без декремента:
+	 * именно это значение нужно для адресации МКУ этой зоны. */
 	uint8_t zone = (uint8_t)(id.field.zone & 0x7Fu);
-	if (zone != 0u) {
-		zone--;
-	}
 	uint32_t now = HAL_GetTick();
 	if (Fire_TryAddNewFireZone(zone, now)) {
 		/* Новая зона: слот, фаза 1, затем FSM — UI видит все активные зоны */
@@ -861,14 +911,23 @@ void Fire_OnStatusFire(uint32_t msg_id)
 	SetReplyStatusFire(zone);
 }
 
+/* Входящий ReplyStatusFire от МКУ (подтверждение статуса пожара). */
 void Fire_OnReplyStatusFire(uint32_t msg_id)
 {
 	(void)msg_id;
 	Fire_Transition(FIRE_EVENT_REPLY_FIRE, HAL_GetTick());
 }
 
+/* Входящая команда StopExtinguishment от МКУ/CAN. */
 void Fire_OnStopExtinguishment(uint32_t msg_id)
 {
 	(void)msg_id;
 	Fire_Transition(FIRE_EVENT_STOP_EXT, HAL_GetTick());
+}
+
+/* Возвращает 1, если пожарный сценарий сейчас активен. */
+uint8_t Fire_IsActive(void)
+{
+	/* Пожар считается активным, пока FSM не в IDLE или есть активные слоты зон. */
+	return (g_fire.state != FIRE_STATE_IDLE || Fire_AnyActiveSlot()) ? 1u : 0u;
 }

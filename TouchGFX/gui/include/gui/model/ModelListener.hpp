@@ -24,6 +24,8 @@ public:
     /** Обновление состояния пожара: вызывается из модели по запросу приложения ППКУ. */
     virtual void onFireStatusChanged(bool active, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
 				     char (*zoneNames)[ZONE_NAME_SIZE + 1]) {}
+    virtual void onWarningStatusChanged(bool active, uint8_t nItems, char (*bigTitles)[16],
+					char (*details)[ZONE_NAME_SIZE + 1]) {}
 #endif
 protected:
     Model* model;
