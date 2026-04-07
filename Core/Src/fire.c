@@ -11,7 +11,7 @@
 #include "app.hpp"
 
 extern PPKYCfg PPKYConfig;
-extern ActiveDeviceInfo g_active_devices[32];
+extern ActiveDeviceInfo g_active_devices[NUM_ACTIVE_DEVICE];
 extern uint8_t g_active_devices_count;
 
 /* Отладка: зона 1 → индекс 0; пока 3 зоны, далее — из конфига МКУ */

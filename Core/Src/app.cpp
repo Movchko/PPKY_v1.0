@@ -20,7 +20,7 @@ PControl *Power[2];
 
 
 
-ActiveDeviceInfo g_active_devices[32];
+ActiveDeviceInfo g_active_devices[NUM_ACTIVE_DEVICE];
 uint8_t g_active_devices_count = 0;
 uint8_t g_mku_mismatch_flag = 0;
 
@@ -307,6 +307,7 @@ static void UpdateActiveDeviceList(uint32_t msg_id, uint32_t now_ms) {
 		g_active_devices[g_active_devices_count].last_seen_ms = now_ms;
 		g_active_devices[g_active_devices_count].online = 1;
 		g_active_devices[g_active_devices_count].can_status_mask = 0u;
+		g_active_devices[g_active_devices_count].can_status_valid = 0u;
 		g_active_devices[g_active_devices_count].u24_01v = 0u;
 		g_active_devices[g_active_devices_count].vdev_count = 0u;
 		/* vdevs[] уже обнулены при memset в AddrAuto_ClearActiveDevices() */
@@ -320,6 +321,7 @@ static void RefreshActiveDevices(uint32_t now_ms) {
 		    (now_ms - g_active_devices[i].last_seen_ms) > 5000u) {
 			g_active_devices[i].online = 0;
 			g_active_devices[i].can_status_mask = 0u;
+			g_active_devices[i].can_status_valid = 0u;
 			g_active_devices[i].u24_01v = 0u;
 			g_active_devices[i].vdev_count = 0u;
 			memset(g_active_devices[i].vdevs, 0, sizeof(g_active_devices[i].vdevs));
@@ -385,6 +387,7 @@ static void UpdateMcuCanStatus(uint32_t MsgID, uint8_t *MsgData) {
 	 * В Data[5] находится U24 (0.1V)
 	 * => MsgData[6] */
 	g_active_devices[idx].can_status_mask = MsgData[5];
+	g_active_devices[idx].can_status_valid = 1u;
 	g_active_devices[idx].u24_01v = MsgData[6];
 }
 

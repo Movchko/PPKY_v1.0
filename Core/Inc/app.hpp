@@ -13,7 +13,7 @@
 #define FLASH_CFG_START_SECTOR 0
 
 #define FLASH_CFG_SECTORS_USED  24
-
+#define NUM_ACTIVE_DEVICE 32
 
 void FillConfigTemplate(void);
 void ReadSavedConfig(void);
@@ -31,6 +31,7 @@ typedef struct {
 	uint32_t last_seen_ms;
 	uint8_t online;
 	uint8_t can_status_mask; /* маска активности CAN (из статуса МКУ cmd=0) */
+	uint8_t can_status_valid; /* 1 после первого валидного статуса МКУ cmd=0 */
 	uint8_t u24_01v;         /* измеренное U24 (0.1V), из статуса МКУ cmd=0 */
 
 	/* Виртуальные устройства, которые находятся "внутри" данного МКУ */
