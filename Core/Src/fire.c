@@ -233,7 +233,7 @@ static void Fire_SendStartToIgniterIdx(uint8_t idx, uint8_t zone, uint8_t zd_sec
 	can_id.field.l_adr = ad->dev.l_adr & 0x3Fu;
 	can_id.field.zone = ad->dev.zone & 0x7Fu;
 
-	data[0] = (uint8_t)ServiceCmd_StartExtinguishment;
+	data[0] = (uint8_t)ServiceCmd_Fire_StartExtinguishment;
 	data[1] = 0; // command type
 	data[2] = zd_sec;
 	data[3] = md_sec;
@@ -276,7 +276,7 @@ static void Fire_SendStopAllMcus(void)
 	/* Массовая остановка по всем обнаруженным МКУ типов пожарного контура. */
 	can_ext_id_t can_id;
 	uint8_t data[8] = { 0 };
-	data[0] = (uint8_t)ServiceCmd_StopExtinguishment;
+	data[0] = (uint8_t)ServiceCmd_Fire_StopExtinguishment;
 
 	for (uint8_t i = 0u; i < g_active_devices_count; i++) {
 		uint8_t t = g_active_devices[i].dev.d_type & 0x7Fu;

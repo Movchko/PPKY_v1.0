@@ -8,6 +8,8 @@ extern struct PPKYCfg PPKYConfig;       // локальная (рабочая) �
 extern struct PPKYCfg SavedPPKYConfig; // копия сохранённой конфигурации из Flash
 extern SPIF_HandleTypeDef hFlash;
 
+void FlashWriteData(uint8_t *ConfigPtr, uint32_t ConfigSize);
+
 void ReadSavedConfig() {
 	/* Важно: SPIF_ReadAddress по большому объёму может работать нестабильно,
 	 * поэтому читаем кусками фиксированного размера. */

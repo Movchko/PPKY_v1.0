@@ -34,10 +34,27 @@
           },
           {
             "Type": "TextArea",
+            "Name": "textAreatime_top_bar",
+            "Width": 128,
+            "Height": 15,
+            "Visible": false,
+            "TextId": "__SingleUse_4WPO",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            },
+            "Draggable": true,
+            "Moveable": true
+          },
+          {
+            "Type": "TextArea",
             "Name": "textArea1",
             "Y": 18,
             "Width": 128,
-            "Height": 25,
+            "Height": 28,
+            "Visible": false,
             "TextId": "__SingleUse_MF0S",
             "TextRotation": "0",
             "Color": {
@@ -50,6 +67,32 @@
               "UseBuffer": true,
               "BufferSize": 10
             }
+          },
+          {
+            "Type": "AnimatedImage",
+            "Name": "animatedImage1",
+            "X": 99,
+            "Y": 15,
+            "Width": 29,
+            "Height": 29,
+            "FileNameFirst": "logo_small.png",
+            "FileNameLast": "logo_small1.png",
+            "UpdateTicksInterval": 1000,
+            "StartOnLoad": true,
+            "LoopEnabled": true,
+            "Moveable": true
+          },
+          {
+            "Type": "AnimatedImage",
+            "Name": "animatedImage2",
+            "Y": 18,
+            "Width": 29,
+            "Height": 29,
+            "FileNameFirst": "fire.png",
+            "FileNameLast": "fire_process.png",
+            "UpdateTicksInterval": 1000,
+            "StartOnLoad": true,
+            "LoopEnabled": true
           }
         ],
         "Interactions": []
@@ -362,6 +405,7 @@
             "X": 95,
             "Width": 14,
             "Height": 14,
+            "Visible": false,
             "RelativeFilename": "no_beep.png"
           },
           {
@@ -370,6 +414,7 @@
             "X": 79,
             "Width": 14,
             "Height": 14,
+            "Visible": false,
             "RelativeFilename": "no_beep.png"
           },
           {
@@ -379,6 +424,7 @@
             "Y": 2,
             "Width": 15,
             "Height": 11,
+            "Visible": false,
             "RelativeFilename": "wifi.png"
           }
         ],

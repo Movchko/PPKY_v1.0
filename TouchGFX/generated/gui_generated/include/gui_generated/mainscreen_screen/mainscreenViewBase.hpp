@@ -11,7 +11,12 @@
 #include <gui/containers/CustomContainerTopBar.hpp>
 #include <gui/containers/CustomContainerScrollTime.hpp>
 #include <gui/containers/CustomContainerSollText.hpp>
+#include <touchgfx/widgets/TextArea.hpp>
+#include <touchgfx/EasingEquations.hpp>
+#include <touchgfx/mixins/MoveAnimator.hpp>
+#include <touchgfx/mixins/Draggable.hpp>
 #include <touchgfx/widgets/TextAreaWithWildcard.hpp>
+#include <touchgfx/widgets/AnimatedImage.hpp>
 
 class mainscreenViewBase : public touchgfx::View<mainscreenPresenter>
 {
@@ -33,7 +38,10 @@ protected:
     CustomContainerTopBar customContainerTopBar1;
     CustomContainerScrollTime customContainerScrollTime1;
     CustomContainerSollText CustomContainerSrollText;
+    touchgfx::Draggable< touchgfx::MoveAnimator< touchgfx::TextArea > > textAreatime_top_bar;
     touchgfx::TextAreaWithOneWildcard textArea1;
+    touchgfx::MoveAnimator< touchgfx::AnimatedImage > animatedImage1;
+    touchgfx::AnimatedImage animatedImage2;
 
     /*
      * Wildcard Buffers

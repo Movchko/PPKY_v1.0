@@ -19,14 +19,17 @@ CustomContainerTopBarBase::CustomContainerTopBarBase()
 
     imageMute_2.setXY(95, 0);
     imageMute_2.setBitmap(touchgfx::Bitmap(BITMAP_NO_BEEP_ID));
+    imageMute_2.setVisible(false);
     add(imageMute_2);
 
     imageMute.setXY(79, 0);
     imageMute.setBitmap(touchgfx::Bitmap(BITMAP_NO_BEEP_ID));
+    imageMute.setVisible(false);
     add(imageMute);
 
     imageWifi.setXY(111, 2);
     imageWifi.setBitmap(touchgfx::Bitmap(BITMAP_WIFI_ID));
+    imageWifi.setVisible(false);
     add(imageWifi);
 }
 
