@@ -46,7 +46,7 @@ void Model::tick()
 		}
 
 		/* Проксируем актуальный статус пожара на активный экран каждый tick */
-		modelListener->onFireStatusChanged(fireActive, fireZone, fireRemaining,
+		modelListener->onFireStatusChanged(fireActive, fireMode, fireZone, fireRemaining,
 						     fireZoneNameCount, fireZoneNames);
 		modelListener->onWarningStatusChanged(warningActive, warningCount, warningBigTitles, warningDetails);
 	}
@@ -71,10 +71,11 @@ void Model::notifySoundToggled(bool soundOn)
         soundToggledCallback(soundOn);
 }
 
-void Model::setFireStatusFromApp(bool active, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
+void Model::setFireStatusFromApp(bool active, uint8_t mode, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
 				 char (*zoneNames)[ZONE_NAME_SIZE + 1])
 {
 	fireActive = active;
+	fireMode = mode;
 	fireZone = zone;
 	fireRemaining = remaining_s;
 	if (nZoneNames > 16u) {
@@ -91,7 +92,7 @@ void Model::setFireStatusFromApp(bool active, uint8_t zone, uint8_t remaining_s,
 	}
 }
 
-void Model::setWarningStatusFromApp(bool active, uint8_t nItems, char (*bigTitles)[16],
+void Model::setWarningStatusFromApp(bool active, uint8_t nItems, char (*bigTitles)[WARNING_TITLE_LEN],
 				    char (*details)[ZONE_NAME_SIZE + 1])
 {
 	warningActive = active;
@@ -105,8 +106,8 @@ void Model::setWarningStatusFromApp(bool active, uint8_t nItems, char (*bigTitle
 		return;
 	}
 	for (uint8_t i = 0u; i < nItems; i++) {
-		std::strncpy(warningBigTitles[i], bigTitles[i], 15u);
-		warningBigTitles[i][15] = '\0';
+		std::strncpy(warningBigTitles[i], bigTitles[i], WARNING_TITLE_LEN - 1u);
+		warningBigTitles[i][WARNING_TITLE_LEN - 1u] = '\0';
 		std::strncpy(warningDetails[i], details[i], ZONE_NAME_SIZE);
 		warningDetails[i][ZONE_NAME_SIZE] = '\0';
 	}

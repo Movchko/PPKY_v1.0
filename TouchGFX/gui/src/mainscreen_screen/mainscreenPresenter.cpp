@@ -39,13 +39,13 @@ void mainscreenPresenter::handleButton(uint8_t but, uint8_t state)
     }
 }
 
-void mainscreenPresenter::onFireStatusChanged(bool active, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
+void mainscreenPresenter::onFireStatusChanged(bool active, uint8_t mode, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
 					      char (*zoneNames)[ZONE_NAME_SIZE + 1])
 {
-	view.updateFireStatus(active, zone, remaining_s, nZoneNames, zoneNames);
+	view.updateFireStatus(active, mode, zone, remaining_s, nZoneNames, zoneNames);
 }
 
-void mainscreenPresenter::onWarningStatusChanged(bool active, uint8_t nItems, char (*bigTitles)[16],
+void mainscreenPresenter::onWarningStatusChanged(bool active, uint8_t nItems, char (*bigTitles)[WARNING_TITLE_LEN],
 						 char (*details)[ZONE_NAME_SIZE + 1])
 {
 	view.updateWarningStatus(active, nItems, bigTitles, details);

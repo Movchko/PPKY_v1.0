@@ -7,6 +7,7 @@
 
 #include "button.h"
 #include "beeper.h"
+#include "fire.h"
 
 struct Button Buttons[NUM_BUTTON];
 extern I2C_HandleTypeDef hi2c1;
@@ -98,17 +99,10 @@ void Button_Process() {
 				Buttons[i].state = ButtonStateLongPress;
 			if((Buttons[i].press_counter >= SHORT_PRESS_COUNT) && (Buttons[i].state == ButtonStateReset)) {
 				Buttons[i].state = ButtonStatePress;
-
-				/*
-				if((i == BUT_UP) || (i == BUT_DOWN) || (i == BUT_ESC))
+				/* В НОРМА подтверждаем каждое нажатие кратким звуком 0.1с. */
+				if (!Fire_IsActive()) {
 					Beeper_ShortBeep();
-				else if((i == BUT_ENTER))
-					Beeper_DoubleShortBeep();
-				else if(i == BUT_FIRE) {
-					Led_TestToogle();
-				} else
-					Beeper_LongBeep();
-					*/
+				}
 
 			}
 

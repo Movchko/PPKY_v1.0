@@ -30,9 +30,13 @@
 /* Яркость подсветки кнопок по умолчанию и при активности */
 #define LED_BUT_DIM_BRIGHTNESS   50      /* базовая яркость кнопок ENTER/ESC */
 #define LED_BUT_MAX_BRIGHTNESS   0xFF    /* максимальная яркость */
+/* Яркость статусных ламп (POWER..AUTO_OFF) */
+#define LED_STATUS_DIM_BRIGHTNESS 50
+#define LED_STATUS_MAX_BRIGHTNESS 0xFF
 
 /* Таймаут возврата к базовой яркости, в тиках Led_Process (10 мс) */
-#define LED_BUT_IDLE_TIMEOUT_TICKS 1000   /* 10 секунды при шаге 10 мс */
+#define LED_BUT_IDLE_TIMEOUT_TICKS 500    /* 5 секунд при шаге 10 мс */
+#define LED_STATUS_IDLE_TIMEOUT_TICKS 500 /* 5 секунд при шаге 10 мс */
 /* Период синхронизации LED-состояний в I2C, в тиках Led_Process (10 мс) */
 #define LED_I2C_SYNC_PERIOD_TICKS   5u     /* 50 мс */
 
@@ -48,6 +52,7 @@ void Led_Snake(uint8_t state);
 void Led_TestToogle();
 void Led_Process();
 void Led_SetBrightness(uint8_t led, uint8_t power);
+void Led_ForceStatusBright(uint8_t led);
 
 #ifdef __cplusplus
 }

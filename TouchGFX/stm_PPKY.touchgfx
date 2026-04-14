@@ -45,6 +45,11 @@
               "Green": 255,
               "Blue": 255
             },
+            "Wildcard1": {
+              "TextId": "__SingleUse_MO05",
+              "UseBuffer": true,
+              "BufferSize": 12
+            },
             "Draggable": true,
             "Moveable": true
           },
@@ -54,7 +59,6 @@
             "Y": 18,
             "Width": 128,
             "Height": 28,
-            "Visible": false,
             "TextId": "__SingleUse_MF0S",
             "TextRotation": "0",
             "Color": {
@@ -65,34 +69,8 @@
             "Wildcard1": {
               "TextId": "__SingleUse_9MQN",
               "UseBuffer": true,
-              "BufferSize": 10
+              "BufferSize": 14
             }
-          },
-          {
-            "Type": "AnimatedImage",
-            "Name": "animatedImage1",
-            "X": 99,
-            "Y": 15,
-            "Width": 29,
-            "Height": 29,
-            "FileNameFirst": "logo_small.png",
-            "FileNameLast": "logo_small1.png",
-            "UpdateTicksInterval": 1000,
-            "StartOnLoad": true,
-            "LoopEnabled": true,
-            "Moveable": true
-          },
-          {
-            "Type": "AnimatedImage",
-            "Name": "animatedImage2",
-            "Y": 18,
-            "Width": 29,
-            "Height": 29,
-            "FileNameFirst": "fire.png",
-            "FileNameLast": "fire_process.png",
-            "UpdateTicksInterval": 1000,
-            "StartOnLoad": true,
-            "LoopEnabled": true
           }
         ],
         "Interactions": []
@@ -209,6 +187,18 @@
             "Width": 60,
             "Height": 60,
             "RelativeFilename": "images.png"
+          },
+          {
+            "Type": "AnimatedImage",
+            "Name": "animatedImage1",
+            "Y": 18,
+            "Width": 29,
+            "Height": 29,
+            "FileNameFirst": "logo_small.png",
+            "FileNameLast": "logo_small1.png",
+            "UpdateTicksInterval": 1000,
+            "StartOnLoad": true,
+            "LoopEnabled": true
           }
         ],
         "Interactions": [

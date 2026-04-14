@@ -657,11 +657,50 @@ uint32_t counter1s = 0;
 
 uint32_t warning_process_delay = 5000;
 
+static void App_UpdatePowerFaultIndication(uint32_t now_ms)
+{
+	static uint8_t prev_power_fault_mask = 0u;
+	uint8_t power_fault_mask = 0u;
+	for (uint8_t i = 0u; i < 2u; i++) {
+		if (Power[i] != nullptr && Power[i]->IsError()) {
+			power_fault_mask |= (uint8_t)(1u << i);
+		}
+	}
+	if (power_fault_mask > prev_power_fault_mask) {
+		Led_ForceStatusBright(LED_ERR);
+	}
+	prev_power_fault_mask = power_fault_mask;
+	Warning_SetPowerFaultMask(power_fault_mask);
+
+	static uint32_t led_power_toggle_ms = 0u;
+	static uint8_t led_power_on = 1u;
+	if (power_fault_mask != 0u) {
+		if ((now_ms - led_power_toggle_ms) >= 500u) {
+			led_power_toggle_ms = now_ms;
+			led_power_on = (uint8_t)!led_power_on;
+		}
+		Led_Set(LED_POWER, led_power_on);
+		Led_Set(LED_ERR, 1u);
+	} else {
+		led_power_on = 1u;
+		led_power_toggle_ms = now_ms;
+		Led_Set(LED_POWER, 1u);
+	}
+
+	uint8_t has_fault = (power_fault_mask != 0u) ? 1u : Warning_HasActiveFault();
+	if (!has_fault && !Fire_IsActive()) {
+		Led_Set(LED_NORM, 1u);
+	} else {
+		Led_Set(LED_NORM, 0u);
+	}
+}
+
 void AppTimer1ms() {
 	uint32_t now = HAL_GetTick();
 	AppProcess(now);
 	RefreshActiveDevices(now);
 	CheckMkuConfigMismatch();
+	App_UpdatePowerFaultIndication(now);
 	Fire_Timer1ms();
 
 	BackendProcess();
@@ -767,14 +806,14 @@ void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 	}
 }
 
-extern "C" void Fire_UiUpdate(uint8_t active, uint8_t remaining_s, uint8_t n_zones,
+extern "C" void Fire_UiUpdate(uint8_t active, uint8_t mode, uint8_t remaining_s, uint8_t n_zones,
 			      char (*zone_names)[ZONE_NAME_SIZE + 1]) {
 	FrontendHeap::getInstance().model.setFireStatusFromApp(
-		active != 0, 0xFFu, remaining_s, n_zones, zone_names);
+		active != 0, mode, 0xFFu, remaining_s, n_zones, zone_names);
 }
 
 extern "C" void Warning_UiUpdate(uint8_t active, uint8_t n_items,
-				 char (*big_titles)[16],
+				 char (*big_titles)[WARNING_TITLE_LEN],
 				 char (*details)[ZONE_NAME_SIZE + 1]) {
 	FrontendHeap::getInstance().model.setWarningStatusFromApp(
 		active != 0, n_items, big_titles, details);

@@ -101,7 +101,7 @@ uint8_t isMainInit = 0;
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-uint8_t is1ms = 0;
+uint32_t is1ms = 0;
 uint8_t is10ms = 0;
 FDCAN_TxHeaderTypeDef TxHeader;
 
@@ -314,9 +314,7 @@ int main(void)
   MX_UART4_Init();
   MX_USART2_UART_Init();
   MX_CRC_Init();
-  //+
   MX_RTC_Init();
-  //-
   MX_TIM1_Init();
   MX_FLASH_Init();
   MX_ICACHE_Init();

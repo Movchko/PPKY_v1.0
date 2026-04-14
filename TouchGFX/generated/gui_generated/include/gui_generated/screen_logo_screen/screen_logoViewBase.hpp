@@ -9,6 +9,7 @@
 #include <gui/screen_logo_screen/screen_logoPresenter.hpp>
 #include <touchgfx/widgets/Box.hpp>
 #include <touchgfx/widgets/Image.hpp>
+#include <touchgfx/widgets/AnimatedImage.hpp>
 
 class screen_logoViewBase : public touchgfx::View<screen_logoPresenter>
 {
@@ -28,6 +29,7 @@ protected:
      */
     touchgfx::Box __background;
     touchgfx::Image image1;
+    touchgfx::AnimatedImage animatedImage1;
 
 private:
 

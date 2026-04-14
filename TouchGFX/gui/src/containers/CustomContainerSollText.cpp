@@ -89,7 +89,7 @@ void CustomContainerSollText::setText(const char* text)
     /* Длиннее области — бегущая строка; пустой или короткий текст — статично */
     marqueeRunning = (marqueeTextWidth > (uint16_t)viewW);
     frameCountInteraction1Interval = 0;
-    delayframeCountInteraction1Interval = 0;
+    delayframeCountInteraction1Interval = MARQUEE_START_DELAY_TICKS;
 
     marqueeText.invalidate();
     invalidate();
@@ -105,7 +105,7 @@ void CustomContainerSollText::restart()
     marqueeText.moveTo(marqueeX, textAreatime.getY());
     marqueeRunning = true;
     frameCountInteraction1Interval = 0;
-    delayframeCountInteraction1Interval = 0;
+    delayframeCountInteraction1Interval = MARQUEE_START_DELAY_TICKS;
 }
 
 void CustomContainerSollText::handleTickEvent()
@@ -122,13 +122,16 @@ void CustomContainerSollText::handleTickEvent()
 
 
     frameCountInteraction1Interval++;
-    if(frameCountInteraction1Interval >= 4) {
+    if(frameCountInteraction1Interval >= MARQUEE_STEP_TICKS) {
 
 		// Если весь текст уже вышел за левый край — завершение или автоповтор
 		if (marqueeX + marqueeTextWidth <= 0)
 		{
 			if (finishedCallback)
 			{
+				/* Удерживаем строку видимой, чтобы не было "пустого провала" до переключения. */
+				marqueeX = 0;
+				marqueeText.moveTo(marqueeX, textAreatime.getY());
 				marqueeRunning = false;
 				finishedCallback(this);
 			}

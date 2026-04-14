@@ -42,6 +42,10 @@ public:
 
 protected:
 private:
+    /* Пауза перед первым запуском прокрутки (тика TouchGFX). 200 тиков ~= 2с при 100 Гц. */
+    static const int32_t MARQUEE_START_DELAY_TICKS = 200;
+    /* Чем меньше значение, тем быстрее прокрутка. 2 = в 2 раза быстрее, чем было 4. */
+    static const int32_t MARQUEE_STEP_TICKS = 2;
     static const uint16_t MARQUEE_BUFFER_SIZE = 129; // длинные имена зон (UTF-8) + терминатор
 
     touchgfx::TextAreaWithOneWildcard marqueeText;

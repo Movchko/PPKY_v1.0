@@ -4,7 +4,6 @@
 #include <gui_generated/mainscreen_screen/mainscreenViewBase.hpp>
 #include <touchgfx/Color.hpp>
 #include <texts/TextKeysAndLanguages.hpp>
-#include <images/BitmapDatabase.hpp>
 
 mainscreenViewBase::mainscreenViewBase()
 {
@@ -28,6 +27,8 @@ mainscreenViewBase::mainscreenViewBase()
     textAreatime_top_bar.setPosition(0, 0, 128, 15);
     textAreatime_top_bar.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
     textAreatime_top_bar.setLinespacing(0);
+    Unicode::snprintf(textAreatime_top_barBuffer, TEXTAREATIME_TOP_BAR_SIZE, "%s", touchgfx::TypedText(T___SINGLEUSE_MO05).getText());
+    textAreatime_top_bar.setWildcard(textAreatime_top_barBuffer);
     textAreatime_top_bar.setTypedText(touchgfx::TypedText(T___SINGLEUSE_4WPO));
     textAreatime_top_bar.setVisible(false);
     add(textAreatime_top_bar);
@@ -38,20 +39,7 @@ mainscreenViewBase::mainscreenViewBase()
     Unicode::snprintf(textArea1Buffer, TEXTAREA1_SIZE, "%s", touchgfx::TypedText(T___SINGLEUSE_9MQN).getText());
     textArea1.setWildcard(textArea1Buffer);
     textArea1.setTypedText(touchgfx::TypedText(T___SINGLEUSE_MF0S));
-    textArea1.setVisible(false);
     add(textArea1);
-
-    animatedImage1.setXY(99, 15);
-    animatedImage1.setBitmaps(BITMAP_LOGO_SMALL_ID, BITMAP_LOGO_SMALL1_ID);
-    animatedImage1.setUpdateTicksInterval(60);
-    animatedImage1.startAnimation(false, true, true);
-    add(animatedImage1);
-
-    animatedImage2.setXY(0, 18);
-    animatedImage2.setBitmaps(BITMAP_FIRE_ID, BITMAP_FIRE_PROCESS_ID);
-    animatedImage2.setUpdateTicksInterval(60);
-    animatedImage2.startAnimation(false, true, true);
-    add(animatedImage2);
 }
 
 mainscreenViewBase::~mainscreenViewBase()

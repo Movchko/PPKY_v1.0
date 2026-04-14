@@ -4,6 +4,7 @@
 #ifndef SIMULATOR
 #include <main.h>
 #include "device_config.h"
+#define WARNING_TITLE_LEN 24
 #endif
 
 
@@ -40,11 +41,11 @@ public:
      * remaining_s - оставшееся время до автозапуска тушения (сек), 0 если таймера нет
      * nZoneNames / zoneNames - список имён активных зон (ротация и пауза 3 с — в mainscreenView)
      */
-    void setFireStatusFromApp(bool active, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
+    void setFireStatusFromApp(bool active, uint8_t mode, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
 			      char (*zoneNames)[ZONE_NAME_SIZE + 1]);
 
     /* Обновление предупреждений (неисправностей) для главного экрана. */
-    void setWarningStatusFromApp(bool active, uint8_t nItems, char (*bigTitles)[16],
+    void setWarningStatusFromApp(bool active, uint8_t nItems, char (*bigTitles)[WARNING_TITLE_LEN],
 				 char (*details)[ZONE_NAME_SIZE + 1]);
 #endif
 
@@ -57,6 +58,7 @@ protected:
     SoundToggledCallback soundToggledCallback;
 
     bool fireActive = false;
+    uint8_t fireMode = 0u;
     uint8_t fireZone = 0xFF;
     uint8_t fireRemaining = 0;
     uint8_t fireZoneNameCount = 0;
@@ -64,7 +66,7 @@ protected:
 
     bool warningActive = false;
     uint8_t warningCount = 0;
-    char warningBigTitles[16][16];
+    char warningBigTitles[16][WARNING_TITLE_LEN];
     char warningDetails[16][ZONE_NAME_SIZE + 1];
 #endif
 };

@@ -15,6 +15,9 @@ extern I2C_HandleTypeDef hi2c1;
 #define NUM_LED 15
 #define LED_ON 1
 #define LED_OFF 0
+#define LED_STATUS_FIRST LED_POWER
+#define LED_STATUS_LAST  LED_AUTO_OFF
+#define LED_STATUS_COUNT (LED_STATUS_LAST - LED_STATUS_FIRST + 1u)
 
 uint8_t cur_led_state[NUM_LED];
 static uint8_t cur_led_power[NUM_LED];
@@ -25,6 +28,39 @@ static uint8_t led_sync_tick = 0u;
 /* Счетчик неактивности кнопок для управления яркостью подсветки ENTER/ESC */
 static uint16_t led_but_idle_counter = 0;
 static uint8_t  led_but_is_bright = 0; /* 0 - базовая яркость, 1 - максимальная */
+/* Автозатухание статусных ламп, если их состояние долго не меняется */
+static uint8_t  led_status_prev_state[LED_STATUS_COUNT];
+static uint16_t led_status_idle_counter[LED_STATUS_COUNT];
+static uint8_t  led_status_is_dimmed[LED_STATUS_COUNT];
+
+static void Led_UpdateStatusBrightness(void)
+{
+	for (uint8_t led = LED_STATUS_FIRST; led <= LED_STATUS_LAST; led++) {
+		uint8_t idx = (uint8_t)(led - LED_STATUS_FIRST);
+		uint8_t st = (uint8_t)(cur_led_state[led] & 0x03u);
+		if (st != led_status_prev_state[idx]) {
+			led_status_prev_state[idx] = st;
+			led_status_idle_counter[idx] = 0u;
+			led_status_is_dimmed[idx] = 0u;
+			if (st != LED_OFF) {
+				Led_SetBrightness(led, LED_STATUS_MAX_BRIGHTNESS);
+			}
+			continue;
+		}
+		if (st == LED_OFF) {
+			led_status_idle_counter[idx] = 0u;
+			led_status_is_dimmed[idx] = 0u;
+			continue;
+		}
+		if (led_status_idle_counter[idx] < LED_STATUS_IDLE_TIMEOUT_TICKS) {
+			led_status_idle_counter[idx]++;
+		}
+		if ((led_status_idle_counter[idx] >= LED_STATUS_IDLE_TIMEOUT_TICKS) && !led_status_is_dimmed[idx]) {
+			Led_SetBrightness(led, LED_STATUS_DIM_BRIGHTNESS);
+			led_status_is_dimmed[idx] = 1u;
+		}
+	}
+}
 
 static uint8_t Led_PackGroupState(const uint8_t *state_arr, uint8_t group)
 {
@@ -102,6 +138,11 @@ void Led_Init() {
 		  hw_led_state[i] = 0xFFu; /* форсируем первую синхронизацию */
 		  hw_led_power[i] = 0xFFu; /* форсируем первую синхронизацию */
 	  }
+	  for (uint8_t i = 0; i < LED_STATUS_COUNT; i++) {
+		  led_status_prev_state[i] = LED_OFF;
+		  led_status_idle_counter[i] = 0u;
+		  led_status_is_dimmed[i] = 0u;
+	  }
 
 	  /* Подсветка кнопок ENTER/ESC по умолчанию включена с небольшой яркостью */
 	  Led_Set(LED_BUT_ENTER_UP, LED_ON);
@@ -111,8 +152,8 @@ void Led_Init() {
 
 	  Led_Set(LED_POWER, LED_ON);
 	  Led_Set(LED_NORM,  LED_ON);
-	  Led_SetBrightness(LED_POWER, LED_BUT_DIM_BRIGHTNESS);
-	  Led_SetBrightness(LED_NORM,  LED_BUT_DIM_BRIGHTNESS);
+	  Led_SetBrightness(LED_POWER, LED_STATUS_MAX_BRIGHTNESS);
+	  Led_SetBrightness(LED_NORM,  LED_STATUS_MAX_BRIGHTNESS);
 
 	  led_but_is_bright = 0;
 	  led_sync_tick = LED_I2C_SYNC_PERIOD_TICKS;
@@ -182,20 +223,25 @@ void Led_TestToogle() {
 }
 
 void Led_Process() {
-	/* Подсветка кнопок ENTER/ESC:
+	/* Подсветка кнопок ENTER/ESC/UP/DOWN:
 	 * - по умолчанию горит с мощностью LED_BUT_DIM_BRIGHTNESS
-	 * - при нажатии любой кнопки – максимум LED_BUT_MAX_BRIGHTNESS
-	 * - если LED_BUT_IDLE_TIMEOUT_TICKS (3 секунды при шаге 10 мс) нет нажатий –
+	 * - при активности пользовательских кнопок – максимум LED_BUT_MAX_BRIGHTNESS
+	 * - если LED_BUT_IDLE_TIMEOUT_TICKS нет нажатий –
 	 *   снова небольшая яркость
 	 */
 
-	/* Подсветку ENTER/ESC делаем активной только от нажатий ENTER/ESC.
-	 * Иначе любые кнопки (например, ПУСК Общий) будут переключать яркость и
-	 * дергать I2C слишком часто. */
+	/* Кнопки ПУСК СП и ОСТАНОВ ПУСКА не влияют на общую подсветку
+	 * (требование режима НОРМА). */
 	ButtonState st_enter = Button_GetState(BUT_ENTER);
 	ButtonState st_esc   = Button_GetState(BUT_ESC);
+	ButtonState st_up    = Button_GetState(BUT_UP);
+	ButtonState st_down  = Button_GetState(BUT_DOWN);
+	ButtonState st_force = Button_GetState(BUT_FORCE);
 	bool any_pressed = ((st_enter == ButtonStatePress) || (st_enter == ButtonStateLongPress) ||
-	                     (st_esc == ButtonStatePress)   || (st_esc == ButtonStateLongPress));
+	                    (st_esc == ButtonStatePress)   || (st_esc == ButtonStateLongPress) ||
+	                    (st_up == ButtonStatePress)    || (st_up == ButtonStateLongPress) ||
+	                    (st_down == ButtonStatePress)  || (st_down == ButtonStateLongPress) ||
+	                    (st_force == ButtonStatePress) || (st_force == ButtonStateLongPress));
 
 	if (any_pressed) {
 		/* Есть нажатие – сразу делаем максимум и обнуляем таймер */
@@ -204,8 +250,6 @@ void Led_Process() {
 			led_but_is_bright = 1;
 			Led_SetBrightness(LED_BUT_ENTER_UP, LED_BUT_MAX_BRIGHTNESS);
 			Led_SetBrightness(LED_BUT_ESC_DW,  LED_BUT_MAX_BRIGHTNESS);
-			Led_SetBrightness(LED_POWER, LED_BUT_MAX_BRIGHTNESS);
-			Led_SetBrightness(LED_NORM,  LED_BUT_MAX_BRIGHTNESS);
 		}
 	} else {
 		/* Нет нажатий – считаем время простоя */
@@ -216,11 +260,10 @@ void Led_Process() {
 				led_but_is_bright = 0;
 				Led_SetBrightness(LED_BUT_ENTER_UP, LED_BUT_DIM_BRIGHTNESS);
 				Led_SetBrightness(LED_BUT_ESC_DW,  LED_BUT_DIM_BRIGHTNESS);
-				Led_SetBrightness(LED_POWER, LED_BUT_DIM_BRIGHTNESS);
-				Led_SetBrightness(LED_NORM,  LED_BUT_DIM_BRIGHTNESS);
 			}
 		}
 	}
+	Led_UpdateStatusBrightness();
 
 	/* Периодическая синхронизация состояния/яркости в драйвер LED по I2C */
 	if (led_sync_tick < LED_I2C_SYNC_PERIOD_TICKS) {
@@ -237,6 +280,17 @@ void Led_SetBrightness(uint8_t led, uint8_t power) {
 		return;
 	}
 	cur_led_power[led] = power;
+}
+
+void Led_ForceStatusBright(uint8_t led)
+{
+	if (led < LED_STATUS_FIRST || led > LED_STATUS_LAST) {
+		return;
+	}
+	uint8_t idx = (uint8_t)(led - LED_STATUS_FIRST);
+	led_status_idle_counter[idx] = 0u;
+	led_status_is_dimmed[idx] = 0u;
+	Led_SetBrightness(led, LED_STATUS_MAX_BRIGHTNESS);
 }
 
 

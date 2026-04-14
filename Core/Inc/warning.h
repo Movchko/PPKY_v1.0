@@ -9,6 +9,8 @@ extern "C" {
 
 /* Обработка предупреждений/неисправностей виртуальных устройств. */
 void WarningProcess1ms(void);
+void Warning_SetPowerFaultMask(uint8_t mask);
+uint8_t Warning_HasActiveFault(void);
 
 #ifdef __cplusplus
 }

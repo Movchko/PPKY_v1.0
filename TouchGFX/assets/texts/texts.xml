@@ -6,14 +6,17 @@
   <Texts>
     <TextGroup Id="Group1" />
     <TextGroup Id="Unsorted">
+      <Text Id="__SingleUse_MO05" Alignment="Left" TypographyId="Default">
+        <Translation Language="GB">АВАРИЯ</Translation>
+      </Text>
       <Text Id="__SingleUse_4WPO" Alignment="Center" TypographyId="Small">
-        <Translation Language="GB">ДО ПУСКА</Translation>
+        <Translation Language="GB">&lt;value&gt;</Translation>
       </Text>
       <Text Id="ResourceId2" Alignment="Left" TypographyId="Default">
         <Translation Language="GB">New Text</Translation>
       </Text>
       <Text Id="ruH" Alignment="Left" TypographyId="Large">
-        <Translation Language="GB" Alignment="Center">ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ 1234567890-</Translation>
+        <Translation Language="GB" Alignment="Center">QWERTYUIOP[]ASDFGHJKL;'\ZXCVBNM,./!@#$%^&amp;*()_+-=:"{}|?&gt;&lt;ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ 1234567890-</Translation>
       </Text>
       <Text Id="__SingleUse_9MQN" Alignment="Left" TypographyId="Large">
         <Translation Language="GB"></Translation>
@@ -31,10 +34,10 @@
         <Translation Language="GB">Откл</Translation>
       </Text>
       <Text Id="ru" Alignment="Left" TypographyId="Small">
-        <Translation Language="GB">йцукенгшщзхъфывапролджэячсмитьбю ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ-</Translation>
+        <Translation Language="GB">йцукенгшщзхъфывапролджэячсмитьбю ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ-/|\</Translation>
       </Text>
       <Text Id="alphabet" Alignment="Left" TypographyId="Small">
-        <Translation Language="GB">QWERTYUIOPASDFGHJKLZXCVBNM qwertyuiopasdfghjklzxcvbnm</Translation>
+        <Translation Language="GB">QWERTYUIOPASDFGHJKLZXCVBNM qwertyuiopasdfghjklzxcvbnm*()?:%;№"!</Translation>
       </Text>
       <Text Id="__SingleUse_D1VE" Alignment="Left" TypographyId="Small">
         <Translation Language="GB">&lt;value&gt;</Translation>

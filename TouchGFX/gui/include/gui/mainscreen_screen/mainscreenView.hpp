@@ -27,9 +27,9 @@ public:
 
 #ifndef SIMULATOR
     /** Таймер + имена зон по очереди (одно имя, ротация 3 с после полного показа). */
-    void updateFireStatus(bool active, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
+    void updateFireStatus(bool active, uint8_t mode, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
 			  char (*zoneNames)[ZONE_NAME_SIZE + 1]);
-    void updateWarningStatus(bool active, uint8_t nItems, char (*bigTitles)[16],
+    void updateWarningStatus(bool active, uint8_t nItems, char (*bigTitles)[WARNING_TITLE_LEN],
 			     char (*details)[ZONE_NAME_SIZE + 1]);
 
     /** Один полный проход бегущей строки (длинное имя) — пауза 3 с и смена зоны. */
@@ -39,6 +39,9 @@ public:
     void fireShowCurrentZone();
     void warningOnMarqueeOnePassDone();
     void warningShowCurrent();
+    void uiSetWarningHeaderVisible(bool visible);
+    void uiUpdateWarningHeader(uint8_t cur_idx, uint8_t total);
+    void uiSetTopHeaderText(const char* text);
 #endif
 
 protected:

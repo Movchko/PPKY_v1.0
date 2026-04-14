@@ -19,8 +19,14 @@ extern uint8_t g_active_devices_count;
 #define FIRE_MAX_SLOTS       16u
 #define FIRE_UI_MAX_ZONES    16u
 #define FIRE_UI_NAME_LEN     (ZONE_NAME_SIZE + 1u)
-/* Дежурный режим после обработки пожара: короткий писк раз в N секунд */
-#define FIRE_DUTY_BEEP_PERIOD_MS 5000u
+#define FIRE_STOP_TEXT_BLINK_PERIOD_MS       1600u
+#define FIRE_START_SP_TEXT_BLINK_PERIOD_MS   1600u
+#define FIRE_START_ALL_TEXT_BLINK_PERIOD_MS  1600u
+#define FIRE_START_ALL_SOUND_PERIOD_MS       1600u
+#define FIRE_START_ALL_SOUND_DUTY_MS         800u
+#define FIRE_START_LED_HOLD_MS               3000u
+/* ack_flags у IGNITER: предполагаем бит 1 = end_ack */
+#define FIRE_IGNITER_END_ACK_MASK            0x02u
 
 static uint8_t debug_zone_delay[FIRE_DEBUG_ZONES] = { 15, 30u, 30 };
 static uint8_t debug_module_delay[FIRE_DEBUG_ZONES][2] = {
@@ -64,7 +70,12 @@ typedef struct {
 	uint32_t  led_toggle_ms;
 	uint8_t   beeper_alert_active;
 	uint8_t   beeper_duty_active;
-	uint32_t  beeper_duty_last_ms;
+	uint8_t   beeper_start_pattern_active;
+	uint8_t   start_all_hold_sound_active;
+	uint32_t  start_pattern_started_ms;
+	uint32_t  start_led_hold_until_ms;
+	uint32_t  stop_text_blink_until_ms;
+	uint32_t  start_sp_text_blink_until_ms;
 	uint8_t   stop_launch_pressed_latched;
 	uint8_t   start_launch_pressed_latched;
 	uint8_t   led_fire_on;
@@ -73,6 +84,7 @@ typedef struct {
 	uint8_t   btn_stop_latched;
 	uint8_t   start_all_is_bright;
 	uint8_t   last_ui_active;
+	uint8_t   last_ui_mode;
 	uint8_t   last_ui_remaining;
 	uint8_t   last_ui_nzones;
 	uint32_t  last_ui_force_names_ms;
@@ -122,18 +134,29 @@ static uint8_t Fire_MinRemainingSec(uint32_t now_ms);
 static uint8_t Fire_ProcessAutoDeadlines(uint32_t now_ms);
 /* ПУСК ОБЩИЙ: старт по всем найденным igniter-зонам + отметка слотов. */
 static uint8_t Fire_StartAllExistingZonesAndMarkSlots(void);
+/* Возвращает 1, если по всем IGNITER в зоне есть end_ack. */
+static uint8_t Fire_ZoneAllIgnitersEndAck(uint8_t zone);
+/* Возвращает 1, если все активные пожарные зоны завершили тушение (end_ack). */
+static uint8_t Fire_AllActiveZonesEndAck(void);
 /* Формирует список имён зон для UI (уникальные, отсортированные). */
 static void Fire_FillZoneNamesForUi(char (*out_names)[FIRE_UI_NAME_LEN], uint8_t *out_n);
 /* Собирает отсортированный список igniter МКУ в заданной зоне. */
 static uint8_t Fire_CollectSortedIgniterIndices(uint8_t zone, uint8_t *out_idx, uint8_t max_out);
+/* Есть ли у МКУ хотя бы один online IGNITER-vdev. */
+static uint8_t Fire_DeviceHasIgniterVdev(const ActiveDeviceInfo *ad);
 /* Переводит пищалку в непрерывный тревожный режим. */
 static void Fire_BeeperEnterAlert(void);
-/* Переводит пищалку в дежурный периодический режим. */
-static void Fire_BeeperEnterDuty(uint32_t now_ms);
-/* Тик дежурного режима пищалки (короткий писк по периоду). */
-static void Fire_BeeperDutyTick(uint32_t now_ms);
+/* Переводит пищалку в дежурный периодический режим (2x0.2с, период 5с). */
+static void Fire_BeeperEnterDuty(void);
+/* Прерывистый звук для пуска (скважность 2, период 2.4с). */
+static void Fire_BeeperEnterStartPattern(uint32_t now_ms);
+/* Тик/переключение между паттернами. */
+static void Fire_BeeperTick(uint32_t now_ms);
+/* Звук подтверждения удержания ПУСК ОБЩИЙ (1.6с, скважность 2). */
+static void Fire_StartAllHoldSoundOn(void);
+static void Fire_StartAllHoldSoundOff(void);
 
-extern void Fire_UiUpdate(uint8_t active, uint8_t remaining_s, uint8_t n_zones,
+extern void Fire_UiUpdate(uint8_t active, uint8_t mode, uint8_t remaining_s, uint8_t n_zones,
 			  char (*zone_names)[FIRE_UI_NAME_LEN]);
 
 static void Fire_BeeperEnterAlert(void)
@@ -141,26 +164,78 @@ static void Fire_BeeperEnterAlert(void)
 	/* Сигнальный режим: непрерывный звук до обработки пожара. */
 	g_fire.beeper_alert_active = 1u;
 	g_fire.beeper_duty_active = 0u;
-	Beeper_ContinuousOn();
+	g_fire.beeper_start_pattern_active = 0u;
+	Beeper_StopPattern();
+	Beeper_StartPulseTrain(BEEPER_PATTERN_FIRE_ON_MS, BEEPER_PATTERN_FIRE_OFF_MS,
+			       BEEPER_PATTERN_FIRE_PULSES, BEEPER_PATTERN_FIRE_REPEAT_MS);
 }
 
-static void Fire_BeeperEnterDuty(uint32_t now_ms)
+static void Fire_BeeperEnterDuty(void)
 {
-	/* Дежурный режим: короткие напоминания по таймеру (без непрерывного звука). */
+	/* После обработки пожара: 2 коротких импульса по 0.2с с периодом 5с. */
 	g_fire.beeper_alert_active = 0u;
 	g_fire.beeper_duty_active = 1u;
-	Beeper_ContinuousOff();
-	g_fire.beeper_duty_last_ms = now_ms;
+	g_fire.beeper_start_pattern_active = 0u;
+	Beeper_StopPattern();
+	Beeper_StartPulseTrain(BEEPER_PATTERN_FIRE_ON_MS, BEEPER_PATTERN_FIRE_OFF_MS,
+			       BEEPER_PATTERN_FIRE_PULSES, BEEPER_PATTERN_FIRE_REPEAT_MS);
 }
 
-static void Fire_BeeperDutyTick(uint32_t now_ms)
+static void Fire_BeeperEnterStartPattern(uint32_t now_ms)
 {
-	if (!g_fire.beeper_duty_active) {
+	(void)now_ms;
+	/* ПУСК: прерывистый звук скважность 2, период 2.4с (1.2с/1.2с). */
+	g_fire.beeper_alert_active = 0u;
+	g_fire.beeper_duty_active = 0u;
+	g_fire.beeper_start_pattern_active = 1u;
+	g_fire.start_pattern_started_ms = HAL_GetTick();
+	Beeper_ContinuousOff();
+	Beeper_StartPulseTrain(BEEPER_PATTERN_START_ON_MS, BEEPER_PATTERN_START_OFF_MS,
+			       BEEPER_PATTERN_START_PULSES, BEEPER_PATTERN_START_REPEAT_MS);
+}
+
+static void Fire_BeeperTick(uint32_t now_ms)
+{
+	if (g_fire.start_all_hold_sound_active) {
 		return;
 	}
-	if ((now_ms - g_fire.beeper_duty_last_ms) >= FIRE_DUTY_BEEP_PERIOD_MS) {
-		Beeper_ShortBeep();
-		g_fire.beeper_duty_last_ms = now_ms;
+	if (g_fire.beeper_alert_active) {
+		return;
+	}
+	if (g_fire.beeper_start_pattern_active && Fire_AllActiveZonesEndAck()) {
+		g_fire.beeper_start_pattern_active = 0u;
+		g_fire.start_led_hold_until_ms = now_ms + FIRE_START_LED_HOLD_MS;
+		Fire_BeeperEnterDuty();
+	}
+}
+
+static void Fire_StartAllHoldSoundOn(void)
+{
+	if (g_fire.start_all_hold_sound_active) {
+		return;
+	}
+	g_fire.start_all_hold_sound_active = 1u;
+	Beeper_ContinuousOff();
+	/* Непрерывное мигание/звук 0.8/0.8с без дополнительной паузы между циклами. */
+	Beeper_StartPulseTrain(FIRE_START_ALL_SOUND_DUTY_MS, FIRE_START_ALL_SOUND_DUTY_MS, 1u, 0u);
+}
+
+static void Fire_StartAllHoldSoundOff(void)
+{
+	if (!g_fire.start_all_hold_sound_active) {
+		return;
+	}
+	g_fire.start_all_hold_sound_active = 0u;
+	Beeper_StopPattern();
+	if (g_fire.beeper_alert_active) {
+		Beeper_StartPulseTrain(BEEPER_PATTERN_FIRE_ON_MS, BEEPER_PATTERN_FIRE_OFF_MS,
+				       BEEPER_PATTERN_FIRE_PULSES, BEEPER_PATTERN_FIRE_REPEAT_MS);
+	} else if (g_fire.beeper_start_pattern_active) {
+		Beeper_StartPulseTrain(BEEPER_PATTERN_START_ON_MS, BEEPER_PATTERN_START_OFF_MS,
+				       BEEPER_PATTERN_START_PULSES, BEEPER_PATTERN_START_REPEAT_MS);
+	} else if (g_fire.beeper_duty_active) {
+		Beeper_StartPulseTrain(BEEPER_PATTERN_FIRE_ON_MS, BEEPER_PATTERN_FIRE_OFF_MS,
+				       BEEPER_PATTERN_FIRE_PULSES, BEEPER_PATTERN_FIRE_REPEAT_MS);
 	}
 }
 
@@ -202,7 +277,7 @@ static uint8_t Fire_CollectSortedIgniterIndices(uint8_t zone, uint8_t *out_idx, 
 		if (g_active_devices[i].dev.zone != zone) {
 			continue;
 		}
-		if ((g_active_devices[i].dev.d_type & 0x7Fu) != DEVICE_MCU_IGN_TYPE) {
+		if (!Fire_DeviceHasIgniterVdev(&g_active_devices[i])) {
 			continue;
 		}
 		out_idx[n++] = i;
@@ -218,6 +293,19 @@ static uint8_t Fire_CollectSortedIgniterIndices(uint8_t zone, uint8_t *out_idx, 
 		out_idx[b] = key;
 	}
 	return n;
+}
+
+static uint8_t Fire_DeviceHasIgniterVdev(const ActiveDeviceInfo *ad)
+{
+	if (ad == NULL || !ad->online) {
+		return 0u;
+	}
+	for (uint8_t vi = 0u; vi < ad->vdev_count; vi++) {
+		if (ad->vdevs[vi].online && ad->vdevs[vi].v_d_type == DEVICE_IGNITER_TYPE) {
+			return 1u;
+		}
+	}
+	return 0u;
 }
 
 static void Fire_SendStartToIgniterIdx(uint8_t idx, uint8_t zone, uint8_t zd_sec, uint8_t md_sec)
@@ -429,10 +517,10 @@ static uint8_t Fire_StartAllExistingZonesAndMarkSlots(void)
 	 * отправка фазы 2 во все существующие зоны igniter и синхронизация слотов. */
 	uint8_t zone_sent[128] = {0};
 	uint8_t any_started = 0u;
+	uint32_t now_ms = HAL_GetTick();
 
 	for (uint8_t i = 0u; i < g_active_devices_count; i++) {
-		uint8_t t = g_active_devices[i].dev.d_type & 0x7Fu;
-		if (t != DEVICE_MCU_IGN_TYPE) {
+		if (!Fire_DeviceHasIgniterVdev(&g_active_devices[i])) {
 			continue;
 		}
 		uint8_t z = g_active_devices[i].dev.zone & 0x7Fu;
@@ -454,10 +542,62 @@ static uint8_t Fire_StartAllExistingZonesAndMarkSlots(void)
 		}
 	}
 
-	//TODO:: пока заглушка
-	any_started = 1;
+	/* Если общего пуска запущен без активных пожарных слотов, создаём слоты зон,
+	 * чтобы UI/индикация ПУСК работали как при ПУСК СП и предупреждения не перебивали экран. */
+	for (uint8_t z = 0u; z < 128u; z++) {
+		if (!zone_sent[z]) {
+			continue;
+		}
+		if (Fire_FindSlotZone(z) >= 0) {
+			continue;
+		}
+		int8_t si = Fire_AllocSlot();
+		if (si < 0) {
+			continue;
+		}
+		g_fire.slots[(uint8_t)si].active = 1u;
+		g_fire.slots[(uint8_t)si].zone = z;
+		g_fire.slots[(uint8_t)si].phase2_sent = 1u;
+		g_fire.slots[(uint8_t)si].phase2_deadline_ms = now_ms;
+	}
 
 	return any_started;
+}
+
+static uint8_t Fire_ZoneAllIgnitersEndAck(uint8_t zone)
+{
+	uint8_t has_igniters = 0u;
+	for (uint8_t i = 0u; i < g_active_devices_count; i++) {
+		ActiveDeviceInfo *m = &g_active_devices[i];
+		if (!m->online || m->dev.zone != zone) {
+			continue;
+		}
+		for (uint8_t vi = 0u; vi < m->vdev_count; vi++) {
+			if (!m->vdevs[vi].online || m->vdevs[vi].v_d_type != DEVICE_IGNITER_TYPE) {
+				continue;
+			}
+			has_igniters = 1u;
+			if ((m->vdevs[vi].ack_flags & FIRE_IGNITER_END_ACK_MASK) == 0u) {
+				return 0u;
+			}
+		}
+	}
+	return has_igniters;
+}
+
+static uint8_t Fire_AllActiveZonesEndAck(void)
+{
+	uint8_t any_zone = 0u;
+	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
+		if (!g_fire.slots[i].active) {
+			continue;
+		}
+		any_zone = 1u;
+		if (!Fire_ZoneAllIgnitersEndAck(g_fire.slots[i].zone)) {
+			return 0u;
+		}
+	}
+	return any_zone;
 }
 
 static void Fire_SyncStateFromSlots(void)
@@ -479,9 +619,15 @@ static void Fire_FillZoneNamesForUi(char (*out_names)[FIRE_UI_NAME_LEN], uint8_t
 	/* Готовит уникальный отсортированный список имён зон для TouchGFX. */
 	uint8_t zones[FIRE_MAX_SLOTS];
 	uint8_t nz = 0u;
+	uint8_t show_all_history = Fire_AllActiveZonesEndAck();
 
 	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
 		if (!g_fire.slots[i].active) {
+			continue;
+		}
+		/* До полного завершения тушения показываем только "текущие" непотушенные зоны.
+		 * После завершения по всем зонам (end_ack) показываем исторический список. */
+		if (!show_all_history && Fire_ZoneAllIgnitersEndAck(g_fire.slots[i].zone)) {
 			continue;
 		}
 		uint8_t z = g_fire.slots[i].zone;
@@ -537,11 +683,12 @@ static void Fire_FillZoneNamesForUi(char (*out_names)[FIRE_UI_NAME_LEN], uint8_t
 	}
 }
 
-static void Fire_UpdateUiText(uint8_t active, uint8_t remaining_s, uint8_t n_zones,
+static void Fire_UpdateUiText(uint8_t active, uint8_t mode, uint8_t remaining_s, uint8_t n_zones,
 			      char (*zone_names)[FIRE_UI_NAME_LEN])
 {
 	/* Пуш в UI только при изменениях; есть защита от редкой рассинхронизации n_zones==0. */
-	uint8_t same = (g_fire.last_ui_active == active && g_fire.last_ui_remaining == remaining_s &&
+	uint8_t same = (g_fire.last_ui_active == active && g_fire.last_ui_mode == mode &&
+			g_fire.last_ui_remaining == remaining_s &&
 			g_fire.last_ui_nzones == n_zones);
 	if (same && n_zones > 0u) {
 		same = (memcmp(g_fire.last_ui_names, zone_names,
@@ -563,13 +710,14 @@ static void Fire_UpdateUiText(uint8_t active, uint8_t remaining_s, uint8_t n_zon
 		return;
 	}
 	g_fire.last_ui_active = active;
+	g_fire.last_ui_mode = mode;
 	g_fire.last_ui_remaining = remaining_s;
 	g_fire.last_ui_nzones = n_zones;
 	if (n_zones > 0u) {
 		memcpy(g_fire.last_ui_names, zone_names,
 		       (size_t)n_zones * (size_t)FIRE_UI_NAME_LEN);
 	}
-	Fire_UiUpdate(active, remaining_s, n_zones, zone_names);
+	Fire_UiUpdate(active, mode, remaining_s, n_zones, zone_names);
 }
 
 static void Fire_SetIdleIndication(void)
@@ -584,12 +732,16 @@ static void Fire_SetIdleIndication(void)
 	Led_Set(LED_STR_STOP, 0);
 	Led_Set(LED_START, 0);
 	Led_Set(LED_STOP, 0);
-	Led_Set(LED_AUTO_OFF, 0);
+	Led_Set(LED_AUTO_OFF, (PPKYConfig.fire_mode == 2u) ? 1u : 0u);
 	Led_Set(LED_FIRE, 0);
 	g_fire.stop_launch_pressed_latched = 0u;
 	g_fire.beeper_alert_active = 0u;
 	g_fire.beeper_duty_active = 0u;
+	g_fire.beeper_start_pattern_active = 0u;
 	Beeper_ContinuousOff();
+	if (!g_fire.start_all_hold_sound_active) {
+		Beeper_StopPattern();
+	}
 }
 
 static void Fire_SetStartAllBrightness(uint8_t bright)
@@ -616,7 +768,7 @@ static uint8_t Fire_ButtonPressedEvent(uint8_t button_id, uint8_t *latched_flag)
 	return 0u;
 }
 
-static void Fire_ApplyStateLeds(void)
+static void Fire_ApplyStateLeds(uint32_t now_ms)
 {
 	/* Профиль индикации для не-IDLE состояний; отдельные override применяются в Fire_Transition(). */
 	if (PPKYConfig.fire_mode == 2u) {
@@ -629,27 +781,49 @@ static void Fire_ApplyStateLeds(void)
 
 	if (pending > 0u) {
 		Led_Set(LED_BUT_START_SP, 1);
-		Led_Set(LED_STR_START_SP, 1);
+		if ((int32_t)(now_ms - g_fire.start_sp_text_blink_until_ms) < 0) {
+			uint8_t blink_on = (((now_ms / (FIRE_START_SP_TEXT_BLINK_PERIOD_MS / 2u)) & 1u) != 0u) ? 1u : 0u;
+			Led_Set(LED_STR_START_SP, blink_on);
+		} else {
+			Led_Set(LED_STR_START_SP, 1);
+		}
 		Led_Set(LED_BUT_STOP, 1);
-		Led_Set(LED_STR_STOP, 1);
+		if ((int32_t)(now_ms - g_fire.stop_text_blink_until_ms) < 0) {
+			uint8_t blink_on = (((now_ms / (FIRE_STOP_TEXT_BLINK_PERIOD_MS / 2u)) & 1u) != 0u) ? 1u : 0u;
+			Led_Set(LED_STR_STOP, blink_on);
+		} else {
+			Led_Set(LED_STR_STOP, 1);
+		}
 		if (g_fire.all_hold_active) {
 			Fire_SetStartAllBrightness(1u);
-			Led_Set(LED_BUT_START_ALL, 1u);
+			Led_Set(LED_BUT_START_ALL, 0u);
 		} else {
 			Fire_SetStartAllBrightness(0u);
 			Led_Set(LED_BUT_START_ALL, 0u);
 			Led_Set(LED_STR_START_ALL, 1u);
 		}
-		Led_Set(LED_START, 0);
+		if (g_fire.beeper_start_pattern_active) {
+			uint32_t phase = (now_ms - g_fire.start_pattern_started_ms) %
+					 (BEEPER_PATTERN_START_ON_MS + BEEPER_PATTERN_START_OFF_MS);
+			Led_Set(LED_START, (phase < BEEPER_PATTERN_START_ON_MS) ? 1u : 0u);
+		} else {
+			Led_Set(LED_START, ((int32_t)(now_ms - g_fire.start_led_hold_until_ms) < 0) ? 1u : 0u);
+		}
 	} else {
 		Led_Set(LED_BUT_START_SP, 0);
 		Led_Set(LED_STR_START_SP, 0);
 		Led_Set(LED_BUT_STOP, 0);
 		Led_Set(LED_STR_STOP, 0);
-		Fire_SetStartAllBrightness(1u);
-		Led_Set(LED_BUT_START_ALL, 1);
+		Fire_SetStartAllBrightness(0u);
+		Led_Set(LED_BUT_START_ALL, 0);
 		Led_Set(LED_STR_START_ALL, 1);
-		Led_Set(LED_START, 1);
+		if (g_fire.beeper_start_pattern_active) {
+			uint32_t phase = (now_ms - g_fire.start_pattern_started_ms) %
+					 (BEEPER_PATTERN_START_ON_MS + BEEPER_PATTERN_START_OFF_MS);
+			Led_Set(LED_START, (phase < BEEPER_PATTERN_START_ON_MS) ? 1u : 0u);
+		} else {
+			Led_Set(LED_START, ((int32_t)(now_ms - g_fire.start_led_hold_until_ms) < 0) ? 1u : 0u);
+		}
 	}
 	Led_Set(LED_STOP, g_fire.stop_launch_pressed_latched ? 1u : 0u);
 }
@@ -659,8 +833,10 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 	/* Единая точка обработки событий сценария пожара:
 	 * FSM, автодедлайны, звук, LED и публикация состояния на UI. */
 	uint8_t ui_active = 0u;
+	uint8_t ui_mode = 0u;
 	uint8_t ui_remaining = 0u;
 	uint8_t fire_processed = 0u;
+	uint8_t start_processed = 0u;
 
 	switch (ev) {
 	case FIRE_EVENT_STATUS_FIRE:
@@ -669,6 +845,7 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 			g_fire.state = (PPKYConfig.fire_mode == 2u) ? FIRE_STATE_WAIT_MANUAL : FIRE_STATE_WAIT_AUTO;
 			g_fire.reply_received = 0u;
 		}
+		Led_ForceStatusBright(LED_FIRE);
 		/* Новый пожар всегда переводит пищалку в сигнальный непрерывный режим */
 		Fire_BeeperEnterAlert();
 		break;
@@ -683,6 +860,7 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		g_fire.all_hold_active = 0u;
 		g_fire.all_hold_ms = 0u;
 		g_fire.btn_start_all_hold_latched = 0u;
+		Fire_StartAllHoldSoundOff();
 		if (Fire_CountPendingPhase2() > 0u) {
 			g_fire.state = (PPKYConfig.fire_mode == 2u) ? FIRE_STATE_WAIT_MANUAL : FIRE_STATE_WAIT_AUTO;
 		}
@@ -697,9 +875,11 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 			/* Пуск тушения обработан — индикацию «ОСТАНОВ ПУСКА» снимаем */
 			g_fire.start_launch_pressed_latched = 1u;
 			g_fire.stop_launch_pressed_latched = 0u;
+			g_fire.start_sp_text_blink_until_ms = now_ms + (FIRE_START_SP_TEXT_BLINK_PERIOD_MS * 3u);
 			Fire_Phase2AllPending();
 			Fire_SyncStateFromSlots();
 			fire_processed = 1u;
+			start_processed = 1u;
 		}
 		break;
 	case FIRE_EVENT_BTN_START_ALL:
@@ -716,8 +896,10 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 			if (any_started) {
 			g_fire.start_launch_pressed_latched = 1u;
 			g_fire.stop_launch_pressed_latched = 0u;
+			g_fire.start_sp_text_blink_until_ms = now_ms + (FIRE_START_SP_TEXT_BLINK_PERIOD_MS * 3u);
 			Fire_SyncStateFromSlots();
 			fire_processed = 1u;
+			start_processed = 1u;
 		}
 		}
 		break;
@@ -726,18 +908,23 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		if (g_fire.start_launch_pressed_latched || Fire_CountPendingPhase2() == 0u) {
 			break;
 		}
+		{
+			uint8_t manual_mode_initial = (PPKYConfig.fire_mode == 2u) ? 1u : 0u;
 		PPKYConfig.fire_mode = 2u;
 		g_fire.zone_countdown_stopped = 1u;
 		g_fire.start_launch_pressed_latched = 0u;
 		g_fire.stop_launch_pressed_latched = 1u;
+		g_fire.stop_text_blink_until_ms = manual_mode_initial ? 0u : (now_ms + (FIRE_STOP_TEXT_BLINK_PERIOD_MS * 3u));
 		Fire_SendStopAllMcus();
 		g_fire.all_hold_active = 0u;
 		g_fire.all_hold_ms = 0u;
 		g_fire.btn_start_all_hold_latched = 0u;
+		Fire_StartAllHoldSoundOff();
 		if (Fire_CountPendingPhase2() > 0u) {
 			g_fire.state = FIRE_STATE_WAIT_MANUAL;
 		}
 		fire_processed = 1u;
+		}
 		break;
 	case FIRE_EVENT_TICK_1MS:
 	default:
@@ -748,18 +935,19 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		g_fire.start_launch_pressed_latched = 1u;
 		g_fire.stop_launch_pressed_latched = 0u;
 		fire_processed = 1u;
+		start_processed = 1u;
 	}
 	Fire_SyncStateFromSlots();
 	if (fire_processed && g_fire.state != FIRE_STATE_IDLE) {
-		/* Пожар обработан (стоп/пуск/автопуск) -> дежурный режим пищалки */
-		Fire_BeeperEnterDuty(now_ms);
+		if (start_processed) {
+			Fire_BeeperEnterStartPattern(now_ms);
+		} else {
+			/* Пожар обработан остановом — дежурный паттерн 2x0.2с/5с. */
+			Fire_BeeperEnterDuty();
+		}
+		Led_SetBrightness(LED_FIRE, LED_STATUS_DIM_BRIGHTNESS);
 	}
-	if (g_fire.beeper_alert_active) {
-		/* Поддерживаем непрерывный режим даже если кто-то прервал его другим паттерном */
-		Beeper_ContinuousOn();
-	} else {
-		Fire_BeeperDutyTick(now_ms);
-	}
+	Fire_BeeperTick(now_ms);
 
 	if (g_fire.all_hold_active && g_fire.all_hold_ms < 3000u) {
 		uint32_t rem_ms = 3000u - g_fire.all_hold_ms;
@@ -767,21 +955,29 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 	} else if (g_fire.state == FIRE_STATE_WAIT_AUTO || g_fire.state == FIRE_STATE_WAIT_MANUAL) {
 		if (!g_fire.zone_countdown_stopped) {
 			ui_remaining = Fire_MinRemainingSec(now_ms);
+			ui_mode = 1u; /* ДО ПУСКА */
 		} else {
 			ui_remaining = 0u;
+			ui_mode = 4u; /* ПОЖАР/ОСТ. ПУСКА */
 		}
 	} else if (g_fire.state == FIRE_STATE_EXTINGUISHING) {
 		ui_remaining = 0u;
+		ui_mode = 2u; /* ТУШЕНИЕ */
+		if (Fire_AllActiveZonesEndAck()) {
+			ui_mode = 3u; /* ТУШЕНИЕ ПРОИЗВЕДЕНО */
+		}
 	}
 
 	if (g_fire.state == FIRE_STATE_IDLE) {
 		Led_Set(LED_FIRE, 0);
 		g_fire.led_fire_on = 0u;
 	} else {
-		if ((now_ms - g_fire.led_toggle_ms) >= 500u) {
-			g_fire.led_toggle_ms = now_ms;
-			g_fire.led_fire_on = !g_fire.led_fire_on;
-			Led_Set(LED_FIRE, g_fire.led_fire_on ? 1u : 0u);
+		Led_Set(LED_FIRE, 1u);
+		g_fire.led_fire_on = 1u;
+		/* До принятия решения по пожару (стоп/пуск/автопуск) держим ПОЖАР ярким,
+		 * несмотря на глобальный механизм автозатухания в led.c. */
+		if (g_fire.beeper_alert_active) {
+			Led_ForceStatusBright(LED_FIRE);
 		}
 	}
 
@@ -790,13 +986,14 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 			/* Без пожара: показываем только 3-сек таймер удержания ПУСК ОБЩИЙ и мигание подписи */
 			Fire_SetIdleIndication();
 			{
-				uint8_t blink_on = (((now_ms / 500u) & 1u) != 0u) ? 1u : 0u;
-				Led_Set(LED_BUT_START_ALL, 1u);
+				uint8_t blink_on = (((now_ms / (FIRE_START_ALL_TEXT_BLINK_PERIOD_MS / 2u)) & 1u) != 0u) ? 1u : 0u;
+				Fire_SetStartAllBrightness(1u);
+				Led_Set(LED_BUT_START_ALL, 0u);
 				Led_Set(LED_STR_START_ALL, blink_on);
 			}
 			{
 				char z0[FIRE_UI_MAX_ZONES][FIRE_UI_NAME_LEN];
-				Fire_UpdateUiText(1u, ui_remaining, 0u, z0);
+				Fire_UpdateUiText(1u, 1u, ui_remaining, 0u, z0);
 			}
 			return;
 		}
@@ -806,16 +1003,17 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		}
 		{
 			char z0[FIRE_UI_MAX_ZONES][FIRE_UI_NAME_LEN];
-			Fire_UpdateUiText(0u, 0u, 0u, z0);
+			Fire_UpdateUiText(0u, 0u, 0u, 0u, z0);
 		}
 		return;
 	}
 
-	Fire_ApplyStateLeds();
+	Fire_ApplyStateLeds(now_ms);
 	if ((g_fire.state == FIRE_STATE_WAIT_AUTO || g_fire.state == FIRE_STATE_WAIT_MANUAL) &&
 	    g_fire.all_hold_active) {
-		uint8_t blink_on = (((now_ms / 500u) & 1u) != 0u) ? 1u : 0u;
-		Led_Set(LED_BUT_START_ALL, 1u);
+		uint8_t blink_on = (((now_ms / (FIRE_START_ALL_TEXT_BLINK_PERIOD_MS / 2u)) & 1u) != 0u) ? 1u : 0u;
+		Fire_SetStartAllBrightness(1u);
+		Led_Set(LED_BUT_START_ALL, 0u);
 		Led_Set(LED_STR_START_ALL, blink_on);
 	}
 
@@ -824,7 +1022,7 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		char zn[FIRE_UI_MAX_ZONES][FIRE_UI_NAME_LEN];
 		uint8_t nzn = 0u;
 		Fire_FillZoneNamesForUi(zn, &nzn);
-		Fire_UpdateUiText(ui_active, ui_remaining, nzn, zn);
+		Fire_UpdateUiText(ui_active, ui_mode, ui_remaining, nzn, zn);
 	}
 }
 
@@ -865,19 +1063,22 @@ void Fire_Timer10ms(void)
 			g_fire.all_hold_active = 1u;
 			g_fire.all_hold_ms = 0u;
 			g_fire.state_start_ms = HAL_GetTick();
+			Fire_StartAllHoldSoundOn();
 		} else {
 			if (g_fire.all_hold_ms < 3000u) {
 				g_fire.all_hold_ms += 10u;
 			}
 			if (g_fire.all_hold_ms >= 3000u && g_fire.btn_start_all_hold_latched == 0u) {
 				g_fire.btn_start_all_hold_latched = 1u;
+				Fire_StartAllHoldSoundOff();
 				Fire_Transition(FIRE_EVENT_BTN_START_ALL, HAL_GetTick());
 			}
 		}
-	} else if (st_start_all == ButtonStateReset) {
+	} else if (st_start_all == ButtonStateReset && g_fire.all_hold_active) {
 		g_fire.all_hold_active = 0u;
 		g_fire.all_hold_ms = 0u;
 		g_fire.btn_start_all_hold_latched = 0u;
+		Fire_StartAllHoldSoundOff();
 		/* Обновить UI/LED сразу после отпускания кнопки, даже если пожара нет */
 		Fire_Transition(FIRE_EVENT_TICK_1MS, HAL_GetTick());
 	}

@@ -6,22 +6,38 @@
 #include "app.hpp"
 #include "fire.h"
 #include "led.h"
+#include "beeper.h"
 #include "can_bus.h"
 #include "device_config.h"
+
+#define WARN_TITLE_LEN 24
 
 extern ActiveDeviceInfo g_active_devices[NUM_ACTIVE_DEVICE];
 extern uint8_t g_active_devices_count;
 extern PPKYCfg PPKYConfig;
 
 extern "C" void Warning_UiUpdate(uint8_t active, uint8_t n_items,
-				 char (*big_titles)[16],
+				 char (*big_titles)[WARN_TITLE_LEN],
 				 char (*details)[ZONE_NAME_SIZE + 1]);
+
+enum FaultSoundPhase : uint8_t {
+	FAULT_SOUND_IDLE = 0u,
+	FAULT_SOUND_WAIT_PERIODIC,
+	FAULT_SOUND_PERIODIC
+};
+static uint8_t g_power_fault_mask = 0u;
+static FaultSoundPhase g_fault_sound_phase = FAULT_SOUND_IDLE;
+static uint32_t g_fault_sound_deadline_ms = 0u;
+
+extern "C" uint8_t Warning_HasActiveFault(void);
 
 namespace {
 
 constexpr uint8_t WARN_MAX_ITEMS = 16u;
 constexpr uint32_t WARNING_SHOW_HOLD_MS = 10000u; /* Показывать предупреждение ещё 10 с после исчезновения */
-constexpr uint32_t LED_ERR_OFF_DELAY_MS = 5000u;  /* Гасить LED_ERR через 5 с после исчезновения всех неисправностей */
+constexpr uint32_t FAULT_FIRST_BEEP_ON_MS = 500u;
+constexpr uint32_t FAULT_FIRST_BEEP_OFF_MS = 100u;
+constexpr uint8_t  FAULT_FIRST_BEEP_PULSES = 2u;
 
 struct WarningItem {
 	uint8_t used;
@@ -41,10 +57,11 @@ static WarningItem g_items[WARN_MAX_ITEMS];
 
 static uint8_t g_last_active = 0xFFu;
 static uint8_t g_last_count = 0xFFu;
-static char g_last_big[WARN_MAX_ITEMS][16];
+static char g_last_big[WARN_MAX_ITEMS][WARN_TITLE_LEN];
 static char g_last_details[WARN_MAX_ITEMS][ZONE_NAME_SIZE + 1];
 static uint8_t g_led_err_on = 0u;
-static uint32_t g_led_err_off_deadline_ms = 0u;
+static uint8_t g_prev_active_fault_count = 0u;
+static uint8_t g_prev_sound_fault_count = 0u;
 
 /* Текстовое имя типа МКУ для отображения в UI предупреждений. */
 static const char* McuTypeName(uint8_t d_type)
@@ -58,6 +75,61 @@ static const char* McuTypeName(uint8_t d_type)
 	case DEVICE_MCU_KR:       return "MKU KR";
 	default:                  return "MKU";
 	}
+}
+
+static const char* Warning_McuTypeSerialToken(uint8_t d_type)
+{
+	switch (d_type & 0x7Fu) {
+	case DEVICE_MCU_IGN_TYPE: return "IGN";
+	case DEVICE_MCU_TC_TYPE:  return "TC";
+	case DEVICE_MCU_K1:       return "K1";
+	case DEVICE_MCU_K2:       return "K2";
+	case DEVICE_MCU_K3:       return "K3";
+	case DEVICE_MCU_KR:       return "KR";
+	default:                  return "MKU";
+	}
+}
+
+static const char* Warning_ChannelTypeShort(uint8_t v_d_type)
+{
+	switch (v_d_type) {
+	case DEVICE_DPT_TYPE: return "ДПТ";
+	case DEVICE_IGNITER_TYPE: return "СП";
+	/* Отдельного DT-типа в текущих статусах нет, оставляем задел под расширение. */
+	default: return "???";
+	}
+}
+
+static void Warning_GetZoneName(const WarningItem& it, char *out, size_t out_sz)
+{
+	if (out_sz == 0u) {
+		return;
+	}
+	out[0] = '\0';
+	if (it.zone > 0u && it.zone <= ZONE_NUMBER) {
+		strncpy(out, reinterpret_cast<const char*>(PPKYConfig.zone_name[it.zone - 1u]), ZONE_NAME_SIZE);
+		out[ZONE_NAME_SIZE] = '\0';
+	}
+	if (out[0] == '\0') {
+		snprintf(out, out_sz, "ЗОНА %u", (unsigned)it.zone);
+	}
+}
+
+/* Заглушка под будущий реальный S/N: *ТИП**H_ADR**2026* */
+static void Warning_GetSerialPlaceholder(const WarningItem& it, char *out, size_t out_sz)
+{
+	snprintf(out, out_sz, "S/N:%s%u2026",
+		 Warning_McuTypeSerialToken(it.mcu_d_type), (unsigned)it.h_adr);
+}
+
+static void Warning_FormatMkuAndSerial(char *out, size_t out_sz, const WarningItem& it)
+{
+	char serial[24];
+	char zone_name[ZONE_NAME_SIZE + 1];
+	Warning_GetSerialPlaceholder(it, serial, sizeof(serial));
+	Warning_GetZoneName(it, zone_name, sizeof(zone_name));
+	snprintf(out, out_sz, "%s %s %u %s",
+		 zone_name, McuTypeName(it.mcu_d_type), (unsigned)it.h_adr, serial);
 }
 
 /* Фильтр типов виртуальных устройств, участвующих в модуле неисправностей. */
@@ -314,15 +386,25 @@ static void SyncPpkuCanFaultItems(uint32_t now_ms)
 }
 
 /* Формирует отсортированный набор строк для UI (большое/малое поле). */
-static uint8_t BuildUiPayload(char (*big_titles)[16], char (*details)[ZONE_NAME_SIZE + 1])
+static uint8_t BuildUiPayload(char (*big_titles)[WARN_TITLE_LEN], char (*details)[ZONE_NAME_SIZE + 1])
 {
+	uint8_t count = 0u;
+	for (uint8_t ch = 0u; ch < 2u && count < WARN_MAX_ITEMS; ch++) {
+		if ((g_power_fault_mask & (1u << ch)) == 0u) {
+			continue;
+		}
+		snprintf(big_titles[count], WARN_TITLE_LEN, "АВАРИЯ_%u", (unsigned)(ch + 1u));
+		snprintf(details[count], ZONE_NAME_SIZE + 1, "ПИТАНИЕ ВВОД %u", (unsigned)(ch + 1u));
+		count++;
+	}
+
 	uint8_t order[WARN_MAX_ITEMS];
 	uint8_t on = 0u;
 	for (uint8_t i = 0u; i < WARN_MAX_ITEMS; i++) {
 		if (!g_items[i].used) {
 			continue;
 		}
-		if (!g_items[i].fault_now && TimeReached(HAL_GetTick(), g_items[i].show_until_ms)) {
+		if (!g_items[i].fault_now) {
 			continue;
 		}
 		order[on++] = i;
@@ -351,33 +433,22 @@ static uint8_t BuildUiPayload(char (*big_titles)[16], char (*details)[ZONE_NAME_
 		order[b] = key;
 	}
 
-	uint8_t count = 0u;
 	for (uint8_t i = 0u; i < on && count < WARN_MAX_ITEMS; i++) {
 		const WarningItem& it = g_items[order[i]];
 
 		if (it.kind == 0u) {
 			const char* fault = (it.line_state == 2u) ? "КЗ" : "ОБРЫВ";
-			snprintf(big_titles[count], 16, "%s %u", fault, (unsigned)it.v_l_adr);
-
-			char zone_name[ZONE_NAME_SIZE + 1];
-			memset(zone_name, 0, sizeof(zone_name));
-			if (it.zone > 0u && it.zone <= ZONE_NUMBER) {
-				strncpy(zone_name, reinterpret_cast<const char*>(PPKYConfig.zone_name[it.zone - 1u]), ZONE_NAME_SIZE);
-				zone_name[ZONE_NAME_SIZE] = '\0';
-			}
-			if (zone_name[0] == '\0') {
-				snprintf(zone_name, sizeof(zone_name), "ЗОНА %u", (unsigned)it.zone);
-			}
-
-			snprintf(details[count], ZONE_NAME_SIZE + 1, "%s %s %u",
-				 zone_name, McuTypeName(it.mcu_d_type), (unsigned)it.h_adr);
+			snprintf(big_titles[count], WARN_TITLE_LEN, "%s %s%u", fault,
+				 Warning_ChannelTypeShort(it.v_d_type), (unsigned)it.v_l_adr);
+			Warning_FormatMkuAndSerial(details[count], ZONE_NAME_SIZE + 1, it);
 		} else if (it.kind == 1u) {
-			snprintf(big_titles[count], 16, "ОБРЫВ");
-			snprintf(details[count], ZONE_NAME_SIZE + 1, "%s %u CAN %u",
-				 McuTypeName(it.mcu_d_type), (unsigned)it.h_adr, (unsigned)it.can_idx);
+			snprintf(big_titles[count], WARN_TITLE_LEN, "ОБРЫВ CAN%u", (unsigned)it.can_idx);
+			Warning_FormatMkuAndSerial(details[count], ZONE_NAME_SIZE + 1, it);
 		} else {
-			snprintf(big_titles[count], 16, "ОБРЫВ");
-			snprintf(details[count], ZONE_NAME_SIZE + 1, "ППКУ CAN %u", (unsigned)it.can_idx);
+			snprintf(big_titles[count], WARN_TITLE_LEN, "ОБРЫВ CAN%u", (unsigned)it.can_idx);
+			char serial[24];
+			Warning_GetSerialPlaceholder(it, serial, sizeof(serial));
+			snprintf(details[count], ZONE_NAME_SIZE + 1, "ППКУ %s", serial);
 		}
 		count++;
 	}
@@ -387,6 +458,9 @@ static uint8_t BuildUiPayload(char (*big_titles)[16], char (*details)[ZONE_NAME_
 /* Есть ли сейчас хотя бы одна активная (не восстановленная) неисправность. */
 static uint8_t HasActiveFaultNow(void)
 {
+	if (g_power_fault_mask != 0u) {
+		return 1u;
+	}
 	for (uint8_t i = 0u; i < WARN_MAX_ITEMS; i++) {
 		if (g_items[i].used && g_items[i].fault_now) {
 			return 1u;
@@ -395,17 +469,73 @@ static uint8_t HasActiveFaultNow(void)
 	return 0u;
 }
 
-/* Управляет LED_ERR: мгновенное включение, отложенное отключение через 5 с. */
-static void UpdateErrorLed(uint32_t now_ms)
+static uint8_t CountActiveFaultNow(void)
 {
-	if (HasActiveFaultNow()) {
-		Led_Set(LED_ERR, 1u);
-		g_led_err_on = 1u;
-		g_led_err_off_deadline_ms = now_ms + LED_ERR_OFF_DELAY_MS;
+	uint8_t count = 0u;
+	if (g_power_fault_mask != 0u) {
+		for (uint8_t i = 0u; i < 2u; i++) {
+			if ((g_power_fault_mask & (1u << i)) != 0u) {
+				count++;
+			}
+		}
+	}
+	for (uint8_t i = 0u; i < WARN_MAX_ITEMS; i++) {
+		if (g_items[i].used && g_items[i].fault_now && count < 0xFFu) {
+			count++;
+		}
+	}
+	return count;
+}
+
+static void UpdateFaultSound(uint32_t now_ms)
+{
+	uint8_t active_count = CountActiveFaultNow();
+	if (active_count == 0u || Fire_IsActive()) {
+		if (g_fault_sound_phase == FAULT_SOUND_PERIODIC) {
+			Beeper_StopPattern();
+		}
+		g_fault_sound_phase = FAULT_SOUND_IDLE;
+		g_fault_sound_deadline_ms = 0u;
+		g_prev_sound_fault_count = active_count;
 		return;
 	}
 
-	if (g_led_err_on && TimeReached(now_ms, g_led_err_off_deadline_ms)) {
+	/* Любая новая неисправность должна заново выдать 1.3с сигнальный звук. */
+	if (active_count > g_prev_sound_fault_count) {
+		Beeper_StopPattern();
+		Beeper_StartPulseTrain(FAULT_FIRST_BEEP_ON_MS, FAULT_FIRST_BEEP_OFF_MS,
+				       FAULT_FIRST_BEEP_PULSES, 0u);
+		g_fault_sound_phase = FAULT_SOUND_WAIT_PERIODIC;
+		g_fault_sound_deadline_ms = now_ms + ((FAULT_FIRST_BEEP_ON_MS + FAULT_FIRST_BEEP_OFF_MS) * (uint32_t)FAULT_FIRST_BEEP_PULSES);
+
+		g_prev_sound_fault_count = active_count;
+		return;
+	}
+	g_prev_sound_fault_count = active_count;
+	if (g_fault_sound_phase == FAULT_SOUND_WAIT_PERIODIC &&
+	    TimeReached(now_ms, g_fault_sound_deadline_ms)) {
+		Beeper_StartPulseTrain(BEEPER_PATTERN_FAULT_ON_MS, BEEPER_PATTERN_FAULT_OFF_MS,
+				       BEEPER_PATTERN_FAULT_PULSES, BEEPER_PATTERN_FAULT_REPEAT_MS);
+		g_fault_sound_phase = FAULT_SOUND_PERIODIC;
+	}
+}
+
+/* Управляет LED_ERR: мгновенное включение и мгновенное отключение. */
+static void UpdateErrorLed(uint32_t now_ms)
+{
+	(void)now_ms;
+	uint8_t active_count = CountActiveFaultNow();
+	if (active_count > g_prev_active_fault_count) {
+		Led_ForceStatusBright(LED_ERR);
+	}
+	g_prev_active_fault_count = active_count;
+	if (active_count > 0u) {
+		Led_Set(LED_ERR, 1u);
+		g_led_err_on = 1u;
+		return;
+	}
+
+	if (g_led_err_on) {
 		Led_Set(LED_ERR, 0u);
 		g_led_err_on = 0u;
 	}
@@ -413,7 +543,7 @@ static void UpdateErrorLed(uint32_t now_ms)
 
 /* Пушит данные в TouchGFX только при реальном изменении (анти-спам). */
 static void PushUiIfChanged(uint8_t active, uint8_t count,
-			    char (*big_titles)[16], char (*details)[ZONE_NAME_SIZE + 1])
+			    char (*big_titles)[WARN_TITLE_LEN], char (*details)[ZONE_NAME_SIZE + 1])
 {
 	uint8_t same = (g_last_active == active && g_last_count == count) ? 1u : 0u;
 	if (same && active) {
@@ -443,7 +573,7 @@ static void PushUiIfChanged(uint8_t active, uint8_t count,
 void WarningProcess1ms(void)
 {
 	uint32_t now_ms = HAL_GetTick();
-	char big_titles[WARN_MAX_ITEMS][16] = {{0}};
+	char big_titles[WARN_MAX_ITEMS][WARN_TITLE_LEN] = {{0}};
 	char details[WARN_MAX_ITEMS][ZONE_NAME_SIZE + 1] = {{0}};
 
 	ConsumeChangedStatuses(now_ms);
@@ -452,6 +582,7 @@ void WarningProcess1ms(void)
 	SyncPpkuCanFaultItems(now_ms);
 	PruneInactiveItems(now_ms);
 	UpdateErrorLed(now_ms);
+	UpdateFaultSound(now_ms);
 
 	/* Во время пожара предупреждения не отображаем (но список поддерживаем актуальным). */
 	if (Fire_IsActive()) {
@@ -461,4 +592,14 @@ void WarningProcess1ms(void)
 
 	uint8_t count = BuildUiPayload(big_titles, details);
 	PushUiIfChanged((count > 0u) ? 1u : 0u, count, big_titles, details);
+}
+
+extern "C" void Warning_SetPowerFaultMask(uint8_t mask)
+{
+	g_power_fault_mask = (uint8_t)(mask & 0x03u);
+}
+
+extern "C" uint8_t Warning_HasActiveFault(void)
+{
+	return HasActiveFaultNow();
 }
