@@ -12,6 +12,8 @@ CustomContainerSollText::CustomContainerSollText()
       marqueeFitsWidth(false),
       frameCountInteraction1Interval(0),
       delayframeCountInteraction1Interval(0),
+      endDelayframeCountInteraction1Interval(0),
+      marqueeEndX(0),
       finishedCallback(0)
 {
 }
@@ -55,7 +57,9 @@ void CustomContainerSollText::setText(const char* text)
         marqueeRunning = false;
         marqueeFitsWidth = false;
         marqueeTextWidth = 0;
+        marqueeEndX = 0;
         delayframeCountInteraction1Interval = 0;
+        endDelayframeCountInteraction1Interval = 0;
         invalidate();
         return;
     }
@@ -83,6 +87,7 @@ void CustomContainerSollText::setText(const char* text)
 
     const int16_t viewW = getWidth();
     marqueeFitsWidth = (marqueeTextWidth <= (uint16_t)viewW);
+    marqueeEndX = (marqueeFitsWidth) ? 0 : (int16_t)(viewW - (int16_t)marqueeTextWidth);
     marqueeX = 0;
     marqueeText.moveTo(marqueeX, lineY);
 
@@ -90,6 +95,7 @@ void CustomContainerSollText::setText(const char* text)
     marqueeRunning = (marqueeTextWidth > (uint16_t)viewW);
     frameCountInteraction1Interval = 0;
     delayframeCountInteraction1Interval = MARQUEE_START_DELAY_TICKS;
+    endDelayframeCountInteraction1Interval = 0;
 
     marqueeText.invalidate();
     invalidate();
@@ -106,6 +112,7 @@ void CustomContainerSollText::restart()
     marqueeRunning = true;
     frameCountInteraction1Interval = 0;
     delayframeCountInteraction1Interval = MARQUEE_START_DELAY_TICKS;
+    endDelayframeCountInteraction1Interval = 0;
 }
 
 void CustomContainerSollText::handleTickEvent()
@@ -120,28 +127,38 @@ void CustomContainerSollText::handleTickEvent()
     	return;
     }
 
+    if (endDelayframeCountInteraction1Interval > 0)
+    {
+        endDelayframeCountInteraction1Interval--;
+        if (endDelayframeCountInteraction1Interval == 0)
+        {
+            if (finishedCallback)
+            {
+                marqueeRunning = false;
+                finishedCallback(this);
+            }
+            else
+            {
+                marqueeX = 0;
+                marqueeText.moveTo(marqueeX, textAreatime.getY());
+                frameCountInteraction1Interval = 0;
+                delayframeCountInteraction1Interval = MARQUEE_START_DELAY_TICKS;
+            }
+        }
+        return;
+    }
+
 
     frameCountInteraction1Interval++;
     if(frameCountInteraction1Interval >= MARQUEE_STEP_TICKS) {
 
-		// Если весь текст уже вышел за левый край — завершение или автоповтор
-		if (marqueeX + marqueeTextWidth <= 0)
+		// Дошли до крайней полезной позиции: правый край текста показан полностью.
+		if (marqueeX <= marqueeEndX)
 		{
-			if (finishedCallback)
-			{
-				/* Удерживаем строку видимой, чтобы не было "пустого провала" до переключения. */
-				marqueeX = 0;
-				marqueeText.moveTo(marqueeX, textAreatime.getY());
-				marqueeRunning = false;
-				finishedCallback(this);
-			}
-			else
-			{
-				// Колбэка нет — запускаем бегущую строку заново
-				marqueeX = 0;
-				marqueeText.moveTo(marqueeX, textAreatime.getY());
-				delayframeCountInteraction1Interval = 0;
-			}
+			marqueeX = marqueeEndX;
+			marqueeText.moveTo(marqueeX, textAreatime.getY());
+			endDelayframeCountInteraction1Interval = MARQUEE_START_DELAY_TICKS;
+			frameCountInteraction1Interval = 0;
 			return;
 		}
 

@@ -27,6 +27,8 @@ void Fire_Timer10ms(void);
 void Fire_OnStatusFire(uint32_t msg_id);
 void Fire_OnReplyStatusFire(uint32_t msg_id);
 void Fire_OnStopExtinguishment(uint32_t msg_id);
+void Fire_OnReplyStartExtinguishment(uint32_t msg_id);
+void Fire_OnReplyStopExtinguishment(uint32_t msg_id);
 
 /* Текущий статус сценария пожара (для подавления вторичных индикаций). */
 uint8_t Fire_IsActive(void);

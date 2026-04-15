@@ -137,10 +137,12 @@ void Beeper_ContinuousOn(void)
 
 void Beeper_FireAlarmOn(void)
 {
-	beeper_state = BEEPER_STATE_FIRE_ALARM;
-	fire_alarm_sound = 1u;
-	beeper_counter = BEEPER_FIRE_ON_TICKS;
-	Beeper_On();
+	Beeper_ContinuousOn();
+
+	//beeper_state = BEEPER_STATE_FIRE_ALARM;
+	//fire_alarm_sound = 1u;
+	//beeper_counter = BEEPER_FIRE_ON_TICKS;
+	//Beeper_On();
 }
 
 void Beeper_FireAlarmOff(void)

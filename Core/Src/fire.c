@@ -27,6 +27,9 @@ extern uint8_t g_active_devices_count;
 #define FIRE_START_LED_HOLD_MS               3000u
 /* ack_flags у IGNITER: предполагаем бит 1 = end_ack */
 #define FIRE_IGNITER_END_ACK_MASK            0x02u
+#define FIRE_CMD_RETRY_TIMEOUT_MS            200u
+#define FIRE_CMD_RETRY_MAX_ATTEMPTS          10u
+#define FIRE_CMD_RETRY_MAX_ITEMS             64u
 
 static uint8_t debug_zone_delay[FIRE_DEBUG_ZONES] = { 15, 30u, 30 };
 static uint8_t debug_module_delay[FIRE_DEBUG_ZONES][2] = {
@@ -59,6 +62,28 @@ typedef struct {
 	uint8_t  phase2_sent;
 	uint32_t phase2_deadline_ms;
 } FireZoneSlot;
+
+typedef struct {
+	uint8_t d_type;
+	uint8_t h_adr;
+	uint8_t l_adr;
+	uint8_t zone;
+} FireIgniterAddr;
+
+typedef enum {
+	FIRE_RETRY_START = 0u,
+	FIRE_RETRY_STOP  = 1u
+} FireRetryKind;
+
+typedef struct {
+	uint8_t used;
+	uint8_t kind;
+	uint8_t attempts_sent;
+	uint32_t deadline_ms;
+	FireIgniterAddr addr;
+	uint8_t zone_delay_sec;
+	uint8_t module_delay_sec;
+} FireRetryItem;
 
 /* Центральный runtime-контекст сценария пожара (FSM + индикация + UI/звук). */
 typedef struct {
@@ -95,6 +120,7 @@ typedef struct {
 } FireContext;
 
 static FireContext g_fire;
+static FireRetryItem g_fire_retry_items[FIRE_CMD_RETRY_MAX_ITEMS];
 
 /* Управляет яркостью кнопки/подписи ПУСК ОБЩИЙ (обычная/активная). */
 static void Fire_SetStartAllBrightness(uint8_t bright);
@@ -140,10 +166,24 @@ static uint8_t Fire_ZoneAllIgnitersEndAck(uint8_t zone);
 static uint8_t Fire_AllActiveZonesEndAck(void);
 /* Формирует список имён зон для UI (уникальные, отсортированные). */
 static void Fire_FillZoneNamesForUi(char (*out_names)[FIRE_UI_NAME_LEN], uint8_t *out_n);
-/* Собирает отсортированный список igniter МКУ в заданной зоне. */
-static uint8_t Fire_CollectSortedIgniterIndices(uint8_t zone, uint8_t *out_idx, uint8_t max_out);
+/* Собирает отсортированный список igniter-адресов в заданной зоне. */
+static uint8_t Fire_CollectSortedIgniterTargetsByZone(uint8_t zone, FireIgniterAddr *out, uint8_t max_out);
+/* Собирает отсортированный список igniter-адресов по всем активным зонам. */
+static uint8_t Fire_CollectSortedIgniterTargetsAll(FireIgniterAddr *out, uint8_t max_out);
 /* Есть ли у МКУ хотя бы один online IGNITER-vdev. */
 static uint8_t Fire_DeviceHasIgniterVdev(const ActiveDeviceInfo *ad);
+/* Отправка команд fire-сервиса адресной спичке. */
+static void Fire_SendStartToIgniterAddr(const FireIgniterAddr *addr, uint8_t zd_sec, uint8_t md_sec);
+static void Fire_SendStopToIgniterAddr(const FireIgniterAddr *addr);
+/* Ретрай-пул команд старта/остановки спичек. */
+static void Fire_RetryQueueStart(const FireIgniterAddr *addr, uint8_t zd_sec, uint8_t md_sec, uint32_t now_ms);
+static void Fire_RetryQueueStop(const FireIgniterAddr *addr, uint32_t now_ms);
+static void Fire_RetryProcess(uint32_t now_ms);
+static void Fire_RetryAckByMsgId(uint8_t kind, uint32_t msg_id);
+static void Fire_RetryCancelAll(void);
+static void Fire_RetryCancelKind(uint8_t kind);
+/* Заглушка отчёта о спичке, которая не подтвердила запуск. */
+static void SetErrIgnNotStart(const FireIgniterAddr *addr);
 /* Переводит пищалку в непрерывный тревожный режим. */
 static void Fire_BeeperEnterAlert(void);
 /* Переводит пищалку в дежурный периодический режим (2x0.2с, период 5с). */
@@ -166,8 +206,7 @@ static void Fire_BeeperEnterAlert(void)
 	g_fire.beeper_duty_active = 0u;
 	g_fire.beeper_start_pattern_active = 0u;
 	Beeper_StopPattern();
-	Beeper_StartPulseTrain(BEEPER_PATTERN_FIRE_ON_MS, BEEPER_PATTERN_FIRE_OFF_MS,
-			       BEEPER_PATTERN_FIRE_PULSES, BEEPER_PATTERN_FIRE_REPEAT_MS);
+	Beeper_FireAlarmOn();
 }
 
 static void Fire_BeeperEnterDuty(void)
@@ -269,28 +308,78 @@ static void Fire_GetModuleDelays(uint8_t zone, uint8_t *m0, uint8_t *m1)
 	*m1 = debug_module_delay[z][1];
 }
 
-static uint8_t Fire_CollectSortedIgniterIndices(uint8_t zone, uint8_t *out_idx, uint8_t max_out)
+static uint8_t Fire_CollectSortedIgniterTargetsByZone(uint8_t zone, FireIgniterAddr *out, uint8_t max_out)
 {
-	/* Список МКУ igniter в зоне, отсортированный по h_adr для стабильного порядка команд. */
 	uint8_t n = 0u;
 	for (uint8_t i = 0u; i < g_active_devices_count && n < max_out; i++) {
-		if (g_active_devices[i].dev.zone != zone) {
+		const ActiveDeviceInfo *ad = &g_active_devices[i];
+		if (!ad->online || ad->dev.zone != zone) {
 			continue;
 		}
-		if (!Fire_DeviceHasIgniterVdev(&g_active_devices[i])) {
-			continue;
+		for (uint8_t vi = 0u; vi < ad->vdev_count && n < max_out; vi++) {
+			if (!ad->vdevs[vi].online || ad->vdevs[vi].v_d_type != DEVICE_IGNITER_TYPE) {
+				continue;
+			}
+			out[n].d_type = DEVICE_IGNITER_TYPE;
+			out[n].h_adr = ad->dev.h_adr;
+			out[n].l_adr = ad->vdevs[vi].v_l_adr & 0x3Fu;
+			out[n].zone = ad->dev.zone & 0x7Fu;
+			n++;
 		}
-		out_idx[n++] = i;
 	}
 	for (uint8_t a = 1u; a < n; a++) {
-		uint8_t key = out_idx[a];
-		uint8_t kh = g_active_devices[key].dev.h_adr;
+		FireIgniterAddr key = out[a];
 		uint8_t b = a;
-		while (b > 0u && g_active_devices[out_idx[b - 1u]].dev.h_adr > kh) {
-			out_idx[b] = out_idx[b - 1u];
+		while (b > 0u) {
+			const FireIgniterAddr *prev = &out[b - 1u];
+			uint8_t prev_gt = (prev->h_adr > key.h_adr) ||
+					  ((prev->h_adr == key.h_adr) && (prev->l_adr > key.l_adr));
+			if (!prev_gt) {
+				break;
+			}
+			out[b] = out[b - 1u];
 			b--;
 		}
-		out_idx[b] = key;
+		out[b] = key;
+	}
+	return n;
+}
+
+static uint8_t Fire_CollectSortedIgniterTargetsAll(FireIgniterAddr *out, uint8_t max_out)
+{
+	uint8_t n = 0u;
+	for (uint8_t i = 0u; i < g_active_devices_count && n < max_out; i++) {
+		const ActiveDeviceInfo *ad = &g_active_devices[i];
+		if (!ad->online) {
+			continue;
+		}
+		for (uint8_t vi = 0u; vi < ad->vdev_count && n < max_out; vi++) {
+			if (!ad->vdevs[vi].online || ad->vdevs[vi].v_d_type != DEVICE_IGNITER_TYPE) {
+				continue;
+			}
+			out[n].d_type = DEVICE_IGNITER_TYPE;
+			out[n].h_adr = ad->dev.h_adr;
+			out[n].l_adr = ad->vdevs[vi].v_l_adr & 0x3Fu;
+			out[n].zone = ad->dev.zone & 0x7Fu;
+			n++;
+		}
+	}
+	for (uint8_t a = 1u; a < n; a++) {
+		FireIgniterAddr key = out[a];
+		uint8_t b = a;
+		while (b > 0u) {
+			const FireIgniterAddr *prev = &out[b - 1u];
+			uint8_t prev_gt = (prev->zone > key.zone) ||
+					  ((prev->zone == key.zone) && (prev->h_adr > key.h_adr)) ||
+					  ((prev->zone == key.zone) && (prev->h_adr == key.h_adr) &&
+					   (prev->l_adr > key.l_adr));
+			if (!prev_gt) {
+				break;
+			}
+			out[b] = out[b - 1u];
+			b--;
+		}
+		out[b] = key;
 	}
 	return n;
 }
@@ -308,78 +397,225 @@ static uint8_t Fire_DeviceHasIgniterVdev(const ActiveDeviceInfo *ad)
 	return 0u;
 }
 
-static void Fire_SendStartToIgniterIdx(uint8_t idx, uint8_t zone, uint8_t zd_sec, uint8_t md_sec)
+static void Fire_SendStartToIgniterAddr(const FireIgniterAddr *addr, uint8_t zd_sec, uint8_t md_sec)
 {
-	const ActiveDeviceInfo *ad = &g_active_devices[idx];
+	if (addr == NULL) {
+		return;
+	}
 	can_ext_id_t can_id;
 	uint8_t data[8] = { 0 };
 
 	can_id.ID = 0;
 	can_id.field.dir = 0;
-	can_id.field.d_type = ad->dev.d_type & 0x7Fu;
-	can_id.field.h_adr = ad->dev.h_adr;
-	can_id.field.l_adr = ad->dev.l_adr & 0x3Fu;
-	can_id.field.zone = ad->dev.zone & 0x7Fu;
+	can_id.field.d_type = addr->d_type & 0x7Fu;
+	can_id.field.h_adr = addr->h_adr;
+	can_id.field.l_adr = addr->l_adr & 0x3Fu;
+	can_id.field.zone = addr->zone & 0x7Fu;
 
 	data[0] = (uint8_t)ServiceCmd_Fire_StartExtinguishment;
-	data[1] = 0; // command type
+	data[1] = addr->zone & 0x7Fu;
 	data[2] = zd_sec;
 	data[3] = md_sec;
 	SendMessageFull(can_id, data, 0, BUS_CAN12);
 }
 
+static void Fire_SendStopToIgniterAddr(const FireIgniterAddr *addr)
+{
+	if (addr == NULL) {
+		return;
+	}
+	can_ext_id_t can_id;
+	uint8_t data[8] = { 0 };
+
+	can_id.ID = 0;
+	can_id.field.dir = 0;
+	can_id.field.d_type = addr->d_type & 0x7Fu;
+	can_id.field.h_adr = addr->h_adr;
+	can_id.field.l_adr = addr->l_adr & 0x3Fu;
+	can_id.field.zone = addr->zone & 0x7Fu;
+
+	data[0] = (uint8_t)ServiceCmd_Fire_StopExtinguishment;
+	SendMessageFull(can_id, data, 0, BUS_CAN12);
+}
+
+static int16_t Fire_RetryFind(uint8_t kind, const FireIgniterAddr *addr)
+{
+	for (uint8_t i = 0u; i < FIRE_CMD_RETRY_MAX_ITEMS; i++) {
+		const FireRetryItem *it = &g_fire_retry_items[i];
+		if (!it->used || it->kind != kind) {
+			continue;
+		}
+		if (it->addr.d_type == addr->d_type && it->addr.h_adr == addr->h_adr &&
+		    it->addr.l_adr == addr->l_adr && it->addr.zone == addr->zone) {
+			return (int16_t)i;
+		}
+	}
+	return -1;
+}
+
+static int16_t Fire_RetryAlloc(void)
+{
+	for (uint8_t i = 0u; i < FIRE_CMD_RETRY_MAX_ITEMS; i++) {
+		if (!g_fire_retry_items[i].used) {
+			return (int16_t)i;
+		}
+	}
+	return -1;
+}
+
+static void Fire_RetryQueueStart(const FireIgniterAddr *addr, uint8_t zd_sec, uint8_t md_sec, uint32_t now_ms)
+{
+	int16_t pos;
+	if (addr == NULL) {
+		return;
+	}
+	Fire_SendStartToIgniterAddr(addr, zd_sec, md_sec);
+	pos = Fire_RetryFind(FIRE_RETRY_START, addr);
+	if (pos < 0) {
+		pos = Fire_RetryAlloc();
+	}
+	if (pos < 0) {
+		return;
+	}
+
+	g_fire_retry_items[(uint8_t)pos].used = 1u;
+	g_fire_retry_items[(uint8_t)pos].kind = FIRE_RETRY_START;
+	g_fire_retry_items[(uint8_t)pos].attempts_sent = 1u;
+	g_fire_retry_items[(uint8_t)pos].deadline_ms = now_ms + FIRE_CMD_RETRY_TIMEOUT_MS;
+	g_fire_retry_items[(uint8_t)pos].addr = *addr;
+	g_fire_retry_items[(uint8_t)pos].zone_delay_sec = zd_sec;
+	g_fire_retry_items[(uint8_t)pos].module_delay_sec = md_sec;
+}
+
+static void Fire_RetryQueueStop(const FireIgniterAddr *addr, uint32_t now_ms)
+{
+	int16_t pos;
+	if (addr == NULL) {
+		return;
+	}
+	Fire_SendStopToIgniterAddr(addr);
+	pos = Fire_RetryFind(FIRE_RETRY_STOP, addr);
+	if (pos < 0) {
+		pos = Fire_RetryAlloc();
+	}
+	if (pos < 0) {
+		return;
+	}
+
+	g_fire_retry_items[(uint8_t)pos].used = 1u;
+	g_fire_retry_items[(uint8_t)pos].kind = FIRE_RETRY_STOP;
+	g_fire_retry_items[(uint8_t)pos].attempts_sent = 1u;
+	g_fire_retry_items[(uint8_t)pos].deadline_ms = now_ms + FIRE_CMD_RETRY_TIMEOUT_MS;
+	g_fire_retry_items[(uint8_t)pos].addr = *addr;
+	g_fire_retry_items[(uint8_t)pos].zone_delay_sec = 0u;
+	g_fire_retry_items[(uint8_t)pos].module_delay_sec = 0u;
+}
+
+static void Fire_RetryProcess(uint32_t now_ms)
+{
+	for (uint8_t i = 0u; i < FIRE_CMD_RETRY_MAX_ITEMS; i++) {
+		FireRetryItem *it = &g_fire_retry_items[i];
+		if (!it->used) {
+			continue;
+		}
+		if ((int32_t)(now_ms - it->deadline_ms) < 0) {
+			continue;
+		}
+		if (it->attempts_sent >= FIRE_CMD_RETRY_MAX_ATTEMPTS) {
+			if (it->kind == FIRE_RETRY_START) {
+				SetErrIgnNotStart(&it->addr);
+			}
+			it->used = 0u;
+			continue;
+		}
+
+		if (it->kind == FIRE_RETRY_START) {
+			Fire_SendStartToIgniterAddr(&it->addr, it->zone_delay_sec, it->module_delay_sec);
+		} else {
+			Fire_SendStopToIgniterAddr(&it->addr);
+		}
+		it->attempts_sent++;
+		it->deadline_ms = now_ms + FIRE_CMD_RETRY_TIMEOUT_MS;
+	}
+}
+
+static void Fire_RetryAckByMsgId(uint8_t kind, uint32_t msg_id)
+{
+	can_ext_id_t id;
+	id.ID = msg_id & 0x0FFFFFFFu;
+	for (uint8_t i = 0u; i < FIRE_CMD_RETRY_MAX_ITEMS; i++) {
+		FireRetryItem *it = &g_fire_retry_items[i];
+		if (!it->used || it->kind != kind) {
+			continue;
+		}
+		if (it->addr.d_type != (id.field.d_type & 0x7Fu)) {
+			continue;
+		}
+		if (it->addr.h_adr != id.field.h_adr ||
+		    (it->addr.l_adr & 0x3Fu) != (id.field.l_adr & 0x3Fu) ||
+		    (it->addr.zone & 0x7Fu) != (id.field.zone & 0x7Fu)) {
+			continue;
+		}
+		it->used = 0u;
+	}
+}
+
+static void Fire_RetryCancelAll(void)
+{
+	memset(g_fire_retry_items, 0, sizeof(g_fire_retry_items));
+}
+
+static void Fire_RetryCancelKind(uint8_t kind)
+{
+	for (uint8_t i = 0u; i < FIRE_CMD_RETRY_MAX_ITEMS; i++) {
+		if (g_fire_retry_items[i].used && g_fire_retry_items[i].kind == kind) {
+			g_fire_retry_items[i].used = 0u;
+		}
+	}
+}
+
+static void SetErrIgnNotStart(const FireIgniterAddr *addr)
+{
+	/* TODO: заполнить обработку ошибки "спичка не подтвердила запуск". */
+	(void)addr;
+}
+
 static void Fire_SendPhase1Zone(uint8_t zone)
 {
-	/* Фаза 1: старт в зоне с zone_delay + module_delay (igniter[0..1]). */
-	uint8_t ign[8];
-	uint8_t n = Fire_CollectSortedIgniterIndices(zone, ign, 8u);
+	/* Фаза 1: старт в зоне с zone_delay + module_delay. */
+	FireIgniterAddr ign[16];
+	uint8_t n = Fire_CollectSortedIgniterTargetsByZone(zone, ign, (uint8_t)(sizeof(ign) / sizeof(ign[0])));
 	uint8_t zd = Fire_ZoneDelaySec(zone);
 	uint8_t m0, m1;
 	Fire_GetModuleDelays(zone, &m0, &m1);
-	if (n >= 1u) {
-		Fire_SendStartToIgniterIdx(ign[0], zone, zd, m0);
-	}
-	if (n >= 2u) {
-		Fire_SendStartToIgniterIdx(ign[1], zone, zd, m1);
+	for (uint8_t i = 0u; i < n; i++) {
+		uint8_t md = (i == 0u) ? m0 : m1;
+		Fire_RetryQueueStart(&ign[i], zd, md, HAL_GetTick());
 	}
 }
 
 static void Fire_SendPhase2Zone(uint8_t zone)
 {
 	/* Фаза 2: немедленный старт (zone_delay=0), учитываем только module_delay. */
-	uint8_t ign[8];
-	uint8_t n = Fire_CollectSortedIgniterIndices(zone, ign, 8u);
+	FireIgniterAddr ign[16];
+	uint8_t n = Fire_CollectSortedIgniterTargetsByZone(zone, ign, (uint8_t)(sizeof(ign) / sizeof(ign[0])));
 	uint8_t m0, m1;
 	Fire_GetModuleDelays(zone, &m0, &m1);
-	if (n >= 1u) {
-		Fire_SendStartToIgniterIdx(ign[0], zone, 0u, m0);
-	}
-	if (n >= 2u) {
-		Fire_SendStartToIgniterIdx(ign[1], zone, 0u, m1);
+	for (uint8_t i = 0u; i < n; i++) {
+		uint8_t md = (i == 0u) ? m0 : m1;
+		Fire_RetryQueueStart(&ign[i], 0u, md, HAL_GetTick());
 	}
 }
 
 static void Fire_SendStopAllMcus(void)
 {
-	/* Массовая остановка по всем обнаруженным МКУ типов пожарного контура. */
-	can_ext_id_t can_id;
-	uint8_t data[8] = { 0 };
-	data[0] = (uint8_t)ServiceCmd_Fire_StopExtinguishment;
-
-	for (uint8_t i = 0u; i < g_active_devices_count; i++) {
-		uint8_t t = g_active_devices[i].dev.d_type & 0x7Fu;
-		if (t != DEVICE_MCU_IGN_TYPE && t != DEVICE_MCU_TC_TYPE &&
-		    t != DEVICE_MCU_K1 && t != DEVICE_MCU_K2 &&
-		    t != DEVICE_MCU_K3 && t != DEVICE_MCU_KR) {
-			continue;
-		}
-		can_id.ID = 0;
-		can_id.field.dir = 0;
-		can_id.field.d_type = t;
-		can_id.field.h_adr = g_active_devices[i].dev.h_adr;
-		can_id.field.l_adr = g_active_devices[i].dev.l_adr & 0x3Fu;
-		can_id.field.zone = g_active_devices[i].dev.zone & 0x7Fu;
-		SendMessageFull(can_id, data, 0, BUS_CAN12);
+	/* Остановка адресно по каждой активной спичке. */
+	FireIgniterAddr ign[32];
+	uint8_t n = Fire_CollectSortedIgniterTargetsAll(ign, (uint8_t)(sizeof(ign) / sizeof(ign[0])));
+	uint32_t now_ms = HAL_GetTick();
+	Fire_RetryCancelKind(FIRE_RETRY_START);
+	for (uint8_t i = 0u; i < n; i++) {
+		Fire_RetryQueueStop(&ign[i], now_ms);
 	}
 }
 
@@ -938,6 +1174,15 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		start_processed = 1u;
 	}
 	Fire_SyncStateFromSlots();
+	/* Пока решение не принято (до ПУСК/СТОП/автопуска), удерживаем тревожный звук активным.
+	 * Это защищает от внешних пересечений индикации, которые могут сбросить звук. */
+	if ((g_fire.state == FIRE_STATE_WAIT_AUTO || g_fire.state == FIRE_STATE_WAIT_MANUAL) &&
+	    (g_fire.start_launch_pressed_latched == 0u) &&
+	    (g_fire.stop_launch_pressed_latched == 0u) &&
+	    !g_fire.all_hold_active &&
+	    !g_fire.beeper_alert_active) {
+		Fire_BeeperEnterAlert();
+	}
 	if (fire_processed && g_fire.state != FIRE_STATE_IDLE) {
 		if (start_processed) {
 			Fire_BeeperEnterStartPattern(now_ms);
@@ -1031,6 +1276,7 @@ void Fire_Init(void)
 {
 	/* Инициализация контекста пожара; полный сброс слотов только при старте/перезапуске. */
 	memset(&g_fire, 0, sizeof(g_fire));
+	Fire_RetryCancelAll();
 	/* Полный сброс слотов только при перезапуске ППКУ */
 	Fire_ClearAllSlots();
 	g_fire.state = FIRE_STATE_IDLE;
@@ -1047,6 +1293,7 @@ void Fire_Timer1ms(void)
 {
 	/* 1мс-путь: крутит FSM при активном сценарии или удержании ПУСК ОБЩИЙ. */
 	uint32_t now = HAL_GetTick();
+	Fire_RetryProcess(now);
 	if (g_fire.state == FIRE_STATE_IDLE && !Fire_AnyActiveSlot() && !g_fire.all_hold_active) {
 		return;
 	}
@@ -1124,6 +1371,16 @@ void Fire_OnStopExtinguishment(uint32_t msg_id)
 {
 	(void)msg_id;
 	Fire_Transition(FIRE_EVENT_STOP_EXT, HAL_GetTick());
+}
+
+void Fire_OnReplyStartExtinguishment(uint32_t msg_id)
+{
+	Fire_RetryAckByMsgId(FIRE_RETRY_START, msg_id);
+}
+
+void Fire_OnReplyStopExtinguishment(uint32_t msg_id)
+{
+	Fire_RetryAckByMsgId(FIRE_RETRY_STOP, msg_id);
 }
 
 /* Возвращает 1, если пожарный сценарий сейчас активен. */

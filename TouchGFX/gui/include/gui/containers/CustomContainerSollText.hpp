@@ -57,6 +57,8 @@ private:
     bool marqueeFitsWidth;
     int32_t frameCountInteraction1Interval;
     int32_t delayframeCountInteraction1Interval;
+    int32_t endDelayframeCountInteraction1Interval;
+    int16_t marqueeEndX;
     FinishedCallback finishedCallback;
 };
 

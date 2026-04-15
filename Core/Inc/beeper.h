@@ -38,7 +38,7 @@ extern "C" {
 #define BEEPER_PATTERN_FIRE_ON_MS         70u
 #define BEEPER_PATTERN_FIRE_OFF_MS        50u
 #define BEEPER_PATTERN_FIRE_PULSES        1u
-#define BEEPER_PATTERN_FIRE_REPEAT_MS     2000u
+#define BEEPER_PATTERN_FIRE_REPEAT_MS     10000u
 
 /***********************************************************************************************************/
 /* Прототипы функций */

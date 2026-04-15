@@ -795,13 +795,17 @@ void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 	UpdateActiveVirtualDevices(MsgID, MsgData, now);
 
 	uint8_t Command = MsgData[0];
-	if(Command >= ServiceCmd_Fire_SetStatusFire && Command <= ServiceCmd_Fire_StopExtinguishment) {
+	if(Command >= ServiceCmd_Fire_SetStatusFire && Command <= ServiceCmd_Fire_SetReplyStopExtinguishment) {
 		if(Command == ServiceCmd_Fire_SetStatusFire) {
 			Fire_OnStatusFire(MsgID);
 		} else if (Command == ServiceCmd_Fire_ReplyStatusFire) {
 			Fire_OnReplyStatusFire(MsgID);
 		} else if (Command == ServiceCmd_Fire_StopExtinguishment) {
 			Fire_OnStopExtinguishment(MsgID);
+		} else if (Command == ServiceCmd_Fire_SetReplyStartExtinguishment) {
+			Fire_OnReplyStartExtinguishment(MsgID);
+		} else if (Command == ServiceCmd_Fire_SetReplyStopExtinguishment) {
+			Fire_OnReplyStopExtinguishment(MsgID);
 		}
 	}
 }
