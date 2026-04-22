@@ -99,10 +99,8 @@ void Button_Process() {
 				Buttons[i].state = ButtonStateLongPress;
 			if((Buttons[i].press_counter >= SHORT_PRESS_COUNT) && (Buttons[i].state == ButtonStateReset)) {
 				Buttons[i].state = ButtonStatePress;
-				/* В НОРМА подтверждаем каждое нажатие кратким звуком 0.1с. */
-				if (!Fire_IsActive()) {
-					Beeper_ShortBeep();
-				}
+				/* Подтверждаем нажатие, не прерывая дежурные фоновые паттерны. */
+				Beeper_ButtonAcknowledge();
 
 			}
 

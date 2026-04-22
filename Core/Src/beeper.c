@@ -42,6 +42,18 @@ static uint8_t pattern_pulses_total = 0;
 static uint8_t pattern_pulses_left = 0;
 static uint8_t pattern_sound_phase = 0;
 
+typedef struct
+{
+	uint8_t valid;
+	BeeperState_t state;
+	uint16_t on_ticks;
+	uint16_t off_ticks;
+	uint16_t repeat_ticks;
+	uint8_t pulses_total;
+} BeeperResumeCtx_t;
+
+static BeeperResumeCtx_t g_resume_ctx = {0};
+
 static uint16_t Beeper_MsToTicks(uint16_t duration_ms)
 {
 	uint16_t ticks = (uint16_t)((duration_ms + 9u) / 10u);
@@ -71,6 +83,72 @@ static void Beeper_Off(void)
 	HAL_GPIO_WritePin(SOUND_GPIO_Port, SOUND_Pin, GPIO_PIN_RESET);
 }
 
+static uint8_t Beeper_IsOneShotState(BeeperState_t st)
+{
+	return (st == BEEPER_STATE_SHORT_BEEP ||
+		st == BEEPER_STATE_DOUBLE_SHORT_BEEP ||
+		st == BEEPER_STATE_LONG_BEEP) ? 1u : 0u;
+}
+
+static void Beeper_CaptureResumeStateIfNeeded(void)
+{
+	if (g_resume_ctx.valid) {
+		return;
+	}
+	if (beeper_state == BEEPER_STATE_CONTINUOUS ||
+	    beeper_state == BEEPER_STATE_FIRE_ALARM) {
+		g_resume_ctx.valid = 1u;
+		g_resume_ctx.state = beeper_state;
+		return;
+	}
+	if (beeper_state == BEEPER_STATE_PATTERN && pattern_repeat_ticks > 0u) {
+		g_resume_ctx.valid = 1u;
+		g_resume_ctx.state = BEEPER_STATE_PATTERN;
+		g_resume_ctx.on_ticks = pattern_on_ticks;
+		g_resume_ctx.off_ticks = pattern_off_ticks;
+		g_resume_ctx.repeat_ticks = pattern_repeat_ticks;
+		g_resume_ctx.pulses_total = pattern_pulses_total;
+	}
+}
+
+static void Beeper_RestoreAfterOneShot(void)
+{
+	if (!g_resume_ctx.valid) {
+		beeper_state = BEEPER_STATE_IDLE;
+		Beeper_Off();
+		return;
+	}
+
+	if (g_resume_ctx.state == BEEPER_STATE_CONTINUOUS ||
+	    g_resume_ctx.state == BEEPER_STATE_FIRE_ALARM) {
+		beeper_state = g_resume_ctx.state;
+		beeper_counter = 0u;
+		beep_phase = 0u;
+		Beeper_On();
+		g_resume_ctx.valid = 0u;
+		return;
+	}
+
+	if (g_resume_ctx.state == BEEPER_STATE_PATTERN && g_resume_ctx.pulses_total > 0u) {
+		pattern_on_ticks = g_resume_ctx.on_ticks;
+		pattern_off_ticks = g_resume_ctx.off_ticks;
+		pattern_repeat_ticks = g_resume_ctx.repeat_ticks;
+		pattern_pulses_total = g_resume_ctx.pulses_total;
+		pattern_pulses_left = g_resume_ctx.pulses_total;
+		pattern_sound_phase = 1u;
+		pattern_counter = pattern_on_ticks;
+		pattern_repeat_counter = 0u;
+		beeper_state = BEEPER_STATE_PATTERN;
+		Beeper_On();
+		g_resume_ctx.valid = 0u;
+		return;
+	}
+
+	g_resume_ctx.valid = 0u;
+	beeper_state = BEEPER_STATE_IDLE;
+	Beeper_Off();
+}
+
 /***********************************************************************************************************/
 /* Публичные функции */
 /***********************************************************************************************************/
@@ -91,6 +169,9 @@ void Beeper_Init(void)
  */
 void Beeper_ShortBeep(void)
 {
+	if (!Beeper_IsOneShotState(beeper_state)) {
+		Beeper_CaptureResumeStateIfNeeded();
+	}
 	beeper_state = BEEPER_STATE_SHORT_BEEP;
 	beeper_counter = BEEPER_SHORT_BEEP_DURATION;
 	beep_phase = 0;
@@ -102,6 +183,9 @@ void Beeper_ShortBeep(void)
  */
 void Beeper_DoubleShortBeep(void)
 {
+	if (!Beeper_IsOneShotState(beeper_state)) {
+		Beeper_CaptureResumeStateIfNeeded();
+	}
 	beeper_state = BEEPER_STATE_DOUBLE_SHORT_BEEP;
 	beeper_counter = BEEPER_SHORT_BEEP_DURATION;
 	beep_phase = 0;  // Начинаем с первого пищания
@@ -113,6 +197,9 @@ void Beeper_DoubleShortBeep(void)
  */
 void Beeper_LongBeep(void)
 {
+	if (!Beeper_IsOneShotState(beeper_state)) {
+		Beeper_CaptureResumeStateIfNeeded();
+	}
 	beeper_state = BEEPER_STATE_LONG_BEEP;
 	beeper_counter = BEEPER_LONG_BEEP_DURATION;
 	beep_phase = 0;
@@ -161,6 +248,7 @@ void Beeper_ContinuousOff(void)
 	if (beeper_state == BEEPER_STATE_CONTINUOUS)
 	{
 		beeper_state = BEEPER_STATE_IDLE;
+		g_resume_ctx.valid = 0u;
 		Beeper_Off();
 	}
 }
@@ -169,6 +257,7 @@ void Beeper_StopPattern(void)
 {
 	if (beeper_state == BEEPER_STATE_PATTERN) {
 		beeper_state = BEEPER_STATE_IDLE;
+		g_resume_ctx.valid = 0u;
 		Beeper_Off();
 	}
 }
@@ -214,6 +303,11 @@ void Beeper_StartPulseTrain(uint16_t pulse_on_ms, uint16_t pulse_off_ms, uint8_t
 	Beeper_On();
 }
 
+void Beeper_ButtonAcknowledge(void)
+{
+	Beeper_ShortBeep();
+}
+
 /**
  * @brief Функция обработки состояния пищалки (вызывать каждые 10мс)
  * @note Должна вызываться из таймера или основного цикла с периодом 10мс
@@ -237,8 +331,7 @@ void Beeper_Process(void)
 			else
 			{
 				// Пищание завершено
-				Beeper_Off();
-				beeper_state = BEEPER_STATE_IDLE;
+				Beeper_RestoreAfterOneShot();
 			}
 			break;
 
@@ -268,9 +361,8 @@ void Beeper_Process(void)
 				else
 				{
 					// Второе пищание завершено
-					Beeper_Off();
-					beeper_state = BEEPER_STATE_IDLE;
 					beep_phase = 0;
+					Beeper_RestoreAfterOneShot();
 				}
 			}
 			break;
@@ -284,8 +376,7 @@ void Beeper_Process(void)
 			else
 			{
 				// Пищание завершено
-				Beeper_Off();
-				beeper_state = BEEPER_STATE_IDLE;
+				Beeper_RestoreAfterOneShot();
 			}
 			break;
 
@@ -327,7 +418,12 @@ void Beeper_Process(void)
 					pattern_sound_phase = 1u;
 					pattern_counter = pattern_on_ticks;
 				} else {
-					if (pattern_repeat_counter < pattern_repeat_ticks / 2) {
+					if (pattern_repeat_ticks == 0u) {
+						beeper_state = BEEPER_STATE_IDLE;
+						Beeper_Off();
+						break;
+					}
+					if (pattern_repeat_counter < pattern_repeat_ticks) {
 						pattern_repeat_counter++;
 						pattern_counter = 1u;
 					} else {

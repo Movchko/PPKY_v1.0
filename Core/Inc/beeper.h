@@ -98,6 +98,8 @@ void Beeper_ContinuousToggle(void);
 void Beeper_Process(void);
 void Beeper_PlayOneShotMs(uint16_t duration_ms);
 void Beeper_StartPulseTrain(uint16_t pulse_on_ms, uint16_t pulse_off_ms, uint8_t pulses, uint16_t repeat_period_ms);
+/* Короткий клик кнопки без потери фонового дежурного паттерна. */
+void Beeper_ButtonAcknowledge(void);
 
 /**
  * @brief Функция установки параметра звука ВКЛ/ВЫКЛ

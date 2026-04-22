@@ -278,8 +278,6 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-	 //MX_GPIO_Init();
-	// HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1);
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -343,37 +341,16 @@ int main(void)
 
   uint8_t isFlash = 0;
   isFlash = SPIF_Init(&hFlash, &hspi1, FLASH_CS_GPIO_Port, FLASH_CS_Pin);
+  //TODO:: вывести ошибку FLASH на экран, критичная неисправность
 
-  HAL_StatusTypeDef s = HAL_ADC_Start_DMA(&hadc1, ADC_VAL, NUM_ADC_CHANNEL);
+  HAL_ADC_Start_DMA(&hadc1, ADC_VAL, NUM_ADC_CHANNEL);
 
-
-
-  //uint32_t erase = HAL_GetTick();
-  //SPIF_EraseChip(&hFlash);
-
-  //SPIF_EraseSector(&hFlash, 0);
-
-
-  /*uint8_t data[64];
-
-  erase = HAL_GetTick();
-  uint32_t i = 0;
-  for(i = 0; i < 262144; i++) {
-	  SPIF_ReadAddress(&hFlash, i*64, data, 64);
-  }
-  erase = HAL_GetTick() - erase;
-
-*/
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
   InitDisplay();
-
-  uint32_t gfx_tick = HAL_GetTick();
-  uint32_t led_tick = HAL_GetTick();
-
   Led_Init();
 
   // ниже принудительно запускаем touch gfx, чтобы загрузить лого на экран.
@@ -388,21 +365,12 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim1);
   HAL_TIM_Base_Start_IT(&htim2);
 
-
   isMainInit = 1;
-  //uint8_t led_power = 100;
-  //LedSetAll(led_power);
-
-
 
 //  HAL_UART_Receive_DMA(&huart2, uart_buf, 2);
 
-
-
-
-  //HAL_GPIO_WritePin(SOUND_GPIO_Port, SOUND_Pin, GPIO_PIN_SET);
- // while(1);
-  //uint8_t display_turn_on = 0;
+  uint32_t gfx_tick = HAL_GetTick();
+  uint32_t led_tick = HAL_GetTick();
   uint32_t last_rtc_bkp_tick = HAL_GetTick();
   while (1)
   {
@@ -410,34 +378,11 @@ int main(void)
 	  if(abs(cur_tick - led_tick) >= 1000) {
 		  led_tick = cur_tick;
 		  LED_TOGGLE;
-
-		  /*
-		   * задержка включения дисплея, чтобы не было мусора от предыдущего запуска
-		   * дисплей стартует раньше, чем touchgsx успевает заполнить буфер новыми данными
-		   * без задержки можно вручную залить картинку
-		   */
-		  /*
-		  if(display_turn_on == 0) {
-			  Display_Enable(true);
-			  display_turn_on = 1;
-		  }
-		   */
-			/* test
-			 *
-			 */
-
-		  //HAL_UART_Transmit(&huart2, uart_send_buf, 2, 0);
-
 		  setup_change = 1;
 		  /*
 		   * end test
 		   */
 	  }
-
-	  //test
-
-
-	  // end test
 
 	 if((cur_tick - gfx_tick) >= GFX_RATIO_MS) { // условие чтобы MX_TouchGFX_Process не спамилось слишком часто
     /* USER CODE END WHILE */
@@ -447,8 +392,6 @@ int main(void)
   	  	  TGFX_SignalVSync();
   	  	  gfx_tick = cur_tick;
 	  }
-
-
 
 	 if(is1ms) {
 		 is1ms--;

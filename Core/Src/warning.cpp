@@ -490,8 +490,15 @@ static uint8_t CountActiveFaultNow(void)
 static void UpdateFaultSound(uint32_t now_ms)
 {
 	uint8_t active_count = CountActiveFaultNow();
-	if (active_count == 0u || Fire_IsActive()) {
-		if (g_fault_sound_phase == FAULT_SOUND_PERIODIC) {
+	if (Fire_IsActive()) {
+		g_fault_sound_phase = FAULT_SOUND_IDLE;
+		g_fault_sound_deadline_ms = 0u;
+		g_prev_sound_fault_count = active_count;
+		return;
+	}
+	if (active_count == 0u) {
+		if (g_fault_sound_phase == FAULT_SOUND_PERIODIC ||
+		    g_fault_sound_phase == FAULT_SOUND_WAIT_PERIODIC) {
 			Beeper_StopPattern();
 		}
 		g_fault_sound_phase = FAULT_SOUND_IDLE;

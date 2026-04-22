@@ -28,7 +28,8 @@ extern uint8_t g_active_devices_count;
 /* ack_flags у IGNITER: предполагаем бит 1 = end_ack */
 #define FIRE_IGNITER_END_ACK_MASK            0x02u
 #define FIRE_CMD_RETRY_TIMEOUT_MS            200u
-#define FIRE_CMD_RETRY_MAX_ATTEMPTS          10u
+#define FIRE_CMD_RETRY_TIMEOUT_STOP_RETRY_S	10
+#define FIRE_CMD_RETRY_MAX_ATTEMPTS          (FIRE_CMD_RETRY_TIMEOUT_STOP_RETRY_S * 1000 / FIRE_CMD_RETRY_TIMEOUT_MS)//    10u
 #define FIRE_CMD_RETRY_MAX_ITEMS             64u
 
 static uint8_t debug_zone_delay[FIRE_DEBUG_ZONES] = { 15, 30u, 30 };
@@ -223,7 +224,7 @@ static void Fire_BeeperEnterDuty(void)
 static void Fire_BeeperEnterStartPattern(uint32_t now_ms)
 {
 	(void)now_ms;
-	/* ПУСК: прерывистый звук скважность 2, период 2.4с (1.2с/1.2с). */
+	/* ПУСК: прерывистый звук  */
 	g_fire.beeper_alert_active = 0u;
 	g_fire.beeper_duty_active = 0u;
 	g_fire.beeper_start_pattern_active = 1u;
