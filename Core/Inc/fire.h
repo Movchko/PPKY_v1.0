@@ -33,6 +33,9 @@ void Fire_OnReplyStopExtinguishment(uint32_t msg_id);
 /* Текущий статус сценария пожара (для подавления вторичных индикаций). */
 uint8_t Fire_IsActive(void);
 
+/* Ручной выбор пожара на главном экране (индекс в текущем UI-списке). */
+void Fire_UiSetManualSelection(uint8_t enabled, uint8_t selected_ui_index);
+
 #ifdef __cplusplus
 }
 #endif

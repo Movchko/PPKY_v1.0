@@ -33,7 +33,8 @@ extern "C" {
 #define BEEPER_PATTERN_START_ON_MS        200u
 #define BEEPER_PATTERN_START_OFF_MS       200u
 #define BEEPER_PATTERN_START_PULSES       1u
-#define BEEPER_PATTERN_START_REPEAT_MS    0u
+/* Тушение: короткие частые пищания */
+#define BEEPER_PATTERN_START_REPEAT_MS    100u
 
 #define BEEPER_PATTERN_FIRE_ON_MS         70u
 #define BEEPER_PATTERN_FIRE_OFF_MS        50u

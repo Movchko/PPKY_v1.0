@@ -31,6 +31,8 @@ extern uint8_t g_active_devices_count;
 #define FIRE_CMD_RETRY_TIMEOUT_STOP_RETRY_S	10
 #define FIRE_CMD_RETRY_MAX_ATTEMPTS          (FIRE_CMD_RETRY_TIMEOUT_STOP_RETRY_S * 1000 / FIRE_CMD_RETRY_TIMEOUT_MS)//    10u
 #define FIRE_CMD_RETRY_MAX_ITEMS             64u
+/* Спецрежим: в ручном выборе пожара кнопки ПУСК СП/СТОП действуют только на выбранную зону. */
+#define FIRE_SELECTED_ZONE_BUTTONS_ENABLE    1u
 
 static uint8_t debug_zone_delay[FIRE_DEBUG_ZONES] = { 15, 30u, 30 };
 static uint8_t debug_module_delay[FIRE_DEBUG_ZONES][2] = {
@@ -122,6 +124,8 @@ typedef struct {
 
 static FireContext g_fire;
 static FireRetryItem g_fire_retry_items[FIRE_CMD_RETRY_MAX_ITEMS];
+static uint8_t g_fire_ui_manual_select_enabled = 0u;
+static uint8_t g_fire_ui_selected_index = 0u;
 
 /* Управляет яркостью кнопки/подписи ПУСК ОБЩИЙ (обычная/активная). */
 static void Fire_SetStartAllBrightness(uint8_t bright);
@@ -157,6 +161,8 @@ static uint8_t Fire_AnyActiveSlot(void);
 static uint8_t Fire_CountPendingPhase2(void);
 /* Минимальный оставшийся таймер (сек) среди pending-зон. */
 static uint8_t Fire_MinRemainingSec(uint32_t now_ms);
+/* Оставшийся таймер (сек) для конкретной зоны из UI-выбора. */
+static uint8_t Fire_RemainingSecForZone(uint8_t zone, uint32_t now_ms);
 /* Автообработка дедлайнов фазы 2 в автоматическом режиме. */
 static uint8_t Fire_ProcessAutoDeadlines(uint32_t now_ms);
 /* ПУСК ОБЩИЙ: старт по всем найденным igniter-зонам + отметка слотов. */
@@ -167,6 +173,8 @@ static uint8_t Fire_ZoneAllIgnitersEndAck(uint8_t zone);
 static uint8_t Fire_AllActiveZonesEndAck(void);
 /* Формирует список имён зон для UI (уникальные, отсортированные). */
 static void Fire_FillZoneNamesForUi(char (*out_names)[FIRE_UI_NAME_LEN], uint8_t *out_n);
+/* Формирует список zone CAN (по тем же правилам, что и Fire_FillZoneNamesForUi). */
+static uint8_t Fire_BuildUiZoneList(uint8_t *zones, uint8_t max_out);
 /* Собирает отсортированный список igniter-адресов в заданной зоне. */
 static uint8_t Fire_CollectSortedIgniterTargetsByZone(uint8_t zone, FireIgniterAddr *out, uint8_t max_out);
 /* Собирает отсортированный список igniter-адресов по всем активным зонам. */
@@ -196,6 +204,9 @@ static void Fire_BeeperTick(uint32_t now_ms);
 /* Звук подтверждения удержания ПУСК ОБЩИЙ (1.6с, скважность 2). */
 static void Fire_StartAllHoldSoundOn(void);
 static void Fire_StartAllHoldSoundOff(void);
+static uint8_t Fire_Phase2SelectedPending(uint8_t zone);
+static void Fire_SendStopZone(uint8_t zone);
+static uint8_t Fire_GetSelectedZoneFromUi(uint8_t *zone);
 
 extern void Fire_UiUpdate(uint8_t active, uint8_t mode, uint8_t remaining_s, uint8_t n_zones,
 			  char (*zone_names)[FIRE_UI_NAME_LEN]);
@@ -714,6 +725,37 @@ static uint8_t Fire_MinRemainingSec(uint32_t now_ms)
 	return (uint8_t)((best_ms + 999u) / 1000u);
 }
 
+static uint8_t Fire_RemainingSecForZone(uint8_t zone, uint32_t now_ms)
+{
+	uint32_t best_ms = 0xFFFFFFFFu;
+	uint8_t found = 0u;
+	if (g_fire.zone_countdown_stopped) {
+		return 0u;
+	}
+	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
+		if (!g_fire.slots[i].active || g_fire.slots[i].phase2_sent) {
+			continue;
+		}
+		if ((g_fire.slots[i].zone & 0x7Fu) != (zone & 0x7Fu)) {
+			continue;
+		}
+		found = 1u;
+		if (now_ms >= g_fire.slots[i].phase2_deadline_ms) {
+			return 0u;
+		}
+		{
+			uint32_t rem = g_fire.slots[i].phase2_deadline_ms - now_ms;
+			if (rem < best_ms) {
+				best_ms = rem;
+			}
+		}
+	}
+	if (!found) {
+		return 0u;
+	}
+	return (uint8_t)((best_ms + 999u) / 1000u);
+}
+
 static uint8_t Fire_ProcessAutoDeadlines(uint32_t now_ms)
 {
 	/* Автозапуск фазы 2 по дедлайнам только в WAIT_AUTO и только для pending-слотов. */
@@ -746,6 +788,55 @@ static void Fire_Phase2AllPending(void)
 		Fire_SendPhase2Zone(g_fire.slots[i].zone);
 		g_fire.slots[i].phase2_sent = 1u;
 	}
+}
+
+static uint8_t Fire_Phase2SelectedPending(uint8_t zone)
+{
+	uint8_t started = 0u;
+	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
+		if (!g_fire.slots[i].active || g_fire.slots[i].phase2_sent) {
+			continue;
+		}
+		if ((g_fire.slots[i].zone & 0x7Fu) != (zone & 0x7Fu)) {
+			continue;
+		}
+		Fire_SendPhase2Zone(g_fire.slots[i].zone);
+		g_fire.slots[i].phase2_sent = 1u;
+		started = 1u;
+	}
+	return started;
+}
+
+static void Fire_SendStopZone(uint8_t zone)
+{
+	FireIgniterAddr ign[16];
+	uint8_t n = Fire_CollectSortedIgniterTargetsByZone(zone, ign, (uint8_t)(sizeof(ign) / sizeof(ign[0])));
+	uint32_t now_ms = HAL_GetTick();
+	for (uint8_t i = 0u; i < n; i++) {
+		Fire_RetryQueueStop(&ign[i], now_ms);
+	}
+	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
+		if (!g_fire.slots[i].active) {
+			continue;
+		}
+		if ((g_fire.slots[i].zone & 0x7Fu) == (zone & 0x7Fu)) {
+			g_fire.slots[i].phase2_sent = 1u;
+		}
+	}
+}
+
+static uint8_t Fire_GetSelectedZoneFromUi(uint8_t *zone)
+{
+	uint8_t zones[FIRE_UI_MAX_ZONES];
+	uint8_t n = Fire_BuildUiZoneList(zones, FIRE_UI_MAX_ZONES);
+	if (zone == NULL || n == 0u) {
+		return 0u;
+	}
+	if (g_fire_ui_selected_index >= n) {
+		return 0u;
+	}
+	*zone = zones[g_fire_ui_selected_index];
+	return 1u;
 }
 
 static uint8_t Fire_StartAllExistingZonesAndMarkSlots(void)
@@ -851,12 +942,14 @@ static void Fire_SyncStateFromSlots(void)
 	}
 }
 
-static void Fire_FillZoneNamesForUi(char (*out_names)[FIRE_UI_NAME_LEN], uint8_t *out_n)
+static uint8_t Fire_BuildUiZoneList(uint8_t *zones, uint8_t max_out)
 {
-	/* Готовит уникальный отсортированный список имён зон для TouchGFX. */
-	uint8_t zones[FIRE_MAX_SLOTS];
 	uint8_t nz = 0u;
 	uint8_t show_all_history = Fire_AllActiveZonesEndAck();
+
+	if (zones == NULL || max_out == 0u) {
+		return 0u;
+	}
 
 	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
 		if (!g_fire.slots[i].active) {
@@ -875,7 +968,7 @@ static void Fire_FillZoneNamesForUi(char (*out_names)[FIRE_UI_NAME_LEN], uint8_t
 				break;
 			}
 		}
-		if (!dup && nz < FIRE_MAX_SLOTS) {
+		if (!dup && nz < max_out) {
 			zones[nz++] = z;
 		}
 	}
@@ -888,10 +981,14 @@ static void Fire_FillZoneNamesForUi(char (*out_names)[FIRE_UI_NAME_LEN], uint8_t
 		}
 		zones[b] = key;
 	}
+	return nz;
+}
 
-	if (nz > FIRE_UI_MAX_ZONES) {
-		nz = FIRE_UI_MAX_ZONES;
-	}
+static void Fire_FillZoneNamesForUi(char (*out_names)[FIRE_UI_NAME_LEN], uint8_t *out_n)
+{
+	/* Готовит уникальный отсортированный список имён зон для TouchGFX. */
+	uint8_t zones[FIRE_UI_MAX_ZONES];
+	uint8_t nz = Fire_BuildUiZoneList(zones, FIRE_UI_MAX_ZONES);
 	*out_n = nz;
 	for (uint8_t i = 0u; i < nz; i++) {
 		uint8_t z_can = zones[i];
@@ -1109,6 +1206,20 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		}
 		if (g_fire.state == FIRE_STATE_WAIT_AUTO || g_fire.state == FIRE_STATE_WAIT_MANUAL ||
 		    g_fire.state == FIRE_STATE_EXTINGUISHING) {
+#if FIRE_SELECTED_ZONE_BUTTONS_ENABLE
+			if (g_fire_ui_manual_select_enabled) {
+				uint8_t sel_zone = 0u;
+				if (Fire_GetSelectedZoneFromUi(&sel_zone) && Fire_Phase2SelectedPending(sel_zone)) {
+					g_fire.start_launch_pressed_latched = 1u;
+					g_fire.stop_launch_pressed_latched = 0u;
+					g_fire.start_sp_text_blink_until_ms = now_ms + (FIRE_START_SP_TEXT_BLINK_PERIOD_MS * 3u);
+					Fire_SyncStateFromSlots();
+					fire_processed = 1u;
+					start_processed = 1u;
+				}
+				break;
+			}
+#endif
 			/* Пуск тушения обработан — индикацию «ОСТАНОВ ПУСКА» снимаем */
 			g_fire.start_launch_pressed_latched = 1u;
 			g_fire.stop_launch_pressed_latched = 0u;
@@ -1146,6 +1257,18 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 			break;
 		}
 		{
+#if FIRE_SELECTED_ZONE_BUTTONS_ENABLE
+			if (g_fire_ui_manual_select_enabled) {
+				uint8_t sel_zone = 0u;
+				if (Fire_GetSelectedZoneFromUi(&sel_zone)) {
+					Fire_SendStopZone(sel_zone);
+					g_fire.stop_launch_pressed_latched = 1u;
+					g_fire.stop_text_blink_until_ms = now_ms + (FIRE_STOP_TEXT_BLINK_PERIOD_MS * 3u);
+					fire_processed = 1u;
+				}
+				break;
+			}
+#endif
 			uint8_t manual_mode_initial = (PPKYConfig.fire_mode == 2u) ? 1u : 0u;
 		PPKYConfig.fire_mode = 2u;
 		g_fire.zone_countdown_stopped = 1u;
@@ -1181,7 +1304,9 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 	    (g_fire.start_launch_pressed_latched == 0u) &&
 	    (g_fire.stop_launch_pressed_latched == 0u) &&
 	    !g_fire.all_hold_active &&
-	    !g_fire.beeper_alert_active) {
+	    !g_fire.beeper_alert_active &&
+	    !g_fire.beeper_start_pattern_active &&
+	    !g_fire.beeper_duty_active) {
 		Fire_BeeperEnterAlert();
 	}
 	if (fire_processed && g_fire.state != FIRE_STATE_IDLE) {
@@ -1200,7 +1325,20 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		ui_remaining = (uint8_t)((rem_ms + 999u) / 1000u);
 	} else if (g_fire.state == FIRE_STATE_WAIT_AUTO || g_fire.state == FIRE_STATE_WAIT_MANUAL) {
 		if (!g_fire.zone_countdown_stopped) {
+#if FIRE_SELECTED_ZONE_BUTTONS_ENABLE
+			if (g_fire_ui_manual_select_enabled) {
+				uint8_t sel_zone = 0u;
+				if (Fire_GetSelectedZoneFromUi(&sel_zone)) {
+					ui_remaining = Fire_RemainingSecForZone(sel_zone, now_ms);
+				} else {
+					ui_remaining = Fire_MinRemainingSec(now_ms);
+				}
+			} else {
+				ui_remaining = Fire_MinRemainingSec(now_ms);
+			}
+#else
 			ui_remaining = Fire_MinRemainingSec(now_ms);
+#endif
 			ui_mode = 1u; /* ДО ПУСКА */
 		} else {
 			ui_remaining = 0u;
@@ -1287,6 +1425,8 @@ void Fire_Init(void)
 	Led_Set(LED_STR_START_ALL, 1u);
 	g_fire.start_all_is_bright = 0u;
 	g_fire.last_ui_nzones = 0u;
+	g_fire_ui_manual_select_enabled = 0u;
+	g_fire_ui_selected_index = 0u;
 }
 
 /* Периодический тик 1 мс: FSM, таймеры автопуска и UI-обновления. */
@@ -1389,4 +1529,10 @@ uint8_t Fire_IsActive(void)
 {
 	/* Пожар считается активным, пока FSM не в IDLE или есть активные слоты зон. */
 	return (g_fire.state != FIRE_STATE_IDLE || Fire_AnyActiveSlot()) ? 1u : 0u;
+}
+
+void Fire_UiSetManualSelection(uint8_t enabled, uint8_t selected_ui_index)
+{
+	g_fire_ui_manual_select_enabled = enabled ? 1u : 0u;
+	g_fire_ui_selected_index = selected_ui_index;
 }

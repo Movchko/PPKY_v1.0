@@ -39,6 +39,7 @@ public:
     void fireShowCurrentZone();
     void warningOnMarqueeOnePassDone();
     void warningShowCurrent();
+    void handleMainNavButton(uint8_t but);
     void uiSetWarningHeaderVisible(bool visible);
     void uiUpdateWarningHeader(uint8_t cur_idx, uint8_t total);
     void uiSetTopHeaderText(const char* text);

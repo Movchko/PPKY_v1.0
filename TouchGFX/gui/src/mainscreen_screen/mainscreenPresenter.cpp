@@ -32,10 +32,19 @@ void mainscreenPresenter::SetTime(uint32_t time) {
 
 void mainscreenPresenter::handleButton(uint8_t but, uint8_t state)
 {
-    if (but == BUT_ENTER && state == (uint8_t)ButtonStatePress)
+    if (state != (uint8_t)ButtonStatePress) {
+        return;
+    }
+
+    if (but == BUT_ENTER)
     {
         FrontendApplication* app = static_cast<FrontendApplication*>(touchgfx::Application::getInstance());
         app->gotoScreenMenuScreenNoTransition();
+        return;
+    }
+
+    if (but == BUT_UP || but == BUT_DOWN || but == BUT_ESC) {
+        view.handleMainNavButton(but);
     }
 }
 

@@ -92,9 +92,9 @@ static uint8_t Beeper_IsOneShotState(BeeperState_t st)
 
 static void Beeper_CaptureResumeStateIfNeeded(void)
 {
-	if (g_resume_ctx.valid) {
-		return;
-	}
+	/* Переснимаем контекст каждый раз: старый может устареть, если между
+	 * кнопочным бипом и его завершением режим был переключён извне. */
+	g_resume_ctx.valid = 0u;
 	if (beeper_state == BEEPER_STATE_CONTINUOUS ||
 	    beeper_state == BEEPER_STATE_FIRE_ALARM) {
 		g_resume_ctx.valid = 1u;
@@ -216,6 +216,7 @@ void Beeper_LongBeep1300ms(void)
  */
 void Beeper_ContinuousOn(void)
 {
+	g_resume_ctx.valid = 0u;
 	beeper_state = BEEPER_STATE_CONTINUOUS;
 	beeper_counter = 0;
 	beep_phase = 0;
@@ -291,6 +292,7 @@ void Beeper_StartPulseTrain(uint16_t pulse_on_ms, uint16_t pulse_off_ms, uint8_t
 		Beeper_StopPattern();
 		return;
 	}
+	g_resume_ctx.valid = 0u;
 	pattern_on_ticks = Beeper_MsToTicks(pulse_on_ms);
 	pattern_off_ticks = Beeper_MsToTicks(pulse_off_ms);
 	pattern_repeat_ticks = (repeat_period_ms == 0u) ? 0u : Beeper_MsToTicks(repeat_period_ms);

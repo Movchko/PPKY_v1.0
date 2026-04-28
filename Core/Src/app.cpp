@@ -198,6 +198,13 @@ void CommandCB(uint8_t Dev, uint8_t Command, uint8_t *Parameters) {
 			}
 		}
 	}break;
+	case 13: {
+		/* Установка режима пуска:
+		 * Parameters[0] = 0 (auto) / 1 (manual). */
+		if (Parameters != nullptr) {
+			PPKYConfig.fire_mode = (Parameters[0] != 0u) ? 2u : 0u;
+		}
+	}break;
 
 	default: break;
 	}

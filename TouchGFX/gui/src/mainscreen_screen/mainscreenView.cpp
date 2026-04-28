@@ -5,6 +5,8 @@
 #ifndef SIMULATOR
 #include "main.h"
 #include "device_config.h"
+#include "button.h"
+#include "fire.h"
 
 namespace {
 
@@ -38,6 +40,9 @@ uint8_t s_wn_cur = 0;
 FireNamePhase s_wn_ph = PH_IDLE;
 uint32_t s_wn_hold_from = 0;
 char s_top_header_text[24] = {0};
+uint8_t s_fire_manual_select = 0u;
+uint8_t s_warning_manual_select = 0u;
+uint8_t s_fire_mode = 0u;
 
 static void fire_copy_list(uint8_t n, char (*src)[ZONE_NAME_SIZE + 1])
 {
@@ -106,6 +111,9 @@ void mainscreenView::setupScreen()
     g_fire_main_view = this;
     CustomContainerSrollText.setFinishedCallback(fire_marquee_done_thunk);
     ui_set_warning_header_visible(this, false);
+    s_fire_manual_select = 0u;
+    s_warning_manual_select = 0u;
+    Fire_UiSetManualSelection(0u, 0u);
 #endif
 }
 
@@ -146,6 +154,18 @@ void mainscreenView::fireShowCurrentZone()
 	}
 	CustomContainerSrollText.setText(s_fn_names[s_fn_cur]);
 	s_banner_mode = BANNER_FIRE;
+	if (s_fire_manual_select) {
+		/* В ручном выборе пожара верхняя строка должна быть как в штатном режиме пожара. */
+		if (s_fire_mode == 1u) {
+			ui_set_warning_header_visible(this, true);
+			uiSetTopHeaderText("ДО ПУСКА");
+		} else {
+			ui_set_warning_header_visible(this, false);
+		}
+		s_fn_ph = PH_IDLE;
+		s_fn_hold_from = 0u;
+		return;
+	}
 	if (CustomContainerSrollText.isMarqueeFitting()) {
 		s_fn_ph = PH_HOLD_3S;
 		s_fn_hold_from = HAL_GetTick();
@@ -185,6 +205,11 @@ void mainscreenView::warningShowCurrent()
 	textArea1.invalidate();
 
 	CustomContainerSrollText.setText(s_wn_details[s_wn_cur]);
+	if (s_warning_manual_select) {
+		s_wn_ph = PH_IDLE;
+		s_wn_hold_from = 0u;
+		return;
+	}
 	if (CustomContainerSrollText.isMarqueeFitting()) {
 		s_wn_ph = PH_HOLD_3S;
 		s_wn_hold_from = HAL_GetTick();
@@ -244,7 +269,9 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 	(void)zone;
 	uint32_t now = HAL_GetTick();
 	fireUiActive = active;
+	s_fire_mode = mode;
 	if (active) {
+		s_warning_manual_select = 0u;
 		if (mode == 1u) {
 			ui_set_warning_header_visible(this, true);
 			uiSetTopHeaderText("ДО ПУСКА");
@@ -259,6 +286,8 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 	const bool timerDirty = ((uint8_t)active != lastActive || mode != lastMode || remaining_s != lastRemaining);
 
 	if (!active) {
+		s_fire_manual_select = 0u;
+		Fire_UiSetManualSelection(0u, 0u);
 		lastActive = (uint8_t)active;
 		lastMode = mode;
 		lastRemaining = remaining_s;
@@ -289,6 +318,9 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 		s_fn_cur = 0u;
 		s_fn_ph = PH_IDLE;
 		s_fn_hold_from = 0u;
+		if (s_fire_manual_select && s_fn_n > 0u) {
+			Fire_UiSetManualSelection(1u, s_fn_cur);
+		}
 		fireShowCurrentZone();
 	}
 
@@ -332,14 +364,15 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 		return;
 	}
 
-	if (s_fn_ph == PH_HOLD_3S && s_fn_hold_from != 0u &&
+	if (!s_fire_manual_select &&
+	    s_fn_ph == PH_HOLD_3S && s_fn_hold_from != 0u &&
 	    (now - s_fn_hold_from) >= FIRE_NAME_HOLD_MS) {
 		s_fn_cur = (uint8_t)((s_fn_cur + 1u) % s_fn_n);
 		s_fn_ph = PH_IDLE;
 		s_fn_hold_from = 0u;
 	}
 
-	if (s_fn_ph == PH_IDLE) {
+	if (!s_fire_manual_select && s_fn_ph == PH_IDLE) {
 		fireShowCurrentZone();
 	}
 }
@@ -353,6 +386,7 @@ void mainscreenView::updateWarningStatus(bool active, uint8_t nItems, char (*big
 	uint32_t now = HAL_GetTick();
 
 	if (!active || nItems == 0u) {
+		s_warning_manual_select = 0u;
 		s_wn_n = 0u;
 		s_wn_ph = PH_IDLE;
 		s_wn_hold_from = 0u;
@@ -417,7 +451,8 @@ void mainscreenView::updateWarningStatus(bool active, uint8_t nItems, char (*big
 		return;
 	}
 
-	if (s_wn_ph == PH_HOLD_3S && s_wn_hold_from != 0u &&
+	if (!s_warning_manual_select &&
+	    s_wn_ph == PH_HOLD_3S && s_wn_hold_from != 0u &&
 	    (now - s_wn_hold_from) >= FIRE_NAME_HOLD_MS) {
 		s_wn_cur = (uint8_t)((s_wn_cur + 1u) % s_wn_n);
 		s_wn_ph = PH_IDLE;
@@ -425,7 +460,59 @@ void mainscreenView::updateWarningStatus(bool active, uint8_t nItems, char (*big
 		ui_update_warning_header(this);
 	}
 
-	if (s_wn_ph == PH_IDLE) {
+	if (!s_warning_manual_select && s_wn_ph == PH_IDLE) {
+		warningShowCurrent();
+	}
+}
+
+void mainscreenView::handleMainNavButton(uint8_t but)
+{
+	if (but == BUT_ESC) {
+		if (s_fire_manual_select) {
+			s_fire_manual_select = 0u;
+			Fire_UiSetManualSelection(0u, 0u);
+			s_fn_ph = PH_IDLE;
+			s_fn_hold_from = 0u;
+			fireShowCurrentZone();
+			return;
+		}
+		if (s_warning_manual_select) {
+			s_warning_manual_select = 0u;
+			s_wn_ph = PH_IDLE;
+			s_wn_hold_from = 0u;
+			warningShowCurrent();
+			return;
+		}
+		return;
+	}
+
+	if (but != BUT_UP && but != BUT_DOWN) {
+		return;
+	}
+
+	if (fireUiActive && s_fn_n > 0u) {
+		if (!s_fire_manual_select) {
+			s_fire_manual_select = 1u;
+			s_fn_cur = 0u;
+		} else if (but == BUT_UP) {
+			s_fn_cur = (uint8_t)((s_fn_cur + 1u) % s_fn_n);
+		} else {
+			s_fn_cur = (uint8_t)((s_fn_cur == 0u) ? (s_fn_n - 1u) : (s_fn_cur - 1u));
+		}
+		Fire_UiSetManualSelection(1u, s_fn_cur);
+		fireShowCurrentZone();
+		return;
+	}
+
+	if (s_wn_n > 0u) {
+		if (!s_warning_manual_select) {
+			s_warning_manual_select = 1u;
+			s_wn_cur = 0u;
+		} else if (but == BUT_UP) {
+			s_wn_cur = (uint8_t)((s_wn_cur + 1u) % s_wn_n);
+		} else {
+			s_wn_cur = (uint8_t)((s_wn_cur == 0u) ? (s_wn_n - 1u) : (s_wn_cur - 1u));
+		}
 		warningShowCurrent();
 	}
 }
