@@ -220,6 +220,18 @@
     <Filter Include="Source Files\generated\gui_generated\mainscreen_screen">
       <UniqueIdentifier>7473ED02-4DF4-60A7-3276-634621EE296D</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\gui\screen_devices_screen">
+      <UniqueIdentifier>83142847-B604-BC5B-FEFC-D5163E25FBC2</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\gui\screen_devices_screen">
+      <UniqueIdentifier>441B9816-9247-9CE7-9B88-C88BF4C5CF32</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\generated\gui_generated\screen_devices_screen">
+      <UniqueIdentifier>66878ED1-DF07-AE64-371C-2FAD2CA49372</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\generated\gui_generated\screen_devices_screen">
+      <UniqueIdentifier>AB1BA97E-8ECD-6A0E-EB21-C2293AC91C51</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(TouchGFXReleasePath)\framework\source\platform\driver\touch\SDL2TouchController.cpp">
@@ -314,6 +326,15 @@
     </ClCompile>
     <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerSollTextBase.cpp">
       <Filter>Source Files\generated\gui_generated\containers</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\screen_devices_screen\screen_devicesPresenter.cpp">
+      <Filter>Source Files\gui\screen_devices_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\screen_devices_screen\screen_devicesView.cpp">
+      <Filter>Source Files\gui\screen_devices_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\generated\gui_generated\src\screen_devices_screen\screen_devicesViewBase.cpp">
+      <Filter>Source Files\generated\gui_generated\screen_devices_screen</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -819,6 +840,15 @@
     </ClInclude>
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerSollTextBase.hpp">
       <Filter>Header Files\generated\gui_generated\containers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\screen_devices_screen\screen_devicesPresenter.hpp">
+      <Filter>Header Files\gui\screen_devices_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\screen_devices_screen\screen_devicesView.hpp">
+      <Filter>Header Files\gui\screen_devices_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screen_devices_screen\screen_devicesViewBase.hpp">
+      <Filter>Header Files\generated\gui_generated\screen_devices_screen</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -215,6 +215,65 @@
             }
           }
         ]
+      },
+      {
+        "Name": "screen_devices",
+        "Components": [
+          {
+            "Type": "Box",
+            "Name": "box1",
+            "Width": 128,
+            "Height": 64
+          },
+          {
+            "Type": "CustomContainerInstance",
+            "Name": "CustomContainerSrollText",
+            "Width": 128,
+            "Height": 18,
+            "CustomContainerDefinitionName": "CustomContainerSollText"
+          },
+          {
+            "Type": "TextArea",
+            "Name": "textArea_next_MCU",
+            "Y": 49,
+            "Width": 128,
+            "Height": 15,
+            "TextId": "__SingleUse_2J37",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            },
+            "Wildcard1": {
+              "TextId": "__SingleUse_P23D",
+              "UseBuffer": true,
+              "BufferSize": 12
+            },
+            "Draggable": true,
+            "Moveable": true
+          },
+          {
+            "Type": "TextArea",
+            "Name": "textAreaCurrentMCU",
+            "Y": 21,
+            "Width": 128,
+            "Height": 28,
+            "TextId": "__SingleUse_H127",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            },
+            "Wildcard1": {
+              "TextId": "__SingleUse_K01E",
+              "UseBuffer": true,
+              "BufferSize": 14
+            }
+          }
+        ],
+        "Interactions": []
       }
     ],
     "CustomContainerDefinitions": [

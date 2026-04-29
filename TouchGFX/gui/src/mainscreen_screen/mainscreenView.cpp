@@ -110,6 +110,14 @@ void mainscreenView::setupScreen()
 #ifndef SIMULATOR
     g_fire_main_view = this;
     CustomContainerSrollText.setFinishedCallback(fire_marquee_done_thunk);
+    /* Экран пересоздаётся после выхода из меню: сбрасываем runtime-фазы,
+     * чтобы рендер баннеров (пожар/авария) гарантированно стартовал заново
+     * даже при неизменном списке элементов. */
+    s_banner_mode = BANNER_NONE;
+    s_fn_ph = PH_IDLE;
+    s_fn_hold_from = 0u;
+    s_wn_ph = PH_IDLE;
+    s_wn_hold_from = 0u;
     ui_set_warning_header_visible(this, false);
     s_fire_manual_select = 0u;
     s_warning_manual_select = 0u;

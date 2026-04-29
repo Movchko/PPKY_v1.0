@@ -70,6 +70,12 @@ void ScreenMenuPresenter::handleButton(uint8_t but, uint8_t state)
             view.updateParameterLine(currentIndex, soundOn);
             app->getModel().setSoundOn(soundOn);
             app->getModel().notifySoundToggled(soundOn);
+            return;
+        }
+        if (currentIndex == 2)  // ДИСПЕТЧЕР УСТРОЙСТВ
+        {
+            app->gotoScreenDevicesScreenNoTransition();
+            return;
         }
     }
 }

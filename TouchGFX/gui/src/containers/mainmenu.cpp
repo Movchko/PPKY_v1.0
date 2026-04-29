@@ -1,5 +1,6 @@
 #include <gui/containers/mainmenu.hpp>
 #include <texts/TextKeysAndLanguages.hpp>
+#include <touchgfx/Unicode.hpp>
 
 mainmenu::mainmenu()
 {
@@ -21,7 +22,8 @@ void mainmenu::updateText(int16_t value)
 			Unicode::snprintf(textAreaMainMenuBuffer, TEXTAREAMAINMENU_SIZE, "%s", touchgfx::TypedText(TEXTS(T_SOUND)).getText());
 		}break;
 		case 2: {
-			Unicode::snprintf(textAreaMainMenuBuffer, TEXTAREAMAINMENU_SIZE, "%s", touchgfx::TypedText(TEXTS(T_TEST)).getText());
+			Unicode::fromUTF8(reinterpret_cast<const uint8_t*>("ДИСПЕТЧЕР"), textAreaMainMenuBuffer, TEXTAREAMAINMENU_SIZE);
+			textAreaMainMenuBuffer[TEXTAREAMAINMENU_SIZE - 1] = 0;
 		}break;
 		case 3: {
 			Unicode::snprintf(textAreaMainMenuBuffer, TEXTAREAMAINMENU_SIZE, "%s", touchgfx::TypedText(TEXTS(T_CONNECT)).getText());

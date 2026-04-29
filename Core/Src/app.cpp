@@ -5,6 +5,8 @@
 #include "device_config.h"
 #include "led.h"
 #include "backend.h"
+#include "service.h"
+#include "config_sync.hpp"
 #include "gui/common/FrontendHeap.hpp"
 #include "fire.h"
 #include "warning.h"
@@ -23,6 +25,7 @@ PControl *Power[2];
 ActiveDeviceInfo g_active_devices[NUM_ACTIVE_DEVICE];
 uint8_t g_active_devices_count = 0;
 uint8_t g_mku_mismatch_flag = 0;
+static uint8_t g_cfg_crc_mismatch_flag = 0u;
 
 /* --- Механизм автоматической установки адресов по команде 10 --- */
 typedef enum {
@@ -119,26 +122,6 @@ static void AddrAuto_Process(uint32_t now_ms) {
 
 void USBSendData(uint8_t *Buf) {};
 
-static void SaveSystemStateFromActiveDevices(void)
-{
-	/* Заполняем PPKYConfig.CfgDevices по текущим активным МКУ на шине.
-	 * Пока сохраняем только Device (devId) без конфигураций МКУ и виртуальных устройств. */
-	memset(PPKYConfig.CfgDevices, 0, sizeof(PPKYConfig.CfgDevices));
-
-	uint8_t out_i = 0;
-	for (uint8_t i = 0; i < g_active_devices_count && out_i < 32; i++) {
-		if (g_active_devices[i].online == 0u) {
-			continue;
-		}
-		PPKYConfig.CfgDevices[out_i].UId.devId = g_active_devices[i].dev;
-		out_i++;
-	}
-
-	/* После сохранения списка считаем, что флаг несовпадения можно пересчитать */
-	g_mku_mismatch_flag = 0;
-	SaveConfig();
-}
-
 void PPKY_GetLastPowerOnDate(RTC_DateTypeDef *out_date, RTC_TimeTypeDef *out_time)
 {
 	uint32_t v = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR1);
@@ -172,8 +155,8 @@ void CommandCB(uint8_t Dev, uint8_t Command, uint8_t *Parameters) {
 		}
 	}break;
 	case 11: {
-		/* Сохранить состояние системы: список найденных МКУ на шине */
-		SaveSystemStateFromActiveDevices();
+		/* Сохранить состояние системы + прочитать полные конфиги всех активных МКУ. */
+		ConfigSync_StartReadAllAndSave();
 	}break;
 	case 12: {
 		/* Перезапуск устройств на шине.
@@ -200,10 +183,20 @@ void CommandCB(uint8_t Dev, uint8_t Command, uint8_t *Parameters) {
 	}break;
 	case 13: {
 		/* Установка режима пуска:
-		 * Parameters[0] = 0 (auto) / 1 (manual). */
+		 * Parameters[0] = 0 (auto), 1 (автономный), 2 (manual). */
 		if (Parameters != nullptr) {
-			PPKYConfig.fire_mode = (Parameters[0] != 0u) ? 2u : 0u;
+			if (Parameters[0] <= 2u) {
+				PPKYConfig.fire_mode = Parameters[0];
+			}
 		}
+	}break;
+	case 14: {
+		/* Запустить сверку конфигов ППКУ <-> МКУ по CRC. */
+		ConfigSync_StartVerify();
+	}break;
+	case 15: {
+		/* Применить конфиг-образ из ППКУ ко всем МКУ и проверить по CRC. */
+		ConfigSync_StartApply();
 	}break;
 
 	default: break;
@@ -494,7 +487,7 @@ static void UpdateActiveVirtualDevices(uint32_t MsgID, uint8_t *MsgData, uint32_
 
 static void CheckMkuConfigMismatch(void) {
 	// Сравнить активные онлайн-устройства с конфигом PPKYConfig.CfgDevices
-	g_mku_mismatch_flag = 0;
+	uint8_t presence_mismatch = 0u;
 
 	for (uint8_t i = 0; i < g_active_devices_count; i++) {
 		if (!g_active_devices[i].online)
@@ -515,10 +508,11 @@ static void CheckMkuConfigMismatch(void) {
 			}
 		}
 		if (!found) {
-			g_mku_mismatch_flag = 1;
+			presence_mismatch = 1u;
 			break;
 		}
 	}
+	g_mku_mismatch_flag = (presence_mismatch || g_cfg_crc_mismatch_flag) ? 1u : 0u;
 }
 
 
@@ -600,6 +594,7 @@ void AppInit() {
 
 	// Передаём указатели в backend (для сервисных команд работы с конфигурацией)
 	SetConfigPtr((uint8_t *)&SavedPPKYConfig, (uint8_t *)&PPKYConfig);
+	ConfigSync_Init(&PPKYConfig, g_active_devices, &g_active_devices_count, SaveConfig, &g_cfg_crc_mismatch_flag);
 
 	// Список устройств по аналогии с МКУ: 0-й элемент — сама плата ППКУ
 	extern Device BoardDevicesList[];
@@ -704,6 +699,7 @@ static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 
 void AppTimer1ms() {
 	uint32_t now = HAL_GetTick();
+	ConfigSync_Process1ms(now);
 	AppProcess(now);
 	RefreshActiveDevices(now);
 	CheckMkuConfigMismatch();
@@ -796,6 +792,7 @@ void ResetMCU() {
 void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 	uint32_t now = HAL_GetTick();
 	UpdateActiveDeviceList(MsgID, now);
+	ConfigSync_OnListenerMessage(MsgID, MsgData);
 
 	/* Обновляем CAN-состояние МКУ и статусы его виртуальных устройств */
 	UpdateMcuCanStatus(MsgID, MsgData);

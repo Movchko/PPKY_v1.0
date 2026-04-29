@@ -14,6 +14,8 @@
 #include <gui/screenmenu_screen/ScreenMenuPresenter.hpp>
 #include <gui/screen_logo_screen/screen_logoView.hpp>
 #include <gui/screen_logo_screen/screen_logoPresenter.hpp>
+#include <gui/screen_devices_screen/screen_devicesView.hpp>
+#include <gui/screen_devices_screen/screen_devicesPresenter.hpp>
 
 using namespace touchgfx;
 

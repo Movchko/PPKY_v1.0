@@ -18,6 +18,8 @@
 #include <gui/screenmenu_screen/ScreenMenuPresenter.hpp>
 #include <gui/screen_logo_screen/screen_logoView.hpp>
 #include <gui/screen_logo_screen/screen_logoPresenter.hpp>
+#include <gui/screen_devices_screen/screen_devicesView.hpp>
+#include <gui/screen_devices_screen/screen_devicesPresenter.hpp>
 
 
 /**
@@ -43,7 +45,8 @@ public:
     typedef touchgfx::meta::TypeList< mainscreenView,
             touchgfx::meta::TypeList< ScreenMenuView,
             touchgfx::meta::TypeList< screen_logoView,
-            touchgfx::meta::Nil > >
+            touchgfx::meta::TypeList< screen_devicesView,
+            touchgfx::meta::Nil > > >
             > GeneratedViewTypes;
 
     /**
@@ -58,7 +61,8 @@ public:
     typedef touchgfx::meta::TypeList< mainscreenPresenter,
             touchgfx::meta::TypeList< ScreenMenuPresenter,
             touchgfx::meta::TypeList< screen_logoPresenter,
-            touchgfx::meta::Nil > >
+            touchgfx::meta::TypeList< screen_devicesPresenter,
+            touchgfx::meta::Nil > > >
             > GeneratedPresenterTypes;
 
     /**

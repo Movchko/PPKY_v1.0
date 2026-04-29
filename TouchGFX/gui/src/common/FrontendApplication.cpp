@@ -5,6 +5,8 @@
 #include <gui/mainscreen_screen/mainscreenPresenter.hpp>
 #include <gui/screenmenu_screen/ScreenMenuView.hpp>
 #include <gui/screenmenu_screen/ScreenMenuPresenter.hpp>
+#include <gui/screen_devices_screen/screen_devicesView.hpp>
+#include <gui/screen_devices_screen/screen_devicesPresenter.hpp>
 #include <touchgfx/transitions/NoTransition.hpp>
 
 #ifndef SIMULATOR
@@ -53,4 +55,15 @@ void FrontendApplication::gotoScreenMenuScreenNoTransition()
 void FrontendApplication::gotoScreenMenuScreenNoTransitionImpl()
 {
     makeTransition<ScreenMenuView, ScreenMenuPresenter, NoTransition, Model>(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
+}
+
+void FrontendApplication::gotoScreenDevicesScreenNoTransition()
+{
+    screenDevicesTransitionCallback = Callback<FrontendApplication>(this, &FrontendApplication::gotoScreenDevicesScreenNoTransitionImpl);
+    pendingScreenTransitionCallback = &screenDevicesTransitionCallback;
+}
+
+void FrontendApplication::gotoScreenDevicesScreenNoTransitionImpl()
+{
+    makeTransition<screen_devicesView, screen_devicesPresenter, NoTransition, Model>(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
 }

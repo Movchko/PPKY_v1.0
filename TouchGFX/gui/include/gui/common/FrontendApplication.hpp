@@ -17,14 +17,18 @@ public:
 
     /** Переход на экран меню */
     void gotoScreenMenuScreenNoTransition();
+    /** Переход на экран диспетчера устройств */
+    void gotoScreenDevicesScreenNoTransition();
 
     /** Доступ к модели (для колбэков настроек и т.д.) */
     Model& getModel() { return model; }
 
 private:
     void gotoScreenMenuScreenNoTransitionImpl();
+    void gotoScreenDevicesScreenNoTransitionImpl();
 
     touchgfx::Callback<FrontendApplication> screenMenuTransitionCallback;
+    touchgfx::Callback<FrontendApplication> screenDevicesTransitionCallback;
 
 #ifndef SIMULATOR
     static const int NUM_BUTTONS = 7;

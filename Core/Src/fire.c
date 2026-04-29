@@ -115,6 +115,7 @@ typedef struct {
 	uint8_t   last_ui_mode;
 	uint8_t   last_ui_remaining;
 	uint8_t   last_ui_nzones;
+	uint8_t   last_fire_mode;
 	uint32_t  last_ui_force_names_ms;
 	char      last_ui_names[FIRE_UI_MAX_ZONES][FIRE_UI_NAME_LEN];
 	/* После «ОСТАНОВ ПУСКА»: авто-отсчёт зон и его отображение отключены, слоты пожара сохраняются */
@@ -207,6 +208,8 @@ static void Fire_StartAllHoldSoundOff(void);
 static uint8_t Fire_Phase2SelectedPending(uint8_t zone);
 static void Fire_SendStopZone(uint8_t zone);
 static uint8_t Fire_GetSelectedZoneFromUi(uint8_t *zone);
+static void Fire_EnterManualStop(uint32_t now_ms, uint8_t blink_stop_text);
+static void Fire_ApplyFireModePolicy(uint32_t now_ms);
 
 extern void Fire_UiUpdate(uint8_t active, uint8_t mode, uint8_t remaining_s, uint8_t n_zones,
 			  char (*zone_names)[FIRE_UI_NAME_LEN]);
@@ -1089,6 +1092,44 @@ static void Fire_SetStartAllBrightness(uint8_t bright)
 	Led_SetBrightness(LED_STR_START_ALL, pwr);
 }
 
+static void Fire_EnterManualStop(uint32_t now_ms, uint8_t blink_stop_text)
+{
+	/* Общее поведение "ОСТАНОВ ПУСКА": таймеры остановлены, запуск заблокирован, manual UI/LED. */
+	g_fire.zone_countdown_stopped = 1u;
+	g_fire.start_launch_pressed_latched = 0u;
+	g_fire.stop_launch_pressed_latched = 1u;
+	g_fire.stop_text_blink_until_ms = blink_stop_text ? (now_ms + (FIRE_STOP_TEXT_BLINK_PERIOD_MS * 3u)) : 0u;
+	Fire_SendStopAllMcus();
+	g_fire.all_hold_active = 0u;
+	g_fire.all_hold_ms = 0u;
+	g_fire.btn_start_all_hold_latched = 0u;
+	Fire_StartAllHoldSoundOff();
+	if (Fire_CountPendingPhase2() > 0u) {
+		g_fire.state = FIRE_STATE_WAIT_MANUAL;
+	}
+}
+
+static void Fire_ApplyFireModePolicy(uint32_t now_ms)
+{
+	uint8_t mode = PPKYConfig.fire_mode;
+	if (g_fire.last_fire_mode == mode) {
+		return;
+	}
+	g_fire.last_fire_mode = mode;
+
+	/* Внешний перевод в manual во время активного пожара должен вести себя как кнопка STOP. */
+	if ((mode == 2u) && Fire_AnyActiveSlot() && (Fire_CountPendingPhase2() > 0u) && !g_fire.zone_countdown_stopped) {
+		Fire_EnterManualStop(now_ms, 1u);
+		return;
+	}
+
+	/* 0 и 1 трактуем как auto-поведение на стороне ППКУ. */
+	if ((mode != 2u) && (g_fire.state == FIRE_STATE_WAIT_MANUAL) &&
+	    !g_fire.zone_countdown_stopped && (Fire_CountPendingPhase2() > 0u)) {
+		g_fire.state = FIRE_STATE_WAIT_AUTO;
+	}
+}
+
 static uint8_t Fire_ButtonPressedEvent(uint8_t button_id, uint8_t *latched_flag)
 {
 	ButtonState st = Button_GetState(button_id);
@@ -1182,6 +1223,11 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		Led_ForceStatusBright(LED_FIRE);
 		/* Новый пожар всегда переводит пищалку в сигнальный непрерывный режим */
 		Fire_BeeperEnterAlert();
+		if (PPKYConfig.fire_mode == 2u) {
+			/* В ручном режиме пожар сразу обрабатывается как "ОСТАНОВ ПУСКА". */
+			Fire_EnterManualStop(now_ms, 0u);
+			fire_processed = 1u;
+		}
 		break;
 	case FIRE_EVENT_REPLY_FIRE:
 		g_fire.reply_received = 1u;
@@ -1270,20 +1316,10 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 			}
 #endif
 			uint8_t manual_mode_initial = (PPKYConfig.fire_mode == 2u) ? 1u : 0u;
-		PPKYConfig.fire_mode = 2u;
-		g_fire.zone_countdown_stopped = 1u;
-		g_fire.start_launch_pressed_latched = 0u;
-		g_fire.stop_launch_pressed_latched = 1u;
-		g_fire.stop_text_blink_until_ms = manual_mode_initial ? 0u : (now_ms + (FIRE_STOP_TEXT_BLINK_PERIOD_MS * 3u));
-		Fire_SendStopAllMcus();
-		g_fire.all_hold_active = 0u;
-		g_fire.all_hold_ms = 0u;
-		g_fire.btn_start_all_hold_latched = 0u;
-		Fire_StartAllHoldSoundOff();
-		if (Fire_CountPendingPhase2() > 0u) {
-			g_fire.state = FIRE_STATE_WAIT_MANUAL;
-		}
-		fire_processed = 1u;
+			PPKYConfig.fire_mode = 2u;
+			g_fire.last_fire_mode = 2u;
+			Fire_EnterManualStop(now_ms, manual_mode_initial ? 0u : 1u);
+			fire_processed = 1u;
 		}
 		break;
 	case FIRE_EVENT_TICK_1MS:
@@ -1425,6 +1461,7 @@ void Fire_Init(void)
 	Led_Set(LED_STR_START_ALL, 1u);
 	g_fire.start_all_is_bright = 0u;
 	g_fire.last_ui_nzones = 0u;
+	g_fire.last_fire_mode = PPKYConfig.fire_mode;
 	g_fire_ui_manual_select_enabled = 0u;
 	g_fire_ui_selected_index = 0u;
 }
@@ -1434,6 +1471,7 @@ void Fire_Timer1ms(void)
 {
 	/* 1мс-путь: крутит FSM при активном сценарии или удержании ПУСК ОБЩИЙ. */
 	uint32_t now = HAL_GetTick();
+	Fire_ApplyFireModePolicy(now);
 	Fire_RetryProcess(now);
 	if (g_fire.state == FIRE_STATE_IDLE && !Fire_AnyActiveSlot() && !g_fire.all_hold_active) {
 		return;

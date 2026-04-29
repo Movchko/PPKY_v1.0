@@ -42,6 +42,9 @@
     <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerScrollTimeBase.cpp"/>
     <ClCompile Include="..\..\gui\src\containers\CustomContainerSollText.cpp"/>
     <ClCompile Include="..\..\generated\gui_generated\src\containers\CustomContainerSollTextBase.cpp"/>
+    <ClCompile Include="..\..\gui\src\screen_devices_screen\screen_devicesPresenter.cpp"/>
+    <ClCompile Include="..\..\gui\src\screen_devices_screen\screen_devicesView.cpp"/>
+    <ClCompile Include="..\..\generated\gui_generated\src\screen_devices_screen\screen_devicesViewBase.cpp"/>
   </ItemGroup>
   <ItemGroup>
     <None Include="$(ApplicationRoot)\assets\texts\texts.xml"/>
@@ -213,6 +216,9 @@
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerScrollTimeBase.hpp"/>
     <ClInclude Include="..\..\gui\include\gui\containers\CustomContainerSollText.hpp"/>
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\CustomContainerSollTextBase.hpp"/>
+    <ClInclude Include="..\..\gui\include\gui\screen_devices_screen\screen_devicesPresenter.hpp"/>
+    <ClInclude Include="..\..\gui\include\gui\screen_devices_screen\screen_devicesView.hpp"/>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screen_devices_screen\screen_devicesViewBase.hpp"/>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="$(ApplicationRoot)\generated\simulator\touchgfx.rc"/>
