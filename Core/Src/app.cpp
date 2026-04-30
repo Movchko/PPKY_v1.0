@@ -58,6 +58,9 @@ uint8_t uart_send_buf[32] = {0};
 
 extern UART_HandleTypeDef huart2;
 
+RTC_TimeTypeDef cur_time = {0};
+RTC_DateTypeDef cur_date;
+
 static void AddrAuto_ClearActiveDevices(void) {
 	memset(g_active_devices, 0, sizeof(g_active_devices));
 	g_active_devices_count = 0;
@@ -210,15 +213,10 @@ void CommandCB(uint8_t Dev, uint8_t Command, uint8_t *Parameters) {
 static void UartSendPpkyTime(void) {
 	// Формат: "PPKY " + 6 цифр BCD (HHMMSS) + "\r\n"
 	// Системное время берём из RTC
-	RTC_TimeTypeDef now_time;
-	if (HAL_RTC_GetTime(&hrtc, &now_time, RTC_FORMAT_BCD) != HAL_OK) {
-		return;
-	}
-
 	// BCD поля RTC: 0x23 → "23"
-	uint8_t h = now_time.Hours;
-	uint8_t m = now_time.Minutes;
-	uint8_t s = now_time.Seconds;
+	uint8_t h = cur_time.Hours;
+	uint8_t m = cur_time.Minutes;
+	uint8_t s = cur_time.Seconds;
 
 	uint8_t buf[16];
 	buf[0] = 'P';
@@ -259,6 +257,24 @@ void AppSetStatus() {
 	};
 	/* Dev=0 — сама плата ППКУ, отправляем через backend */
 	SendMessage(0, 0, status_data, SEND_NOW, BUS_CAN12);
+
+	if (HAL_RTC_GetTime(&hrtc, &cur_time, RTC_FORMAT_BCD) != HAL_OK) {
+			return;
+	}
+	if (HAL_RTC_GetDate(&hrtc, &cur_date, RTC_FORMAT_BCD) != HAL_OK) {
+			return;
+	}
+	uint8_t date[7] = {
+			cur_time.Hours,
+			cur_time.Minutes,
+			cur_time.Seconds,
+			cur_date.Year,
+			cur_date.Month,
+			cur_date.Date,
+			0
+	};
+
+	SendMessage(0, ServiceCmd_SetSystemTime, date, SEND_NOW, BUS_CAN12);
 
 	// Параллельно раз в секунду шлём время ППКУ по UART
 	UartSendPpkyTime();
@@ -547,6 +563,7 @@ void PControlSetOutCB(uint8_t ch, uint8_t out) {
 	HAL_GPIO_WritePin(POWER_OUT_PORT[ch], POWER_OUT_PIN[ch], (GPIO_PinState)out);
 }
 
+static volatile uint32_t sizesctruct;
 void AppInit() {
 
 	// Чтение сохранённой конфигурации из Flash (область конфигурации)
@@ -633,6 +650,13 @@ void AppInit() {
 
 	/* Инициализация FSM пожара */
 	Fire_Init();
+
+
+
+	PPKYConfig.fire_and[0] = 1;
+	PPKYConfig.fire_and[1] = 1;
+	sizesctruct = sizeof(PPKYConfig);
+
 }
 
 extern "C" void PControl_OnStatusFault(uint8_t ch, uint32_t now_ms) {
