@@ -31,6 +31,7 @@ typedef struct {
 	uint32_t last_seen_ms;
 	uint8_t online;
 	uint8_t can_status_mask; /* маска активности CAN (из статуса МКУ cmd=0) */
+	uint8_t can_state_mask;  /* bits[1:0]=CAN0 state, bits[3:2]=CAN1 state */
 	uint8_t can_status_valid; /* 1 после первого валидного статуса МКУ cmd=0 */
 	uint8_t u24_01v;         /* измеренное U24 (0.1V), из статуса МКУ cmd=0 */
 

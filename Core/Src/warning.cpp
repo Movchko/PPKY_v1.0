@@ -26,6 +26,7 @@ enum FaultSoundPhase : uint8_t {
 	FAULT_SOUND_PERIODIC
 };
 static uint8_t g_power_fault_mask = 0u;
+static uint8_t g_ppku_input_fault_mask = 0u;
 static FaultSoundPhase g_fault_sound_phase = FAULT_SOUND_IDLE;
 static uint32_t g_fault_sound_deadline_ms = 0u;
 
@@ -93,7 +94,7 @@ static const char* Warning_McuTypeSerialToken(uint8_t d_type)
 static const char* Warning_ChannelTypeShort(uint8_t v_d_type)
 {
 	switch (v_d_type) {
-	case DEVICE_DPT_TYPE: return "ДПТ";
+	case DEVICE_DPT_TYPE: return "ВЫХОД";
 	case DEVICE_IGNITER_TYPE: return "СП";
 	/* Отдельного DT-типа в текущих статусах нет, оставляем задел под расширение. */
 	default: return "???";
@@ -253,7 +254,9 @@ static uint8_t IsItemStillFaulty(const WarningItem& it)
 				if (!m->can_status_valid) {
 					return 0u;
 				}
-				return ((m->can_status_mask & (1u << (it.can_idx - 1u))) == 0u) ? 1u : 0u;
+				uint8_t shift = (uint8_t)((it.can_idx - 1u) * 2u);
+				uint8_t can_state = (uint8_t)((m->can_state_mask >> shift) & 0x3u);
+				return (can_state == 1u || can_state == 2u) ? 1u : 0u;
 			}
 		}
 	}
@@ -344,7 +347,7 @@ static void SyncMissingFaultItems(uint32_t now_ms)
 	}
 }
 
-/* Добавляет/снимает предупреждения об обрыве CAN у МКУ по can_status_mask. */
+/* Добавляет/снимает предупреждения о КЗ/обрыве CAN у МКУ по can_state_mask. */
 static void SyncMkuCanFaultItems(uint32_t now_ms)
 {
 	for (uint8_t mi = 0u; mi < g_active_devices_count; mi++) {
@@ -353,9 +356,12 @@ static void SyncMkuCanFaultItems(uint32_t now_ms)
 			continue;
 		}
 		for (uint8_t can_idx = 1u; can_idx <= 2u; can_idx++) {
-			uint8_t bit = (uint8_t)(1u << (can_idx - 1u));
-			if ((m->can_status_mask & bit) == 0u) {
-				UpsertItem(1u, m->dev.zone, m->dev.h_adr, 0u, m->dev.d_type, 0u, 1u, can_idx, now_ms);
+			uint8_t shift = (uint8_t)((can_idx - 1u) * 2u);
+			uint8_t can_state = (uint8_t)((m->can_state_mask >> shift) & 0x3u);
+			if (can_state == 1u || can_state == 2u) {
+				/* В WarningItem line_state: 1=обрыв, 2=КЗ. В heartbeat: 1=КЗ, 2=обрыв. */
+				uint8_t line_state = (can_state == 1u) ? 2u : 1u;
+				UpsertItem(1u, m->dev.zone, m->dev.h_adr, 0u, m->dev.d_type, 0u, line_state, can_idx, now_ms);
 			} else {
 				/* Для CAN-линий МКУ снимаем предупреждение сразу при восстановлении. */
 				int idx = FindItem(1u, m->dev.zone, m->dev.h_adr, 0u, m->dev.d_type, 0u, can_idx);
@@ -393,8 +399,16 @@ static uint8_t BuildUiPayload(char (*big_titles)[WARN_TITLE_LEN], char (*details
 		if ((g_power_fault_mask & (1u << ch)) == 0u) {
 			continue;
 		}
-		snprintf(big_titles[count], WARN_TITLE_LEN, "АВАРИЯ_%u", (unsigned)(ch + 1u));
-		snprintf(details[count], ZONE_NAME_SIZE + 1, "ПИТАНИЕ ВВОД %u", (unsigned)(ch + 1u));
+		snprintf(big_titles[count], WARN_TITLE_LEN, "ВЫХОД %u", (unsigned)(ch + 1u));
+		snprintf(details[count], ZONE_NAME_SIZE + 1, "ППКУ S/N 123456789");
+		count++;
+	}
+	for (uint8_t ch = 0u; ch < 2u && count < WARN_MAX_ITEMS; ch++) {
+		if ((g_ppku_input_fault_mask & (1u << ch)) == 0u) {
+			continue;
+		}
+		snprintf(big_titles[count], WARN_TITLE_LEN, "ПИТАНИЕ %u", (unsigned)(ch + 1u));
+		snprintf(details[count], ZONE_NAME_SIZE + 1, "ППКУ S/N 123456789");
 		count++;
 	}
 
@@ -442,13 +456,14 @@ static uint8_t BuildUiPayload(char (*big_titles)[WARN_TITLE_LEN], char (*details
 				 Warning_ChannelTypeShort(it.v_d_type), (unsigned)it.v_l_adr);
 			Warning_FormatMkuAndSerial(details[count], ZONE_NAME_SIZE + 1, it);
 		} else if (it.kind == 1u) {
-			snprintf(big_titles[count], WARN_TITLE_LEN, "ОБРЫВ CAN%u", (unsigned)it.can_idx);
+			const char* fault = (it.line_state == 2u) ? "КЗ" : "ОБРЫВ";
+			snprintf(big_titles[count], WARN_TITLE_LEN, "%s CAN%u", fault, (unsigned)it.can_idx);
 			Warning_FormatMkuAndSerial(details[count], ZONE_NAME_SIZE + 1, it);
 		} else {
 			snprintf(big_titles[count], WARN_TITLE_LEN, "ОБРЫВ CAN%u", (unsigned)it.can_idx);
-			char serial[24];
-			Warning_GetSerialPlaceholder(it, serial, sizeof(serial));
-			snprintf(details[count], ZONE_NAME_SIZE + 1, "ППКУ %s", serial);
+
+			//Warning_GetSerialPlaceholder(it, serial, sizeof(serial));
+			snprintf(details[count], ZONE_NAME_SIZE + 1, "ППКУ S/N 123456789");
 		}
 		count++;
 	}
@@ -458,7 +473,7 @@ static uint8_t BuildUiPayload(char (*big_titles)[WARN_TITLE_LEN], char (*details
 /* Есть ли сейчас хотя бы одна активная (не восстановленная) неисправность. */
 static uint8_t HasActiveFaultNow(void)
 {
-	if (g_power_fault_mask != 0u) {
+	if (g_power_fault_mask != 0u || g_ppku_input_fault_mask != 0u) {
 		return 1u;
 	}
 	for (uint8_t i = 0u; i < WARN_MAX_ITEMS; i++) {
@@ -475,6 +490,13 @@ static uint8_t CountActiveFaultNow(void)
 	if (g_power_fault_mask != 0u) {
 		for (uint8_t i = 0u; i < 2u; i++) {
 			if ((g_power_fault_mask & (1u << i)) != 0u) {
+				count++;
+			}
+		}
+	}
+	if (g_ppku_input_fault_mask != 0u) {
+		for (uint8_t i = 0u; i < 2u; i++) {
+			if ((g_ppku_input_fault_mask & (1u << i)) != 0u) {
 				count++;
 			}
 		}
@@ -604,6 +626,11 @@ void WarningProcess1ms(void)
 extern "C" void Warning_SetPowerFaultMask(uint8_t mask)
 {
 	g_power_fault_mask = (uint8_t)(mask & 0x03u);
+}
+
+extern "C" void Warning_SetPpkuInputFaultMask(uint8_t mask)
+{
+	g_ppku_input_fault_mask = (uint8_t)(mask & 0x03u);
 }
 
 extern "C" uint8_t Warning_HasActiveFault(void)

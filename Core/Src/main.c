@@ -342,6 +342,9 @@ int main(void)
   uint8_t isFlash = 0;
   isFlash = SPIF_Init(&hFlash, &hspi1, FLASH_CS_GPIO_Port, FLASH_CS_Pin);
   //TODO:: вывести ошибку FLASH на экран, критичная неисправность
+  /*
+   * при этом мы блокируеем работу всех функций, только пищим и пишем на экране
+   */
 
   HAL_ADC_Start_DMA(&hadc1, ADC_VAL, NUM_ADC_CHANNEL);
 

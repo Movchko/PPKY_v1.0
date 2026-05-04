@@ -317,6 +317,7 @@ static void UpdateActiveDeviceList(uint32_t msg_id, uint32_t now_ms) {
 		g_active_devices[g_active_devices_count].last_seen_ms = now_ms;
 		g_active_devices[g_active_devices_count].online = 1;
 		g_active_devices[g_active_devices_count].can_status_mask = 0u;
+		g_active_devices[g_active_devices_count].can_state_mask = 0u;
 		g_active_devices[g_active_devices_count].can_status_valid = 0u;
 		g_active_devices[g_active_devices_count].u24_01v = 0u;
 		g_active_devices[g_active_devices_count].vdev_count = 0u;
@@ -331,6 +332,7 @@ static void RefreshActiveDevices(uint32_t now_ms) {
 		    (now_ms - g_active_devices[i].last_seen_ms) > 5000u) {
 			g_active_devices[i].online = 0;
 			g_active_devices[i].can_status_mask = 0u;
+			g_active_devices[i].can_state_mask = 0u;
 			g_active_devices[i].can_status_valid = 0u;
 			g_active_devices[i].u24_01v = 0u;
 			g_active_devices[i].vdev_count = 0u;
@@ -395,8 +397,11 @@ static void UpdateMcuCanStatus(uint32_t MsgID, uint8_t *MsgData) {
 	 * В Data[4] находится CAN mask (CAN1_Active | CAN2_Active<<1)
 	 * => MsgData[5]
 	 * В Data[5] находится U24 (0.1V)
-	 * => MsgData[6] */
+	 * => MsgData[6]
+	 * В Data[6] находится CAN state mask (2 бита на шину)
+	 * => MsgData[7] */
 	g_active_devices[idx].can_status_mask = MsgData[5];
+	g_active_devices[idx].can_state_mask = MsgData[7];
 	g_active_devices[idx].can_status_valid = 1u;
 	g_active_devices[idx].u24_01v = MsgData[6];
 }
@@ -686,7 +691,23 @@ uint32_t warning_process_delay = 5000;
 static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 {
 	static uint8_t prev_power_fault_mask = 0u;
-	uint8_t power_fault_mask = 0u;
+	uint8_t power_fault_mask = 0u;       /* Ошибки выходов power-модуля (внешнее питание МКУ). */
+	uint8_t ppku_input_fault_mask = 0u;  /* Ошибки входов питания ППКУ. */
+
+	/* Для "пропадания питания" используем порог присутствия 20% от номинала. */
+	uint32_t nominal_mv = ((PPKYConfig.power_value != 0u) ? (uint32_t)PPKYConfig.power_value : 24u) * 1000u;
+	uint32_t present_threshold_mv = nominal_mv / 5;
+	uint32_t main_mv = (CHANNEL_VAL[4] > 0) ? (uint32_t)CHANNEL_VAL[4] : 0u; /* Основной ввод */
+	uint32_t reserve_mv = (CHANNEL_VAL[0] > 0) ? (uint32_t)CHANNEL_VAL[0] : 0u; /* Резервный ввод */
+	uint8_t reserve_required = (PPKYConfig.power_input == 0u) ? 1u : 0u; /* 0 = используем оба ввода */
+
+	if (main_mv < present_threshold_mv) {
+		ppku_input_fault_mask |= 0x01u; /* ПИТАНИЕ 1 */
+	}
+	if (reserve_required && reserve_mv < present_threshold_mv) {
+		ppku_input_fault_mask |= 0x02u; /* ПИТАНИЕ 2 */
+	}
+
 	for (uint8_t i = 0u; i < 2u; i++) {
 		if (Power[i] != nullptr && Power[i]->IsError()) {
 			power_fault_mask |= (uint8_t)(1u << i);
@@ -697,23 +718,13 @@ static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 	}
 	prev_power_fault_mask = power_fault_mask;
 	Warning_SetPowerFaultMask(power_fault_mask);
+	Warning_SetPpkuInputFaultMask(ppku_input_fault_mask);
 
-	static uint32_t led_power_toggle_ms = 0u;
-	static uint8_t led_power_on = 1u;
-	if (power_fault_mask != 0u) {
-		if ((now_ms - led_power_toggle_ms) >= 500u) {
-			led_power_toggle_ms = now_ms;
-			led_power_on = (uint8_t)!led_power_on;
-		}
-		Led_Set(LED_POWER, led_power_on);
-		Led_Set(LED_ERR, 1u);
-	} else {
-		led_power_on = 1u;
-		led_power_toggle_ms = now_ms;
-		Led_Set(LED_POWER, 1u);
-	}
+	/* При отсутствии основного ввода индикатор питания должен гаснуть. */
+	Led_Set(LED_POWER, ((ppku_input_fault_mask & 0x01u) != 0u) ? 0u : 1u);
 
-	uint8_t has_fault = (power_fault_mask != 0u) ? 1u : Warning_HasActiveFault();
+	uint8_t has_fault = (power_fault_mask != 0u || ppku_input_fault_mask != 0u) ? 1u : Warning_HasActiveFault();
+	Led_Set(LED_ERR, has_fault ? 1u : 0u);
 	if (!has_fault && !Fire_IsActive()) {
 		Led_Set(LED_NORM, 1u);
 	} else {
