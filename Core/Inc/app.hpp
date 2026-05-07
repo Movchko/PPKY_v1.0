@@ -15,6 +15,8 @@
 #define FLASH_CFG_SECTORS_USED  24
 #define NUM_ACTIVE_DEVICE 32
 
+#define RTC_PING_PERIOD_S 60000u
+
 void FillConfigTemplate(void);
 void ReadSavedConfig(void);
 

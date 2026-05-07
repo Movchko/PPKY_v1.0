@@ -7,10 +7,12 @@
 #include "device_config.h"
 #include "button.h"
 #include "fire.h"
+#include "led.h"
 
 namespace {
 
 constexpr uint32_t FIRE_NAME_HOLD_MS = 3000u;
+constexpr uint32_t MAIN_NAV_AUTO_RETURN_MS = (uint32_t)LED_BUT_IDLE_TIMEOUT_TICKS * 10u;
 
 enum FireNamePhase : uint8_t {
 	PH_IDLE = 0,
@@ -43,6 +45,8 @@ char s_top_header_text[24] = {0};
 uint8_t s_fire_manual_select = 0u;
 uint8_t s_warning_manual_select = 0u;
 uint8_t s_fire_mode = 0u;
+uint32_t s_fire_nav_last_press_ms = 0u;
+uint32_t s_warning_nav_last_press_ms = 0u;
 
 static void fire_copy_list(uint8_t n, char (*src)[ZONE_NAME_SIZE + 1])
 {
@@ -121,6 +125,8 @@ void mainscreenView::setupScreen()
     ui_set_warning_header_visible(this, false);
     s_fire_manual_select = 0u;
     s_warning_manual_select = 0u;
+    s_fire_nav_last_press_ms = 0u;
+    s_warning_nav_last_press_ms = 0u;
     Fire_UiSetManualSelection(0u, 0u);
 #endif
 }
@@ -230,6 +236,33 @@ void mainscreenView::SetTime(uint32_t time) {
 
 };
 
+void mainscreenView::handleTickEvent()
+{
+	mainscreenViewBase::handleTickEvent();
+#ifndef SIMULATOR
+	uint32_t now = HAL_GetTick();
+	if (s_fire_manual_select &&
+	    s_fire_nav_last_press_ms != 0u &&
+	    (now - s_fire_nav_last_press_ms) >= MAIN_NAV_AUTO_RETURN_MS) {
+		s_fire_manual_select = 0u;
+		Fire_UiSetManualSelection(0u, 0u);
+		s_fn_ph = PH_IDLE;
+		s_fn_hold_from = 0u;
+		s_fire_nav_last_press_ms = 0u;
+		fireShowCurrentZone();
+	}
+	if (s_warning_manual_select &&
+	    s_warning_nav_last_press_ms != 0u &&
+	    (now - s_warning_nav_last_press_ms) >= MAIN_NAV_AUTO_RETURN_MS) {
+		s_warning_manual_select = 0u;
+		s_wn_ph = PH_IDLE;
+		s_wn_hold_from = 0u;
+		s_warning_nav_last_press_ms = 0u;
+		warningShowCurrent();
+	}
+#endif
+}
+
 void mainscreenView::uiSetWarningHeaderVisible(bool visible)
 {
 	bool cur = textAreatime_top_bar.isVisible();
@@ -280,6 +313,7 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 	s_fire_mode = mode;
 	if (active) {
 		s_warning_manual_select = 0u;
+		s_warning_nav_last_press_ms = 0u;
 		if (mode == 1u) {
 			ui_set_warning_header_visible(this, true);
 			uiSetTopHeaderText("ДО ПУСКА");
@@ -295,6 +329,7 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 
 	if (!active) {
 		s_fire_manual_select = 0u;
+		s_fire_nav_last_press_ms = 0u;
 		Fire_UiSetManualSelection(0u, 0u);
 		lastActive = (uint8_t)active;
 		lastMode = mode;
@@ -389,12 +424,15 @@ void mainscreenView::updateWarningStatus(bool active, uint8_t nItems, char (*big
 					 char (*details)[ZONE_NAME_SIZE + 1])
 {
 	if (fireUiActive) {
+		s_warning_manual_select = 0u;
+		s_warning_nav_last_press_ms = 0u;
 		return;
 	}
 	uint32_t now = HAL_GetTick();
 
 	if (!active || nItems == 0u) {
 		s_warning_manual_select = 0u;
+		s_warning_nav_last_press_ms = 0u;
 		s_wn_n = 0u;
 		s_wn_ph = PH_IDLE;
 		s_wn_hold_from = 0u;
@@ -481,6 +519,7 @@ void mainscreenView::handleMainNavButton(uint8_t but)
 			Fire_UiSetManualSelection(0u, 0u);
 			s_fn_ph = PH_IDLE;
 			s_fn_hold_from = 0u;
+			s_fire_nav_last_press_ms = 0u;
 			fireShowCurrentZone();
 			return;
 		}
@@ -488,6 +527,7 @@ void mainscreenView::handleMainNavButton(uint8_t but)
 			s_warning_manual_select = 0u;
 			s_wn_ph = PH_IDLE;
 			s_wn_hold_from = 0u;
+			s_warning_nav_last_press_ms = 0u;
 			warningShowCurrent();
 			return;
 		}
@@ -507,6 +547,7 @@ void mainscreenView::handleMainNavButton(uint8_t but)
 		} else {
 			s_fn_cur = (uint8_t)((s_fn_cur == 0u) ? (s_fn_n - 1u) : (s_fn_cur - 1u));
 		}
+		s_fire_nav_last_press_ms = HAL_GetTick();
 		Fire_UiSetManualSelection(1u, s_fn_cur);
 		fireShowCurrentZone();
 		return;
@@ -521,6 +562,7 @@ void mainscreenView::handleMainNavButton(uint8_t but)
 		} else {
 			s_wn_cur = (uint8_t)((s_wn_cur == 0u) ? (s_wn_n - 1u) : (s_wn_cur - 1u));
 		}
+		s_warning_nav_last_press_ms = HAL_GetTick();
 		warningShowCurrent();
 	}
 }

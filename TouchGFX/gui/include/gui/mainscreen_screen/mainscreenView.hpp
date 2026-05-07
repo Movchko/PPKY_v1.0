@@ -15,6 +15,7 @@ public:
     virtual ~mainscreenView() {}
     virtual void setupScreen();
     virtual void tearDownScreen();
+    virtual void handleTickEvent() override;
 
     /**
      * Передать текущее время/дату в контейнер часов.

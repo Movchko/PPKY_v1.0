@@ -343,10 +343,10 @@ int main(void)
   isFlash = SPIF_Init(&hFlash, &hspi1, FLASH_CS_GPIO_Port, FLASH_CS_Pin);
   //TODO:: вывести ошибку FLASH на экран, критичная неисправность
   /*
-   * при этом мы блокируеем работу всех функций, только пищим и пишем на экране
+   * при этом мы блокируеем работу всех функций (пожара), только пищим и пишем на экране критическая ошибка
    */
 
-  HAL_ADC_Start_DMA(&hadc1, ADC_VAL, NUM_ADC_CHANNEL);
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t *)ADC_VAL, NUM_ADC_CHANNEL);
 
   /* USER CODE END 2 */
 
@@ -363,10 +363,14 @@ int main(void)
   MX_TouchGFX_Process();
   TGFX_SignalVSync();
 
-  AppInit();
+  if(isFlash == true) {
+	  AppInit();
 
-  HAL_TIM_Base_Start_IT(&htim1);
-  HAL_TIM_Base_Start_IT(&htim2);
+	  HAL_TIM_Base_Start_IT(&htim1);
+	  HAL_TIM_Base_Start_IT(&htim2);
+  } else {
+
+  }
 
   isMainInit = 1;
 
@@ -399,18 +403,19 @@ int main(void)
 	 if(is1ms) {
 		 is1ms--;
 		 AppTimer1ms();
-
 	 }
+
 	 if(is10ms) {
 		 is10ms--;
 		 AppTimer10ms();
 	 }
+
 	 CanProcess();
 	 App_CanTxProcess();
 
 	 /* Раз в минуту сохраняем текущую дату/время в свободный BKP-регистр RTC.
 	  * Формат хранения: 0xMMDDHHmm (BCD) в RTC_BKP_DR1. */
-	 if ((cur_tick - last_rtc_bkp_tick) >= 60000u) {
+	 if ((cur_tick - last_rtc_bkp_tick) >= RTC_PING_PERIOD_S) {
 		 last_rtc_bkp_tick = cur_tick;
 
 		 RTC_TimeTypeDef rtc_time;
