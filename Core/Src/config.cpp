@@ -170,7 +170,7 @@ void FillConfigTemplate(void) {
 
 		if (mcu_type[i] == DEVICE_MCU_IGN_TYPE) {
 			m->VDtype[0] = DT_IGN;
-			m->VDtype[1] = DT_DPT;
+			//m->VDtype[1] = DT_DPT;
 		} else {
 			m->VDtype[0] = DT_DPT;
 		}
@@ -187,6 +187,11 @@ void FillConfigTemplate(void) {
 	/* Восстанавливаем ID ППКУ и beep */
 	//PPKYConfig.UId = ppky_uid;
 	//PPKYConfig.beep = ppky_beep;
+}
+
+void ResetConfig() {
+	// Установка конфигурации по умолчанию в локальный буфер (PPKYConfig)
+	memset(&PPKYConfig, 0, sizeof(PPKYConfig));
 }
 
 void DefaultConfig() {
