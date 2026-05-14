@@ -15,31 +15,32 @@ extern "C" {
 #include "main.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include "sound_profiles.h"
 
 /***********************************************************************************************************/
 /* Константы длительностей (в единицах вызова process, т.е. в 10мс) */
 /***********************************************************************************************************/
 
-#define BEEPER_SHORT_BEEP_DURATION     10   // Короткое пищание: 100мс (10 * 10мс)
-#define BEEPER_LONG_BEEP_DURATION      130  // Длинное пищание: 1300мс (130 * 10мс)
-#define BEEPER_PAUSE_DURATION          20   // Пауза между пищаниями: 200мс (20 * 10мс)
+#define BEEPER_SHORT_BEEP_DURATION     (SOUND_BUTTON_ACK_ON_MS / 10u)
+#define BEEPER_LONG_BEEP_DURATION      (SOUND_ONE_SHOT_LONG_ON_MS / 10u)
+#define BEEPER_PAUSE_DURATION          (SOUND_ONE_SHOT_PAUSE_MS / 10u)
 
 /* Согласованные паттерны звуковой индикации (ms) */
-#define BEEPER_PATTERN_FAULT_ON_MS        10u
-#define BEEPER_PATTERN_FAULT_OFF_MS       50u
-#define BEEPER_PATTERN_FAULT_PULSES       2u
-#define BEEPER_PATTERN_FAULT_REPEAT_MS    10000u
+#define BEEPER_PATTERN_FAULT_ON_MS        SOUND_FAULT_DUTY_ON_MS
+#define BEEPER_PATTERN_FAULT_OFF_MS       SOUND_FAULT_DUTY_OFF_MS
+#define BEEPER_PATTERN_FAULT_PULSES       SOUND_FAULT_DUTY_PULSES
+#define BEEPER_PATTERN_FAULT_REPEAT_MS    SOUND_FAULT_DUTY_REPEAT_MS
 
-#define BEEPER_PATTERN_START_ON_MS        200u
-#define BEEPER_PATTERN_START_OFF_MS       200u
-#define BEEPER_PATTERN_START_PULSES       1u
+#define BEEPER_PATTERN_START_ON_MS        SOUND_START_DUTY_ON_MS
+#define BEEPER_PATTERN_START_OFF_MS       SOUND_START_DUTY_OFF_MS
+#define BEEPER_PATTERN_START_PULSES       SOUND_START_DUTY_PULSES
 /* Тушение: короткие частые пищания */
-#define BEEPER_PATTERN_START_REPEAT_MS    100u
+#define BEEPER_PATTERN_START_REPEAT_MS    SOUND_START_DUTY_REPEAT_MS
 
-#define BEEPER_PATTERN_FIRE_ON_MS         70u
-#define BEEPER_PATTERN_FIRE_OFF_MS        50u
-#define BEEPER_PATTERN_FIRE_PULSES        1u
-#define BEEPER_PATTERN_FIRE_REPEAT_MS     10000u
+#define BEEPER_PATTERN_FIRE_ON_MS         SOUND_FIRE_DUTY_ON_MS
+#define BEEPER_PATTERN_FIRE_OFF_MS        SOUND_FIRE_DUTY_OFF_MS
+#define BEEPER_PATTERN_FIRE_PULSES        SOUND_FIRE_DUTY_PULSES
+#define BEEPER_PATTERN_FIRE_REPEAT_MS     SOUND_FIRE_DUTY_REPEAT_MS
 
 /***********************************************************************************************************/
 /* Прототипы функций */

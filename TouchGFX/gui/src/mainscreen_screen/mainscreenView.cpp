@@ -38,6 +38,7 @@ UiBannerMode s_banner_mode = BANNER_NONE;
 uint8_t s_wn_n = 0;
 char s_wn_titles[16][WARNING_TITLE_LEN];
 char s_wn_details[16][ZONE_NAME_SIZE + 1];
+uint8_t s_wn_is_attention[16] = {0u};
 uint8_t s_wn_cur = 0;
 FireNamePhase s_wn_ph = PH_IDLE;
 uint32_t s_wn_hold_from = 0;
@@ -170,9 +171,12 @@ void mainscreenView::fireShowCurrentZone()
 	s_banner_mode = BANNER_FIRE;
 	if (s_fire_manual_select) {
 		/* В ручном выборе пожара верхняя строка должна быть как в штатном режиме пожара. */
-		if (s_fire_mode == 1u) {
+		if (s_fire_mode == 1u || s_fire_mode == 5u) {
 			ui_set_warning_header_visible(this, true);
-			uiSetTopHeaderText("ДО ПУСКА");
+			uiSetTopHeaderText((s_fire_mode == 5u) ? "ПАУЗА" : "ДО ПУСКА");
+		} else if (s_fire_mode == 6u) {
+			ui_set_warning_header_visible(this, true);
+			uiSetTopHeaderText("");
 		} else {
 			ui_set_warning_header_visible(this, false);
 		}
@@ -280,7 +284,11 @@ void mainscreenView::uiSetWarningHeaderVisible(bool visible)
 void mainscreenView::uiUpdateWarningHeader(uint8_t cur_idx, uint8_t total)
 {
 	char hdr[24];
-	snprintf(hdr, sizeof(hdr), "АВАРИЯ %u/%u", (unsigned)cur_idx, (unsigned)total);
+	if (s_wn_n > 0u && s_wn_cur < s_wn_n && s_wn_is_attention[s_wn_cur]) {
+		snprintf(hdr, sizeof(hdr), "ВНИМАНИЕ");
+	} else {
+		snprintf(hdr, sizeof(hdr), "АВАРИЯ %u/%u", (unsigned)cur_idx, (unsigned)total);
+	}
 	uiSetTopHeaderText(hdr);
 }
 
@@ -314,9 +322,12 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 	if (active) {
 		s_warning_manual_select = 0u;
 		s_warning_nav_last_press_ms = 0u;
-		if (mode == 1u) {
+		if (mode == 1u || mode == 5u) {
 			ui_set_warning_header_visible(this, true);
-			uiSetTopHeaderText("ДО ПУСКА");
+			uiSetTopHeaderText((mode == 5u) ? "ПАУЗА" : "ДО ПУСКА");
+		} else if (mode == 6u) {
+			ui_set_warning_header_visible(this, true);
+			uiSetTopHeaderText("");
 		} else if (s_banner_mode != BANNER_WARNING) {
 			ui_set_warning_header_visible(this, false);
 		}
@@ -376,8 +387,10 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 		}
 		// 10 символов
 		char buf[32];
-		if (mode == 1u) {
+		if (mode == 1u || mode == 5u) {
 			snprintf(buf, sizeof(buf), "%uС", (unsigned)remaining_s);
+		} else if (mode == 6u) {
+			snprintf(buf, sizeof(buf), "ПОЖАР1");
 		} else if (mode == 2u) {
 			snprintf(buf, sizeof(buf), "ТУШЕНИЕ");
 									//  1234567890
@@ -434,6 +447,7 @@ void mainscreenView::updateWarningStatus(bool active, uint8_t nItems, char (*big
 		s_warning_manual_select = 0u;
 		s_warning_nav_last_press_ms = 0u;
 		s_wn_n = 0u;
+		memset(s_wn_is_attention, 0, sizeof(s_wn_is_attention));
 		s_wn_ph = PH_IDLE;
 		s_wn_hold_from = 0u;
 		if (s_banner_mode == BANNER_WARNING) {
@@ -458,7 +472,11 @@ void mainscreenView::updateWarningStatus(bool active, uint8_t nItems, char (*big
 	bool changed = (nItems != s_wn_n);
 	if (!changed) {
 		for (uint8_t i = 0u; i < nItems && !changed; i++) {
-			if (std::strncmp(s_wn_titles[i], bigTitles[i], WARNING_TITLE_LEN) != 0 ||
+			const char* src_title = bigTitles[i];
+			if (((uint8_t)bigTitles[i][0]) == 0x01u) {
+				src_title = &bigTitles[i][1];
+			}
+			if (std::strncmp(s_wn_titles[i], src_title, WARNING_TITLE_LEN) != 0 ||
 			    std::strncmp(s_wn_details[i], details[i], ZONE_NAME_SIZE + 1) != 0) {
 				changed = true;
 			}
@@ -472,7 +490,11 @@ void mainscreenView::updateWarningStatus(bool active, uint8_t nItems, char (*big
 		uint8_t keep_found = 0u;
 		if (s_wn_n > 0u && s_wn_cur < s_wn_n) {
 			for (uint8_t i = 0u; i < nItems; i++) {
-				if (std::strncmp(s_wn_titles[s_wn_cur], bigTitles[i], WARNING_TITLE_LEN) == 0 &&
+				const char* src_title = bigTitles[i];
+				if (((uint8_t)bigTitles[i][0]) == 0x01u) {
+					src_title = &bigTitles[i][1];
+				}
+				if (std::strncmp(s_wn_titles[s_wn_cur], src_title, WARNING_TITLE_LEN) == 0 &&
 				    std::strncmp(s_wn_details[s_wn_cur], details[i], ZONE_NAME_SIZE + 1) == 0) {
 					keep_idx = i;
 					keep_found = 1u;
@@ -482,7 +504,13 @@ void mainscreenView::updateWarningStatus(bool active, uint8_t nItems, char (*big
 		}
 		s_wn_n = nItems;
 		for (uint8_t i = 0u; i < s_wn_n; i++) {
-			std::strncpy(s_wn_titles[i], bigTitles[i], WARNING_TITLE_LEN - 1u);
+			const char* src_title = bigTitles[i];
+			s_wn_is_attention[i] = 0u;
+			if (((uint8_t)bigTitles[i][0]) == 0x01u) {
+				s_wn_is_attention[i] = 1u;
+				src_title = &bigTitles[i][1];
+			}
+			std::strncpy(s_wn_titles[i], src_title, WARNING_TITLE_LEN - 1u);
 			s_wn_titles[i][WARNING_TITLE_LEN - 1u] = '\0';
 			std::strncpy(s_wn_details[i], details[i], ZONE_NAME_SIZE);
 			s_wn_details[i][ZONE_NAME_SIZE] = '\0';

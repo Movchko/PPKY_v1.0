@@ -834,7 +834,7 @@ void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 	UpdateActiveVirtualDevices(MsgID, MsgData, now);
 
 	uint8_t Command = MsgData[0];
-	if(Command >= ServiceCmd_Fire_SetStatusFire && Command <= ServiceCmd_Fire_SetReplyStopExtinguishment) {
+	if(Command >= ServiceCmd_Fire_SetStatusFire && Command <= ServiceCmd_Fire_SetReplyResumeExtinguishmentTimer) {
 		if(Command == ServiceCmd_Fire_SetStatusFire) {
 			Fire_OnStatusFire(MsgID);
 		} else if (Command == ServiceCmd_Fire_ReplyStatusFire) {
@@ -845,6 +845,14 @@ void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 			Fire_OnReplyStartExtinguishment(MsgID);
 		} else if (Command == ServiceCmd_Fire_SetReplyStopExtinguishment) {
 			Fire_OnReplyStopExtinguishment(MsgID);
+		} else if (Command == ServiceCmd_Fire_PauseExtinguishmentTimer) {
+			Fire_OnPauseExtinguishmentTimer(MsgID);
+		} else if (Command == ServiceCmd_Fire_ResumeExtinguishmentTimer) {
+			Fire_OnResumeExtinguishmentTimer(MsgID);
+		} else if (Command == ServiceCmd_Fire_SetReplyPauseExtinguishmentTimer) {
+			Fire_OnReplyPauseExtinguishmentTimer(MsgID);
+		} else if (Command == ServiceCmd_Fire_SetReplyResumeExtinguishmentTimer) {
+			Fire_OnReplyResumeExtinguishmentTimer(MsgID);
 		}
 	}
 }
