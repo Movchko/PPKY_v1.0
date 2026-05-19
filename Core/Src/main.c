@@ -27,7 +27,6 @@
 #include "app.hpp"
 #include "led.h"
 #include "can_bus.h"
-#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -103,90 +102,6 @@ uint8_t isMainInit = 0;
 
 uint32_t is1ms = 0;
 uint8_t is10ms = 0;
-FDCAN_TxHeaderTypeDef TxHeader;
-
-/* -------- CAN TX кольцо (аналогично МКУ) -------- */
-typedef struct {
-	uint32_t id;
-	uint8_t  data[8];
-	uint8_t  bus_mask; /* BUS_CAN0/BUS_CAN1 */
-} CanTxEntry;
-
-#define CAN_TX_RING_SIZE 256
-static CanTxEntry can_tx_ring[CAN_TX_RING_SIZE];
-static volatile uint8_t can_tx_head = 0;
-static volatile uint8_t can_tx_tail = 0;
-
-/* forward declaration: используется в App_CanTxProcess ниже */
-static void check_can_bus(FDCAN_HandleTypeDef *hfdcan);
-
-static void CanTxEnqueue(uint32_t id, const uint8_t *data, uint8_t bus_mask)
-{
-	uint8_t next = (uint8_t)(can_tx_head + 1u);
-	if (next >= CAN_TX_RING_SIZE)
-		next = 0u;
-
-	/* Переполнение — затираем самый старый пакет */
-	if (next == can_tx_tail) {
-		can_tx_tail++;
-		if (can_tx_tail >= CAN_TX_RING_SIZE)
-			can_tx_tail = 0u;
-	}
-
-	can_tx_ring[can_tx_head].id = id;
-	can_tx_ring[can_tx_head].bus_mask = bus_mask;
-	for (uint8_t i = 0; i < 8u; i++) {
-		can_tx_ring[can_tx_head].data[i] = data[i];
-	}
-	can_tx_head = next;
-}
-
-void App_CanTxProcess(void)
-{
-	if (isMainInit == 0)
-		return;
-
-	while (can_tx_head != can_tx_tail) {
-		CanTxEntry *e = &can_tx_ring[can_tx_tail];
-
-		uint8_t need_can0 = (e->bus_mask & BUS_CAN0) ? 1u : 0u;
-		uint8_t need_can1 = (e->bus_mask & BUS_CAN1) ? 1u : 0u;
-		uint8_t sent_can0 = 0u;
-		uint8_t sent_can1 = 0u;
-
-		TxHeader.Identifier = e->id;
-
-		if (need_can0) {
-			if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan1) > 0U) {
-				if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, e->data) == HAL_OK) {
-					sent_can0 = 1u;
-				}
-			} else {
-				check_can_bus(&hfdcan1);
-			}
-		}
-
-		if (need_can1) {
-			if (HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2) > 0U) {
-				if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, e->data) == HAL_OK) {
-					sent_can1 = 1u;
-				}
-			} else {
-				check_can_bus(&hfdcan2);
-			}
-		}
-
-		/* Удаляем из очереди, только когда отправили во все требуемые шины */
-		if ((need_can0 == 0u || sent_can0) && (need_can1 == 0u || sent_can1)) {
-			can_tx_tail++;
-			if (can_tx_tail >= CAN_TX_RING_SIZE)
-				can_tx_tail = 0u;
-		} else {
-			/* Нельзя отправить — пробуем позже */
-			break;
-		}
-	}
-}
 
 
 
@@ -196,76 +111,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 		is1ms++;
 	if(htim->Instance == TIM2)
 		is10ms++;
-}
-
-/* Читает все сообщения из FIFO и передаёт в модуль can_bus */
-static void can_rx_drain_fifo(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo, uint8_t can_bus) {
-	uint8_t Data[8];
-	FDCAN_RxHeaderTypeDef msg;
-	while (HAL_FDCAN_GetRxFifoFillLevel(hfdcan, RxFifo) > 0) {
-		if (HAL_FDCAN_GetRxMessage(hfdcan, RxFifo, &msg, Data) != HAL_OK)
-			break;
-		CanRxPush(msg.Identifier, Data, can_bus);
-	}
-}
-
-void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifoITs) {
-	(void)RxFifoITs;
-	can_rx_drain_fifo(hfdcan, FDCAN_RX_FIFO0, CAN_BUS_1);
-}
-
-void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifoITs) {
-	(void)RxFifoITs;
-	can_rx_drain_fifo(hfdcan, FDCAN_RX_FIFO1, CAN_BUS_2);
-}
-
-static void check_can_bus(FDCAN_HandleTypeDef *hfdcan) {
-  FDCAN_ProtocolStatusTypeDef protocolStatus = {};
-
-  HAL_FDCAN_GetProtocolStatus(hfdcan, &protocolStatus);
-  if (protocolStatus.BusOff) {
-	  	uint16_t try = 0xffff;
-
-		// Правильный выход из Bus Off:
-		// 1. Установить бит INIT
-		SET_BIT(hfdcan->Instance->CCCR, FDCAN_CCCR_INIT);
-		// 2. Дождаться, пока INIT установится
-		while (((hfdcan->Instance->CCCR & FDCAN_CCCR_INIT) == 0) && (try--)) {
-		  // Ожидание
-		}
-		// 3. Очистить бит INIT для выхода из режима инициализации
-		CLEAR_BIT(hfdcan->Instance->CCCR, FDCAN_CCCR_INIT);
-		// 4. Дождаться выхода из режима инициализации
-		while (((hfdcan->Instance->CCCR & FDCAN_CCCR_INIT) != 0) && (try--)) {
-		  // Ожидание
-		}
-  }
-}
-
-void HAL_FDCAN_ErrorStatusCallback(FDCAN_HandleTypeDef *hfdcan, uint32_t ErrorStatusITs) {
-
-    if ((ErrorStatusITs & FDCAN_IT_BUS_OFF) != RESET) {
-      check_can_bus(hfdcan);
-    }
-
-}
-
-
-
-void CANSendData(uint8_t *Buf) {
-
-	if(isMainInit == 0) return;
-
-	/* Buf layout как в backend:
-	 *  [0..3]   -> uint32_t id
-	 *  [4..11]  -> 8 байт данных
-	 *  [12]      -> bus_mask (BUS_CAN0/BUS_CAN1)
-	 */
-	uint32_t id = (*(uint32_t *)Buf);
-	const uint8_t *data = &Buf[4];
-	uint8_t bus_mask = Buf[4 + 8];
-
-	CanTxEnqueue(id, data, bus_mask);
 }
 
 /* USER CODE END 0 */
@@ -675,16 +520,6 @@ static void MX_FDCAN1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN FDCAN1_Init 2 */
-
-
-	TxHeader.IdType = FDCAN_EXTENDED_ID;
-	TxHeader.TxFrameType = FDCAN_DATA_FRAME;
-	TxHeader.ErrorStateIndicator= FDCAN_ESI_ACTIVE;
-	TxHeader.DataLength = FDCAN_DLC_BYTES_8;
-	TxHeader.BitRateSwitch = FDCAN_BRS_OFF;
-	TxHeader.FDFormat = FDCAN_CLASSIC_CAN;
-	TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
-	TxHeader.MessageMarker = 0;
 
   if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK)
   {

@@ -49,6 +49,17 @@ void CanRxPush(uint32_t id, const uint8_t *data, uint8_t can_bus);
   */
 void CanProcess(void);
 
+/**
+  * Обработка очередей отправки CAN (по одной независимой очереди на каждую шину).
+  * Вызывать из основного цикла.
+  */
+void App_CanTxProcess(void);
+
+/**
+  * Точка отправки для backend (Buf: id + 8 data + bus mask).
+  */
+void CANSendData(uint8_t *Buf);
+
 /** Глобальные флаги ошибки шин: бит 0 = CAN1 (нет приёма), бит 1 = CAN2 */
 extern uint8_t can_bus_error_flags;
 
