@@ -21,7 +21,7 @@
       <Text Id="__SingleUse_MO05" Alignment="Left" TypographyId="Default">
         <Translation Language="GB">АВАРИЯ</Translation>
       </Text>
-      <Text Id="__SingleUse_4WPO" Alignment="Center" TypographyId="Small">
+      <Text Id="__SingleUse_4WPO" Alignment="Left" TypographyId="Small">
         <Translation Language="GB">&lt;value&gt;</Translation>
       </Text>
       <Text Id="ResourceId2" Alignment="Left" TypographyId="Default">

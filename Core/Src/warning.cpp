@@ -110,7 +110,7 @@ static const char* Warning_McuTypeSerialToken(uint8_t d_type)
 static const char* Warning_ChannelTypeShort(uint8_t v_d_type)
 {
 	switch (v_d_type) {
-	case DEVICE_DPT_TYPE: return "ВЫХОД";
+	case DEVICE_DPT_TYPE: return "ДПТ";
 	case DEVICE_IGNITER_TYPE: return "СП";
 	/* Отдельного DT-типа в текущих статусах нет, оставляем задел под расширение. */
 	default: return "???";

@@ -42,7 +42,7 @@ protected:
     /*
      * Wildcard Buffers
      */
-    static const uint16_t TEXTAREATIME_TOP_BAR_SIZE = 12;
+    static const uint16_t TEXTAREATIME_TOP_BAR_SIZE = 15;
     touchgfx::Unicode::UnicodeChar textAreatime_top_barBuffer[TEXTAREATIME_TOP_BAR_SIZE];
     static const uint16_t TEXTAREA1_SIZE = 14;
     touchgfx::Unicode::UnicodeChar textArea1Buffer[TEXTAREA1_SIZE];

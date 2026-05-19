@@ -68,7 +68,7 @@ static void AddrAuto_ClearActiveDevices(void) {
 }
 
 static void AddrAuto_Start(void) {
-	// Широковещательно: остановить ретрансляцию на CAN0
+	// Широковещательно: остановить ретрансляцию на CAN
 	uint8_t data[7] = {0};
 	data[0] = 1u; // 1 = стоп
 	SendAllMessage(ServiceCmd_StopStartReTranslate, data, SEND_NOW, BUS_CAN12);
@@ -82,8 +82,8 @@ static void AddrAuto_Process(uint32_t now_ms) {
 	case ADDR_AUTO_IDLE:
 		break;
 	case ADDR_AUTO_WAIT_AFTER_STOP:
-		// ждём 100 мс после остановки ретрансляции, затем шлём CircSetAdr
-		if ((now_ms - g_addr_auto_phase_start_ms) >= 1000u) {
+		// ждём  после остановки ретрансляции, затем шлём CircSetAdr
+		if ((now_ms - g_addr_auto_phase_start_ms) >= 2000u) {
 			uint8_t data[7] = {0};
 			data[0] = 1u; // новый адрес = 1
 			SendAllMessage(ServiceCmd_CircSetAdr, data, SEND_NOW, BUS_CAN0);

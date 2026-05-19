@@ -48,7 +48,7 @@
             "Wildcard1": {
               "TextId": "__SingleUse_MO05",
               "UseBuffer": true,
-              "BufferSize": 12
+              "BufferSize": 15
             },
             "Draggable": true,
             "Moveable": true
