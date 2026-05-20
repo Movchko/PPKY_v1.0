@@ -112,6 +112,8 @@ static const char* Warning_ChannelTypeShort(uint8_t v_d_type)
 	switch (v_d_type) {
 	case DEVICE_DPT_TYPE: return "ДПТ";
 	case DEVICE_IGNITER_TYPE: return "СП";
+	case DEVICE_BUTTON_TYPE: return "КН";
+	case DEVICE_LSWITCH_TYPE: return "КОН";
 	/* Отдельного DT-типа в текущих статусах нет, оставляем задел под расширение. */
 	default: return "???";
 	}

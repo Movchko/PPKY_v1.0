@@ -108,7 +108,6 @@ void LedOffAll();
 #define GFX_RATIO_MS 10
 #define LED_TOGGLE HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 
-extern uint8_t setup_change;
 extern RTC_HandleTypeDef hrtc;
 
 #define NUM_ADC_CHANNEL 5

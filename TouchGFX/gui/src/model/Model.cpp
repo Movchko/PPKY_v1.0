@@ -51,16 +51,6 @@ void Model::tick()
 		modelListener->onWarningStatusChanged(warningActive, warningCount, warningBigTitles, warningDetails);
 	}
 
-	if(setup_change) {
-		setup_change = 0;
-
-		modelListener->SetupMenuChangePos(pos++);
-		if(pos >= 6)
-			pos = 0;
-
-
-
-	}
 #endif
 }
 

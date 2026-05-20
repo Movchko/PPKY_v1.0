@@ -71,7 +71,6 @@ DMA_HandleTypeDef handle_GPDMA1_Channel1;
 
 /* USER CODE BEGIN PV */
 SPIF_HandleTypeDef hFlash;
-uint8_t setup_change = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -230,7 +229,7 @@ int main(void)
 	  if(abs(cur_tick - led_tick) >= 1000) {
 		  led_tick = cur_tick;
 		  LED_TOGGLE;
-		  setup_change = 1;
+
 		  /*
 		   * end test
 		   */

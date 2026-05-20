@@ -242,8 +242,14 @@ static void UartSendPpkyTime(void) {
 
 void AppSetStatus() {
 
-	uint8_t power = (CHANNEL_VAL[4] / 100) & 0xFF; // шаг 100мВ (198 равно 19.8В)
-	uint8_t Rpower = (CHANNEL_VAL[0] / 100) & 0xFF;
+	int32_t power_v = CHANNEL_VAL[4] / 1000;   // шаг 1В
+	int32_t rpower_v = CHANNEL_VAL[0] / 1000;  // шаг 1В
+	if (power_v < 0) power_v = 0;
+	if (power_v > 255) power_v = 255;
+	if (rpower_v < 0) rpower_v = 0;
+	if (rpower_v > 255) rpower_v = 255;
+	uint8_t power = (uint8_t)power_v;
+	uint8_t Rpower = (uint8_t)rpower_v;
 	uint8_t current1 = (CHANNEL_VAL[1] / 50) & 0xFF; // шаг 50мА
 	uint8_t current2 = (CHANNEL_VAL[2] / 50) & 0xFF;
 	uint8_t status_data[7] = {
@@ -396,7 +402,7 @@ static void UpdateMcuCanStatus(uint32_t MsgID, uint8_t *MsgData) {
 	 * MsgData[1..7] = Data[0..6] из SendMessage()
 	 * В Data[4] находится CAN mask (CAN1_Active | CAN2_Active<<1)
 	 * => MsgData[5]
-	 * В Data[5] находится U24 (0.1V)
+	 * В Data[5] находится U24 (1V)
 	 * => MsgData[6]
 	 * В Data[6] находится CAN state mask (2 бита на шину)
 	 * => MsgData[7] */
