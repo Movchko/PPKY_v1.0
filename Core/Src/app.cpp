@@ -7,6 +7,7 @@
 #include "backend.h"
 #include "service.h"
 #include "config_sync.hpp"
+#include "can_bus.h"
 #include "gui/common/FrontendHeap.hpp"
 #include "fire.h"
 #include "warning.h"
@@ -26,6 +27,18 @@ ActiveDeviceInfo g_active_devices[NUM_ACTIVE_DEVICE];
 uint8_t g_active_devices_count = 0;
 uint8_t g_mku_mismatch_flag = 0;
 static uint8_t g_cfg_crc_mismatch_flag = 0u;
+static constexpr uint8_t POSITION_MAX_HADR = 32u;
+static constexpr uint32_t POSITION_RX_TIMEOUT_MS = 3500u;
+
+typedef struct {
+	uint8_t w[2];
+	uint8_t count;
+	uint32_t last_update_ms;
+} PositionRxInfo;
+
+static PositionRxInfo g_position_rx[POSITION_MAX_HADR + 1u];
+static uint8_t g_position_fault_active = 0u;
+static uint8_t g_position_fault_h_adr = 0u;
 
 /* --- Механизм автоматической установки адресов по команде 10 --- */
 typedef enum {
@@ -36,6 +49,19 @@ typedef enum {
 
 static AddrAutoState g_addr_auto_state = ADDR_AUTO_IDLE;
 static uint32_t g_addr_auto_phase_start_ms = 0;
+
+typedef enum {
+	MKU_RESET_IDLE = 0,
+	MKU_RESET_WAIT_DELAY,
+	MKU_RESET_WAIT_POWERON
+} MkuResetState;
+
+static MkuResetState g_mku_reset_state = MKU_RESET_IDLE;
+static uint32_t g_mku_reset_deadline_ms = 0u;
+static constexpr uint32_t MKU_RESET_AFTER_APPLY_DELAY_MS = 5000u;
+static constexpr uint32_t MKU_RESET_POWER_OFF_HOLD_MS = 1000u;
+static uint8_t g_mku_reset_prev_enable[2] = {0u, 0u};
+static uint8_t g_mku_reset_prev_valid = 0u;
 
 
 
@@ -57,10 +83,17 @@ uint8_t status_sec_cnt = 0;
 RTC_TimeTypeDef cur_time = {0};
 RTC_DateTypeDef cur_date;
 
+void AplyConfig() {
+	ConfigSync_StartApply();
+}
+
 static void AddrAuto_ClearActiveDevices(void) {
 	memset(g_active_devices, 0, sizeof(g_active_devices));
+	memset(g_position_rx, 0, sizeof(g_position_rx));
 	g_active_devices_count = 0;
 	g_mku_mismatch_flag = 0;
+	g_position_fault_active = 0u;
+	g_position_fault_h_adr = 0u;
 }
 
 static void AddrAuto_Start(void) {
@@ -118,6 +151,75 @@ static void AddrAuto_Process(uint32_t now_ms) {
 	}
 }
 
+static void MkuHardReset_StartNow(uint32_t now_ms)
+{
+	/* Замораживаем желаемое состояние выходов, чтобы PControl::Process()
+	 * не включил питание обратно раньше окончания окна OFF. */
+	for (uint8_t i = 0; i < 2u; i++) {
+		if (Power[i] != nullptr) {
+			g_mku_reset_prev_enable[i] = Power[i]->GetEnable() ? 1u : 0u;
+			Power[i]->SetEnable(false);
+		} else {
+			g_mku_reset_prev_enable[i] = 0u;
+		}
+	}
+	g_mku_reset_prev_valid = 1u;
+
+	for (uint8_t i = 0; i < 2u; i++) {
+		if (Power[i] != nullptr) {
+			Power[i]->PControlSetOut(i, false);
+		}
+	}
+	g_mku_reset_state = MKU_RESET_WAIT_POWERON;
+	g_mku_reset_deadline_ms = now_ms + MKU_RESET_POWER_OFF_HOLD_MS;
+}
+
+static void MkuHardReset_ScheduleAfterApply(void)
+{
+	g_mku_reset_state = MKU_RESET_WAIT_DELAY;
+	g_mku_reset_deadline_ms = HAL_GetTick() + MKU_RESET_AFTER_APPLY_DELAY_MS;
+}
+
+static void MkuHardReset_Process(uint32_t now_ms)
+{
+	switch (g_mku_reset_state) {
+	case MKU_RESET_IDLE:
+		break;
+	case MKU_RESET_WAIT_DELAY:
+		if ((int32_t)(now_ms - g_mku_reset_deadline_ms) >= 0) {
+			MkuHardReset_StartNow(now_ms);
+		}
+		break;
+	case MKU_RESET_WAIT_POWERON:
+		if ((int32_t)(now_ms - g_mku_reset_deadline_ms) >= 0) {
+			if (g_mku_reset_prev_valid != 0u) {
+				for (uint8_t i = 0; i < 2u; i++) {
+					if (Power[i] != nullptr) {
+						Power[i]->SetEnable(g_mku_reset_prev_enable[i] != 0u);
+					}
+				}
+			}
+			for (uint8_t i = 0; i < 2u; i++) {
+				if (Power[i] != nullptr) {
+					Power[i]->PControlSetOut(i, true);
+				}
+			}
+			g_mku_reset_prev_valid = 0u;
+			g_mku_reset_state = MKU_RESET_IDLE;
+		}
+		break;
+	default:
+		g_mku_reset_state = MKU_RESET_IDLE;
+		break;
+	}
+}
+
+extern "C" void App_OnConfigApplySuccess(void)
+{
+	/* После успешного APPLY ко всем МКУ делаем отложенный hard reset через 5с. */
+	MkuHardReset_ScheduleAfterApply();
+}
+
 
 void USBSendData(uint8_t *Buf) {};
 
@@ -166,18 +268,8 @@ void CommandCB(uint8_t Dev, uint8_t Command, uint8_t *Parameters) {
 			uint8_t data[7] = {0};
 			SendAllMessage(ServiceCmd_ResetMCU, data, SEND_NOW, BUS_CAN12);
 		} else {
-			/* Хард‑ресет: отключить питание на 1 с и снова включить. */
-			for (uint8_t i = 0; i < 2; i++) {
-				if (Power[i] != nullptr) {
-					Power[i]->PControlSetOut(i, false);
-				}
-			}
-			HAL_Delay(1000);
-			for (uint8_t i = 0; i < 2; i++) {
-				if (Power[i] != nullptr) {
-					Power[i]->PControlSetOut(i, true);
-				}
-			}
+			/* Хард‑ресет: неблокирующий power-cycle (off 1с -> on). */
+			MkuHardReset_StartNow(HAL_GetTick());
 		}
 	}break;
 	case 13: {
@@ -336,6 +428,172 @@ static int FindActiveMcuByZoneHAdrIndex(uint8_t zone, uint8_t h_adr) {
 	return -1;
 }
 
+static uint8_t IsMcuDType(uint8_t d_type)
+{
+	return (d_type == DEVICE_MCU_IGN_TYPE ||
+		d_type == DEVICE_MCU_TC_TYPE ||
+		d_type == DEVICE_MCU_K1 ||
+		d_type == DEVICE_MCU_K2 ||
+		d_type == DEVICE_MCU_K3 ||
+		d_type == DEVICE_MCU_KR) ? 1u : 0u;
+}
+
+static void PositionRx_OnPacket(uint32_t MsgID, uint8_t *MsgData, uint32_t now_ms)
+{
+	can_ext_id_t id;
+	id.ID = MsgID;
+
+	if (id.field.dir == 0u || !IsMcuDType((uint8_t)id.field.d_type)) {
+		return;
+	}
+	if (MsgData[0] != ServiceCmd_PositionDevice) {
+		return;
+	}
+
+	uint8_t h_adr = (uint8_t)id.field.h_adr;
+	if (h_adr == 0u || h_adr > POSITION_MAX_HADR) {
+		return;
+	}
+
+	uint8_t weight = MsgData[1];
+	PositionRxInfo *rx = &g_position_rx[h_adr];
+
+	if (rx->count == 0u) {
+		rx->w[0] = weight;
+		rx->count = 1u;
+	} else if (rx->count == 1u) {
+		if (rx->w[0] != weight) {
+			rx->w[1] = weight;
+			rx->count = 2u;
+		}
+	} else {
+		/* Храним последние два уникальных веса, чтобы повторы одного направления
+		 * не затирали второй вес и не давали ложных mismatch. */
+		if (rx->w[0] != weight && rx->w[1] != weight) {
+			rx->w[0] = rx->w[1];
+			rx->w[1] = weight;
+		}
+	}
+	rx->last_update_ms = now_ms;
+}
+
+static uint8_t Position_IsOnlineMcuByHadr(uint8_t h_adr)
+{
+	for (uint8_t i = 0u; i < g_active_devices_count; i++) {
+		const ActiveDeviceInfo *m = &g_active_devices[i];
+		if (!m->online) {
+			continue;
+		}
+		if (!IsMcuDType(m->dev.d_type)) {
+			continue;
+		}
+		if (m->dev.h_adr == h_adr) {
+			return 1u;
+		}
+	}
+	return 0u;
+}
+
+static uint8_t Position_CollectConfiguredHadr(uint8_t *out, uint8_t max_out)
+{
+	uint8_t n = 0u;
+	for (uint8_t i = 0u; i < 32u && n < max_out; i++) {
+		const Device *dv = &PPKYConfig.CfgDevices[i].UId.devId;
+		uint8_t d_type = (uint8_t)(dv->d_type & 0x7Fu);
+		if (!IsMcuDType(d_type)) {
+			continue;
+		}
+		uint8_t h_adr = (uint8_t)dv->h_adr;
+		if (h_adr == 0u || h_adr > POSITION_MAX_HADR) {
+			continue;
+		}
+		uint8_t exists = 0u;
+		for (uint8_t j = 0u; j < n; j++) {
+			if (out[j] == h_adr) {
+				exists = 1u;
+				break;
+			}
+		}
+		if (!exists) {
+			out[n++] = h_adr;
+		}
+	}
+
+	for (uint8_t i = 1u; i < n; i++) {
+		uint8_t key = out[i];
+		uint8_t j = i;
+		while (j > 0u && out[j - 1u] > key) {
+			out[j] = out[j - 1u];
+			j--;
+		}
+		out[j] = key;
+	}
+
+	return n;
+}
+
+static uint8_t Position_IsCan1Healthy(void)
+{
+	return ((can_bus_error_flags & 0x01u) == 0u) ? 1u : 0u;
+}
+
+static uint8_t Position_IsCan2Healthy(void)
+{
+	return ((can_bus_error_flags & 0x02u) == 0u) ? 1u : 0u;
+}
+
+static void Position_EvaluateMismatch(uint32_t now_ms)
+{
+	uint8_t hadrs[POSITION_MAX_HADR];
+	uint8_t n = Position_CollectConfiguredHadr(hadrs, POSITION_MAX_HADR);
+	uint8_t can1_ok = Position_IsCan1Healthy();
+	uint8_t can2_ok = Position_IsCan2Healthy();
+
+	g_position_fault_active = 0u;
+	g_position_fault_h_adr = 0u;
+	if (n == 0u || (!can1_ok && !can2_ok)) {
+		return;
+	}
+
+	for (uint8_t i = 0u; i < n; i++) {
+		uint8_t h_adr = hadrs[i];
+		if (!Position_IsOnlineMcuByHadr(h_adr)) {
+			continue;
+		}
+
+		const PositionRxInfo *rx = &g_position_rx[h_adr];
+		if (rx->count == 0u || (now_ms - rx->last_update_ms) > POSITION_RX_TIMEOUT_MS) {
+			continue;
+		}
+
+		uint8_t exp_a = i;
+		uint8_t exp_b = (uint8_t)(n - 1u - i);
+		uint8_t ok = 0u;
+		if (can1_ok && can2_ok) {
+			/* Оба канала доступны: нужны оба веса (с любого порядка). */
+			if (rx->count < 2u) {
+				/* Недостаточно данных, ждём второй вес, но ошибку пока не ставим. */
+				continue;
+			}
+			uint8_t obs_a = rx->w[0];
+			uint8_t obs_b = rx->w[1];
+			ok = ((obs_a == exp_a && obs_b == exp_b) ||
+			      (obs_a == exp_b && obs_b == exp_a)) ? 1u : 0u;
+		} else if (can1_ok) {
+			/* Деградация: CAN1 жив, CAN2 недоступен — проверяем только CAN1-вес. */
+			ok = (rx->w[0] == exp_a || (rx->count >= 2u && rx->w[1] == exp_a)) ? 1u : 0u;
+		} else if (can2_ok) {
+			/* Деградация: CAN2 жив, CAN1 недоступен — проверяем только CAN2-вес. */
+			ok = (rx->w[0] == exp_b || (rx->count >= 2u && rx->w[1] == exp_b)) ? 1u : 0u;
+		}
+		if (!ok) {
+			g_position_fault_active = 1u;
+			g_position_fault_h_adr = h_adr;
+			return;
+		}
+	}
+}
+
 static void UpdateMcuCanStatus(uint32_t MsgID, uint8_t *MsgData) {
 	can_ext_id_t id;
 	id.ID = MsgID;
@@ -461,17 +719,19 @@ static void UpdateActiveVirtualDevices(uint32_t MsgID, uint8_t *MsgData, uint32_
 	           v_d_type == DEVICE_BUTTON_TYPE ||
 	           v_d_type == DEVICE_LSWITCH_TYPE) {
 		/* status_params[0] = LineState
-		 * status_params[1..2] = resistance (LE)
-		 * status_params[3] = max_temp_tc (int8)
-		 * status_params[4] = max_fault_mask (bitmask)
-		 * status_params[5] = max_internal_temp (int8) */
+		 * status_params[1] = max_fault_mask (bitmask)
+		 * status_params[2..3] = max_temp_tc (int16 LE)
+		 * status_params[4..5] = max_internal_temp (int16 LE)
+		 * status_params[6] = resistance_x100 (uint8), R=byte*100 Ом */
 		m->vdevs[v_idx].line_state = m->vdevs[v_idx].status_params[0];
-		m->vdevs[v_idx].resistance_ohm =
-			(uint16_t)m->vdevs[v_idx].status_params[1] |
-			((uint16_t)m->vdevs[v_idx].status_params[2] << 8);
-		m->vdevs[v_idx].max_temp_c = (int16_t)(int8_t)m->vdevs[v_idx].status_params[3];
-		m->vdevs[v_idx].max_fault_mask = m->vdevs[v_idx].status_params[4];
-		m->vdevs[v_idx].max_internal_temp_c = (int16_t)(int8_t)m->vdevs[v_idx].status_params[5];
+		m->vdevs[v_idx].resistance_ohm = (uint16_t)m->vdevs[v_idx].status_params[6] * 100u;
+		m->vdevs[v_idx].max_fault_mask = m->vdevs[v_idx].status_params[1];
+		m->vdevs[v_idx].max_temp_c =
+			(int16_t)((uint16_t)m->vdevs[v_idx].status_params[2] |
+				 ((uint16_t)m->vdevs[v_idx].status_params[3] << 8));
+		m->vdevs[v_idx].max_internal_temp_c =
+			(int16_t)((uint16_t)m->vdevs[v_idx].status_params[4] |
+				 ((uint16_t)m->vdevs[v_idx].status_params[5] << 8));
 	}
 }
 
@@ -585,7 +845,7 @@ void AppInit() {
 
 	// Передаём указатели в backend (для сервисных команд работы с конфигурацией)
 	SetConfigPtr((uint8_t *)&SavedPPKYConfig, (uint8_t *)&PPKYConfig);
-	ConfigSync_Init(&PPKYConfig, g_active_devices, &g_active_devices_count, SaveConfig, &g_cfg_crc_mismatch_flag);
+	ConfigSync_Init(&PPKYConfig, g_active_devices, &g_active_devices_count, SaveConfig, App_OnConfigApplySuccess, &g_cfg_crc_mismatch_flag);
 
 	// Список устройств по аналогии с МКУ: 0-й элемент — сама плата ППКУ
 	extern Device BoardDevicesList[];
@@ -651,6 +911,7 @@ void AppProcess(uint32_t now_ms) {
 	}
 	// Неблокирующая машина состояний автозадания адресов по команде 10
 	AddrAuto_Process(now_ms);
+	MkuHardReset_Process(now_ms);
 }
 
 uint32_t counter1s = 0;
@@ -707,6 +968,8 @@ void AppTimer1ms() {
 	AppProcess(now);
 	RefreshActiveDevices(now);
 	CheckMkuConfigMismatch();
+	Position_EvaluateMismatch(now);
+	Warning_SetMkuPositionFault(g_position_fault_active, g_position_fault_h_adr);
 	App_UpdatePowerFaultIndication(now);
 	Fire_Timer1ms();
 
@@ -795,6 +1058,7 @@ void ResetMCU() {
 // посылки от устройств
 void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 	uint32_t now = HAL_GetTick();
+	PositionRx_OnPacket(MsgID, MsgData, now);
 	UpdateActiveDeviceList(MsgID, now);
 	ConfigSync_OnListenerMessage(MsgID, MsgData);
 

@@ -58,6 +58,7 @@ static PPKYCfg *g_cfg = nullptr;
 static ActiveDeviceInfo *g_active_devices = nullptr;
 static uint8_t *g_active_devices_count = nullptr;
 static void (*g_save_config_cb)(void) = nullptr;
+static void (*g_apply_success_cb)(void) = nullptr;
 static uint8_t *g_crc_mismatch_flag = nullptr;
 
 #define CFGSYNC_REQ_TIMEOUT_MS   150u
@@ -77,6 +78,55 @@ static uint8_t IsValidCfgSlot(uint8_t slot) {
 		return 0u;
 	}
 	return IsMcuType(g_cfg->CfgDevices[slot].UId.devId.d_type);
+}
+
+/* Для APPLY/VERIFY адресовать команды нужно на фактический "живой" адрес МКУ в шине,
+ * а не на адрес из образа (в образе зона/адрес уже могут быть изменены).
+ * Иначе первая же команда уйдёт в "новую" зону и устройство не ответит.
+ */
+static void ResolveRuntimeDevForSlot(uint8_t slot, Device *out_dev) {
+	if (out_dev == nullptr || g_cfg == nullptr) {
+		return;
+	}
+
+	*out_dev = g_cfg->CfgDevices[slot].UId.devId;
+	if (g_active_devices == nullptr || g_active_devices_count == nullptr) {
+		return;
+	}
+
+	const Device *desired = &g_cfg->CfgDevices[slot].UId.devId;
+
+	/* 1) Основное правило: h_adr у МКУ постоянный, зона может меняться.
+	 * Поэтому сначала ищем по d_type + h_adr (без привязки к zone/l_adr). */
+	for (uint8_t i = 0u; i < *g_active_devices_count; i++) {
+		const ActiveDeviceInfo *ad = &g_active_devices[i];
+		if (!ad->online) {
+			continue;
+		}
+		if (!IsMcuType(ad->dev.d_type)) {
+			continue;
+		}
+		if (ad->dev.d_type == desired->d_type &&
+		    ad->dev.h_adr == desired->h_adr) {
+			*out_dev = ad->dev;
+			return;
+		}
+	}
+
+	/* 2) Fallback: только по h_adr среди МКУ (если d_type в образе не совпал). */
+	for (uint8_t i = 0u; i < *g_active_devices_count; i++) {
+		const ActiveDeviceInfo *ad = &g_active_devices[i];
+		if (!ad->online) {
+			continue;
+		}
+		if (!IsMcuType(ad->dev.d_type)) {
+			continue;
+		}
+		if (ad->dev.h_adr == desired->h_adr) {
+			*out_dev = ad->dev;
+			return;
+		}
+	}
 }
 
 static void BuildCfgListFromActiveDevices(void) {
@@ -103,7 +153,7 @@ static void CfgSync_SendReq(const Device *dev, uint8_t cmd, const uint8_t *param
 	can_ext_id_t can_id;
 	uint8_t data[8] = {0u};
 	can_id.ID = 0u;
-	can_id.field.dir = 1u;
+	can_id.field.dir = 0u;
 	can_id.field.d_type = dev->d_type & 0x7Fu;
 	can_id.field.h_adr = dev->h_adr;
 	can_id.field.l_adr = dev->l_adr & 0x3Fu;
@@ -125,7 +175,7 @@ static void CfgSync_ResendReq(uint32_t now_ms) {
 	can_ext_id_t can_id;
 	uint8_t data[8] = {0u};
 	can_id.ID = 0u;
-	can_id.field.dir = 1u;
+	can_id.field.dir = 0u;
 	can_id.field.d_type = g_cfg_sync.current_dev.d_type & 0x7Fu;
 	can_id.field.h_adr = g_cfg_sync.current_dev.h_adr;
 	can_id.field.l_adr = g_cfg_sync.current_dev.l_adr & 0x3Fu;
@@ -148,6 +198,7 @@ static void CfgSync_MarkCurrentFailed(void) {
 }
 
 static void CfgSync_Finish(uint8_t success, uint8_t save_ppky_cfg) {
+	CfgSyncOp finished_op = g_cfg_sync.op;
 	g_cfg_sync.busy = 0u;
 	g_cfg_sync.waiting_reply = 0u;
 	g_cfg_sync.success = success ? 1u : 0u;
@@ -157,13 +208,20 @@ static void CfgSync_Finish(uint8_t success, uint8_t save_ppky_cfg) {
 	if (save_ppky_cfg && g_save_config_cb != nullptr) {
 		g_save_config_cb();
 	}
+	if (success && finished_op == CFGSYNC_OP_APPLY_ALL && g_apply_success_cb != nullptr) {
+		g_apply_success_cb();
+	}
 }
 
 static uint8_t CfgSync_StartTargetByPos(uint32_t now_ms) {
 	while (g_cfg_sync.target_pos < g_cfg_sync.target_count) {
 		uint8_t slot = g_cfg_sync.target_slots[g_cfg_sync.target_pos];
 		g_cfg_sync.current_slot = slot;
-		g_cfg_sync.current_dev = g_cfg->CfgDevices[slot].UId.devId;
+		if (g_cfg_sync.op == CFGSYNC_OP_APPLY_ALL || g_cfg_sync.op == CFGSYNC_OP_VERIFY_CRC) {
+			ResolveRuntimeDevForSlot(slot, &g_cfg_sync.current_dev);
+		} else {
+			g_cfg_sync.current_dev = g_cfg->CfgDevices[slot].UId.devId;
+		}
 
 		if (!IsMcuType(g_cfg_sync.current_dev.d_type)) {
 			g_cfg_sync.target_pos++;
@@ -364,7 +422,7 @@ static void CfgSync_HandleSetCfgWordReply(const uint8_t *MsgData, uint32_t now_m
 	can_ext_id_t can_id;
 	uint8_t data[8] = {0u};
 	can_id.ID = 0u;
-	can_id.field.dir = 1u;
+	can_id.field.dir = 0u;
 	can_id.field.d_type = g_cfg_sync.current_dev.d_type & 0x7Fu;
 	can_id.field.h_adr = g_cfg_sync.current_dev.h_adr;
 	can_id.field.l_adr = g_cfg_sync.current_dev.l_adr & 0x3Fu;
@@ -382,11 +440,13 @@ extern "C" void ConfigSync_Init(PPKYCfg *cfg,
                                 ActiveDeviceInfo *active_devices,
                                 uint8_t *active_devices_count,
                                 void (*save_config_cb)(void),
+                                void (*apply_success_cb)(void),
                                 uint8_t *mismatch_flag_ptr) {
 	g_cfg = cfg;
 	g_active_devices = active_devices;
 	g_active_devices_count = active_devices_count;
 	g_save_config_cb = save_config_cb;
+	g_apply_success_cb = apply_success_cb;
 	g_crc_mismatch_flag = mismatch_flag_ptr;
 	memset(&g_cfg_sync, 0, sizeof(g_cfg_sync));
 }

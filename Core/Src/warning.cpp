@@ -50,6 +50,7 @@ constexpr uint8_t WARN_KIND_MCU_CAN_FAULT = 1u;
 constexpr uint8_t WARN_KIND_PPKU_CAN_FAULT = 2u;
 constexpr uint8_t WARN_KIND_LSWITCH_OPEN_ATTN = 3u;
 constexpr uint8_t WARN_KIND_DPT_WARNING_ATTN = 4u;
+constexpr uint8_t WARN_KIND_MCU_POSITION_FAULT = 5u;
 constexpr uint8_t WARN_TITLE_MARK_ATTN = 0x01u;
 
 struct WarningItem {
@@ -62,7 +63,7 @@ struct WarningItem {
 	uint8_t v_d_type;
 	uint8_t line_state; /* 1=обрыв, 2=КЗ */
 	uint8_t can_idx; /* 1 или 2 для CAN-предупреждений */
-	uint8_t extra; /* произвольный параметр (например температура DPT) */
+	int16_t extra; /* произвольный параметр (например температура DPT) */
 	uint8_t fault_now;
 	uint32_t show_until_ms;
 };
@@ -79,6 +80,8 @@ static uint32_t g_led_err_blink_toggle_ms = 0u;
 static uint8_t g_prev_active_fault_count = 0u;
 static uint8_t g_prev_sound_fault_count = 0u;
 static uint8_t g_prev_sound_attention_count = 0u;
+static uint8_t g_position_fault_active = 0u;
+static uint8_t g_position_fault_h_adr = 0u;
 
 /* Текстовое имя типа МКУ для отображения в UI предупреждений. */
 static const char* McuTypeName(uint8_t d_type)
@@ -159,10 +162,18 @@ static uint8_t IsTrackedVdevType(uint8_t v_d_type)
 		v_d_type == DEVICE_LSWITCH_TYPE) ? 1u : 0u;
 }
 
-/* Проверяет, что состояние линии относится к неисправности (обрыв/КЗ). */
-static uint8_t IsFaultLineState(uint8_t line_state)
+/* Проверяет, что состояние линии относится к неисправности.
+ * Для LSWITCH дополнительно считаем line_state=5 (Fault) аварией концевика.
+ */
+static uint8_t IsFaultLineStateForVdev(uint8_t v_d_type, uint8_t line_state)
 {
-	return (line_state == 1u || line_state == 2u) ? 1u : 0u; /* 1=Обрыв, 2=КЗ */
+	if (line_state == 1u || line_state == 2u) {
+		return 1u; /* 1=Обрыв, 2=КЗ */
+	}
+	if (v_d_type == DEVICE_LSWITCH_TYPE && line_state == 5u) {
+		return 1u; /* 5=Неисправность концевика */
+	}
+	return 0u;
 }
 
 static uint8_t IsAttentionKind(uint8_t kind)
@@ -174,7 +185,8 @@ static uint8_t IsFaultKind(uint8_t kind)
 {
 	return (kind == WARN_KIND_VDEV_FAULT ||
 		kind == WARN_KIND_MCU_CAN_FAULT ||
-		kind == WARN_KIND_PPKU_CAN_FAULT) ? 1u : 0u;
+		kind == WARN_KIND_PPKU_CAN_FAULT ||
+		kind == WARN_KIND_MCU_POSITION_FAULT) ? 1u : 0u;
 }
 
 /* Поиск записи неисправности по ключу устройства/канала. */
@@ -215,7 +227,7 @@ static uint8_t TimeReached(uint32_t now_ms, uint32_t deadline_ms)
 /* Добавляет/обновляет запись неисправности и продлевает окно отображения. */
 static void UpsertItem(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l_adr,
 		       uint8_t mcu_d_type, uint8_t v_d_type, uint8_t line_state,
-		       uint8_t can_idx, uint8_t extra, uint32_t now_ms)
+		       uint8_t can_idx, int16_t extra, uint32_t now_ms)
 {
 	int idx = FindItem(kind, zone, h_adr, v_l_adr, mcu_d_type, v_d_type, can_idx);
 	if (idx >= 0) {
@@ -274,7 +286,8 @@ static uint8_t IsItemStillFaulty(const WarningItem& it)
 				continue;
 			}
 			if (it.kind == WARN_KIND_VDEV_FAULT && v->v_l_adr == it.v_l_adr && v->v_d_type == it.v_d_type) {
-				return (IsTrackedVdevType(v->v_d_type) && IsFaultLineState(v->line_state)) ? 1u : 0u;
+				return (IsTrackedVdevType(v->v_d_type) &&
+					IsFaultLineStateForVdev(v->v_d_type, v->line_state)) ? 1u : 0u;
 			}
 			if (it.kind == WARN_KIND_LSWITCH_OPEN_ATTN && v->v_l_adr == it.v_l_adr &&
 			    v->v_d_type == DEVICE_LSWITCH_TYPE) {
@@ -305,6 +318,9 @@ static uint8_t IsItemStillFaulty(const WarningItem& it)
 	if (it.kind == WARN_KIND_PPKU_CAN_FAULT) {
 		return ((can_bus_error_flags & (1u << (it.can_idx - 1u))) != 0u) ? 1u : 0u;
 	}
+	if (it.kind == WARN_KIND_MCU_POSITION_FAULT) {
+		return (g_position_fault_active && it.h_adr == g_position_fault_h_adr) ? 1u : 0u;
+	}
 	return 0u;
 }
 
@@ -329,7 +345,7 @@ static void ConsumeChangedStatuses(uint32_t now_ms)
 				continue;
 			}
 
-			if (IsFaultLineState(v->line_state)) {
+			if (IsFaultLineStateForVdev(v->v_d_type, v->line_state)) {
 				UpsertItem(WARN_KIND_VDEV_FAULT, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type, v->v_d_type,
 					   v->line_state, 0u, 0u, now_ms);
 			} else {
@@ -348,7 +364,7 @@ static void ConsumeChangedStatuses(uint32_t now_ms)
 			if (v->v_d_type == DEVICE_DPT_TYPE) {
 				if (v->status_cmd == (uint8_t)DeviceDPTStatus_Warning) {
 					UpsertItem(WARN_KIND_DPT_WARNING_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
-						   v->v_d_type, 0u, 0u, (uint8_t)v->max_temp_c, now_ms);
+						   v->v_d_type, 0u, 0u, v->max_temp_c, now_ms);
 				} else {
 					MarkRecovered(WARN_KIND_DPT_WARNING_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
 						      v->v_d_type, 0u, now_ms);
@@ -401,7 +417,7 @@ static void SyncMissingFaultItems(uint32_t now_ms)
 			if (!v->online || !IsTrackedVdevType(v->v_d_type)) {
 				continue;
 			}
-			if (!IsFaultLineState(v->line_state)) {
+			if (!IsFaultLineStateForVdev(v->v_d_type, v->line_state)) {
 				MarkRecovered(WARN_KIND_VDEV_FAULT, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type, v->v_d_type, 0u, now_ms);
 			} else {
 				UpsertItem(WARN_KIND_VDEV_FAULT, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type, v->v_d_type,
@@ -419,7 +435,7 @@ static void SyncMissingFaultItems(uint32_t now_ms)
 			if (v->v_d_type == DEVICE_DPT_TYPE) {
 				if (v->status_cmd == (uint8_t)DeviceDPTStatus_Warning) {
 					UpsertItem(WARN_KIND_DPT_WARNING_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
-						   v->v_d_type, 0u, 0u, (uint8_t)v->max_temp_c, now_ms);
+						   v->v_d_type, 0u, 0u, v->max_temp_c, now_ms);
 				} else {
 					MarkRecovered(WARN_KIND_DPT_WARNING_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
 						      v->v_d_type, 0u, now_ms);
@@ -473,6 +489,24 @@ static void SyncPpkuCanFaultItems(uint32_t now_ms)
 	}
 }
 
+static void SyncMkuPositionFaultItems(uint32_t now_ms)
+{
+	if (g_position_fault_active != 0u) {
+		UpsertItem(WARN_KIND_MCU_POSITION_FAULT, 0u, g_position_fault_h_adr, 0u,
+			   DEVICE_PPKY_TYPE, 0u, 0u, 0u, 0u, now_ms);
+		return;
+	}
+
+	for (uint8_t i = 0u; i < WARN_MAX_ITEMS; i++) {
+		if (!g_items[i].used) {
+			continue;
+		}
+		if (g_items[i].kind == WARN_KIND_MCU_POSITION_FAULT) {
+			RemoveItemAt(i);
+		}
+	}
+}
+
 /* Формирует отсортированный набор строк для UI (большое/малое поле). */
 static uint8_t BuildUiPayload(char (*big_titles)[WARN_TITLE_LEN], char (*details)[ZONE_NAME_SIZE + 1])
 {
@@ -522,7 +556,7 @@ static uint8_t BuildUiPayload(char (*big_titles)[WARN_TITLE_LEN], char (*details
 			snprintf(big_titles[count], WARN_TITLE_LEN, "%cОТКРЫТИЕ", (char)WARN_TITLE_MARK_ATTN);
 			Warning_FormatMkuAndSerial(details[count], ZONE_NAME_SIZE + 1, it);
 		} else if (it.kind == WARN_KIND_DPT_WARNING_ATTN) {
-			int temp_c = (int)(int8_t)it.extra;
+			int temp_c = (int)it.extra;
 			snprintf(big_titles[count], WARN_TITLE_LEN, "%cТЕМП. %d", (char)WARN_TITLE_MARK_ATTN, temp_c);
 			Warning_FormatMkuAndSerial(details[count], ZONE_NAME_SIZE + 1, it);
 		}
@@ -555,7 +589,12 @@ static uint8_t BuildUiPayload(char (*big_titles)[WARN_TITLE_LEN], char (*details
 		}
 
 		if (it.kind == WARN_KIND_VDEV_FAULT) {
-			const char* fault = (it.line_state == 2u) ? "КЗ" : "ОБРЫВ";
+			const char* fault = "ОБРЫВ";
+			if (it.v_d_type == DEVICE_LSWITCH_TYPE && it.line_state == 5u) {
+				fault = "НЕИСП";
+			} else if (it.line_state == 2u) {
+				fault = "КЗ";
+			}
 			snprintf(big_titles[count], WARN_TITLE_LEN, "%s %s%u", fault,
 				 Warning_ChannelTypeShort(it.v_d_type), (unsigned)it.v_l_adr);
 			Warning_FormatMkuAndSerial(details[count], ZONE_NAME_SIZE + 1, it);
@@ -563,6 +602,9 @@ static uint8_t BuildUiPayload(char (*big_titles)[WARN_TITLE_LEN], char (*details
 			const char* fault = (it.line_state == 2u) ? "КЗ" : "ОБРЫВ";
 			snprintf(big_titles[count], WARN_TITLE_LEN, "%s CAN%u", fault, (unsigned)it.can_idx);
 			Warning_FormatMkuAndSerial(details[count], ZONE_NAME_SIZE + 1, it);
+		} else if (it.kind == WARN_KIND_MCU_POSITION_FAULT) {
+			snprintf(big_titles[count], WARN_TITLE_LEN, "ПОЗИЦИЯ");
+			snprintf(details[count], ZONE_NAME_SIZE + 1, "МКУ %u", (unsigned)it.h_adr);
 		} else {
 			snprintf(big_titles[count], WARN_TITLE_LEN, "ОБРЫВ CAN%u", (unsigned)it.can_idx);
 
@@ -779,6 +821,7 @@ void WarningProcess1ms(void)
 	SyncMissingFaultItems(now_ms);
 	SyncMkuCanFaultItems(now_ms);
 	SyncPpkuCanFaultItems(now_ms);
+	SyncMkuPositionFaultItems(now_ms);
 	PruneInactiveItems(now_ms);
 	UpdateErrorLed(now_ms);
 	UpdateFaultSound(now_ms);
@@ -801,6 +844,12 @@ extern "C" void Warning_SetPowerFaultMask(uint8_t mask)
 extern "C" void Warning_SetPpkuInputFaultMask(uint8_t mask)
 {
 	g_ppku_input_fault_mask = (uint8_t)(mask & 0x03u);
+}
+
+extern "C" void Warning_SetMkuPositionFault(uint8_t active, uint8_t h_adr)
+{
+	g_position_fault_active = (active != 0u) ? 1u : 0u;
+	g_position_fault_h_adr = h_adr;
 }
 
 extern "C" uint8_t Warning_HasActiveFault(void)
