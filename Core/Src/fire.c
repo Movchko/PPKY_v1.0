@@ -15,8 +15,6 @@ extern PPKYCfg PPKYConfig;
 extern ActiveDeviceInfo g_active_devices[NUM_ACTIVE_DEVICE];
 extern uint8_t g_active_devices_count;
 
-/* Отладка: зона 1 → индекс 0; пока 3 зоны, далее — из конфига МКУ */
-#define FIRE_DEBUG_ZONES     3u
 #define FIRE_MAX_SLOTS       16u
 #define FIRE_UI_MAX_ZONES    16u
 #define FIRE_UI_NAME_LEN     (ZONE_NAME_SIZE + 1u)
@@ -35,13 +33,6 @@ extern uint8_t g_active_devices_count;
 /* Спецрежим: в ручном выборе пожара кнопки ПУСК СП/СТОП действуют только на выбранную зону. */
 #define FIRE_SELECTED_ZONE_BUTTONS_ENABLE    1u
 #define FIRE_MAX_SOURCES_PER_ZONE            8u
-
-static uint8_t debug_zone_delay[FIRE_DEBUG_ZONES] = { 15, 30u, 30 };
-static uint8_t debug_module_delay[FIRE_DEBUG_ZONES][2] = {
-	{ 0u, 0u },
-	{ 0u, 5u },
-	{ 5u, 10u },
-};
 
 typedef enum {
 	FIRE_STATE_IDLE = 0,
@@ -152,14 +143,18 @@ static void Fire_Phase2AllPending(void);
 static void Fire_ClearAllSlots(void);
 /* Синхронизирует состояние FSM исходя из состояния слотов/фаз. */
 static void Fire_SyncStateFromSlots(void);
-/* Нормализует номер зоны в диапазон debug-порогов. */
-static uint8_t Fire_DebugZoneIndex(uint8_t zone);
 /* Переводит номер зоны CAN (1..N) в индекс массива имён (0..N-1). */
 static uint8_t Fire_ZoneCanToIdx(uint8_t zone_can);
 /* Возвращает задержку зоны (сек) перед фазой 2. */
 static uint8_t Fire_ZoneDelaySec(uint8_t zone);
-/* Возвращает задержки модулей внутри зоны (две линии). */
-static void Fire_GetModuleDelays(uint8_t zone, uint8_t *m0, uint8_t *m1);
+/* Возвращает задержку конкретного igniter-модуля из конфига ППКУ. */
+static uint8_t Fire_ModuleDelaySecForIgniter(const FireIgniterAddr *addr);
+/* Поиск настроенного МКУ в PPKYConfig.CfgDevices. */
+static const MKUCfg* Fire_FindConfiguredMcuByZoneHAdr(uint8_t zone, uint8_t h_adr, uint8_t mcu_d_type);
+/* Проверка, что тип — один из типов МКУ. */
+static uint8_t Fire_IsMcuDType(uint8_t d_type);
+/* Ограничение uint32 в диапазон uint8. */
+static uint8_t Fire_ClampU8FromU32(uint32_t v);
 /* Ищет слот по номеру зоны, возвращает индекс или -1. */
 static int8_t Fire_FindSlotZone(uint8_t zone);
 /* Выделяет свободный слот пожара, возвращает индекс или -1. */
@@ -340,25 +335,122 @@ static uint8_t Fire_ZoneCanToIdx(uint8_t zone_can)
 	return (uint8_t)(zone_can - 1u);
 }
 
-static uint8_t Fire_DebugZoneIndex(uint8_t zone)
-{
-	uint8_t idx = Fire_ZoneCanToIdx(zone);
-	if (idx < FIRE_DEBUG_ZONES) {
-		return idx;
-	}
-	return FIRE_DEBUG_ZONES - 1u;
-}
-
 static uint8_t Fire_ZoneDelaySec(uint8_t zone)
 {
-	return debug_zone_delay[Fire_DebugZoneIndex(zone)];
+	uint8_t best = 0xFFu;
+	uint8_t found = 0u;
+
+	for (uint8_t i = 0u; i < g_active_devices_count; i++) {
+		const ActiveDeviceInfo *ad = &g_active_devices[i];
+		if (!ad->online || ad->dev.zone != (zone & 0x7Fu) || !Fire_DeviceHasIgniterVdev(ad) ||
+		    !Fire_IsMcuDType(ad->dev.d_type)) {
+			continue;
+		}
+		const MKUCfg *cfg = Fire_FindConfiguredMcuByZoneHAdr(ad->dev.zone, ad->dev.h_adr, ad->dev.d_type);
+		if (cfg == NULL) {
+			continue;
+		}
+		uint8_t zd = Fire_ClampU8FromU32(cfg->zone_delay);
+		if (!found || zd < best) {
+			best = zd;
+			found = 1u;
+		}
+	}
+
+	if (found) {
+		return best;
+	}
+
+	/* Fallback: если МКУ ещё не в активных, берём минимум по конфигу этой зоны. */
+	for (uint8_t i = 0u; i < 32u; i++) {
+		const MKUCfg *cfg = &PPKYConfig.CfgDevices[i];
+		const Device *dv = &cfg->UId.devId;
+		if (dv->d_type == 0u || !Fire_IsMcuDType(dv->d_type) || (dv->zone & 0x7Fu) != (zone & 0x7Fu)) {
+			continue;
+		}
+		uint8_t has_ign = 0u;
+		for (uint8_t vi = 0u; vi < NUM_DEV_IN_MCU; vi++) {
+			if ((uint8_t)cfg->VDtype[vi] == DEVICE_IGNITER_TYPE) {
+				has_ign = 1u;
+				break;
+			}
+		}
+		if (!has_ign) {
+			continue;
+		}
+		uint8_t zd = Fire_ClampU8FromU32(cfg->zone_delay);
+		if (!found || zd < best) {
+			best = zd;
+			found = 1u;
+		}
+	}
+
+	return found ? best : 0u;
 }
 
-static void Fire_GetModuleDelays(uint8_t zone, uint8_t *m0, uint8_t *m1)
+static uint8_t Fire_ModuleDelaySecForIgniter(const FireIgniterAddr *addr)
 {
-	uint8_t z = Fire_DebugZoneIndex(zone);
-	*m0 = debug_module_delay[z][0];
-	*m1 = debug_module_delay[z][1];
+	if (addr == NULL) {
+		return 0u;
+	}
+
+	uint8_t mcu_d_type = 0u;
+	for (uint8_t i = 0u; i < g_active_devices_count; i++) {
+		const ActiveDeviceInfo *ad = &g_active_devices[i];
+		if (!ad->online || !Fire_IsMcuDType(ad->dev.d_type)) {
+			continue;
+		}
+		if ((ad->dev.zone & 0x7Fu) == (addr->zone & 0x7Fu) && ad->dev.h_adr == addr->h_adr &&
+		    Fire_DeviceHasIgniterVdev(ad)) {
+			mcu_d_type = ad->dev.d_type;
+			break;
+		}
+	}
+
+	const MKUCfg *cfg = Fire_FindConfiguredMcuByZoneHAdr(addr->zone & 0x7Fu, addr->h_adr, mcu_d_type);
+	if (cfg == NULL) {
+		return 0u;
+	}
+
+	uint8_t idx = (addr->l_adr > 0u) ? (uint8_t)(addr->l_adr - 1u) : 0u;
+	if (idx >= NUM_DEV_IN_MCU) {
+		return 0u;
+	}
+	return Fire_ClampU8FromU32(cfg->module_delay[idx]);
+}
+
+static uint8_t Fire_IsMcuDType(uint8_t d_type)
+{
+	return (d_type == DEVICE_MCU_IGN_TYPE ||
+		d_type == DEVICE_MCU_TC_TYPE ||
+		d_type == DEVICE_MCU_K1 ||
+		d_type == DEVICE_MCU_K2 ||
+		d_type == DEVICE_MCU_K3 ||
+		d_type == DEVICE_MCU_KR) ? 1u : 0u;
+}
+
+static uint8_t Fire_ClampU8FromU32(uint32_t v)
+{
+	return (v > 255u) ? 255u : (uint8_t)v;
+}
+
+static const MKUCfg* Fire_FindConfiguredMcuByZoneHAdr(uint8_t zone, uint8_t h_adr, uint8_t mcu_d_type)
+{
+	for (uint8_t i = 0u; i < 32u; i++) {
+		const MKUCfg *cfg = &PPKYConfig.CfgDevices[i];
+		const Device *dv = &cfg->UId.devId;
+		if (dv->d_type == 0u) {
+			continue;
+		}
+		if ((dv->zone & 0x7Fu) != (zone & 0x7Fu) || dv->h_adr != h_adr) {
+			continue;
+		}
+		if (mcu_d_type != 0u && dv->d_type != mcu_d_type) {
+			continue;
+		}
+		return cfg;
+	}
+	return NULL;
 }
 
 static uint8_t Fire_CollectSortedIgniterTargetsByZone(uint8_t zone, FireIgniterAddr *out, uint8_t max_out)
@@ -726,11 +818,9 @@ static void Fire_SendPhase1Zone(uint8_t zone)
 	/* Фаза 1: старт в зоне с zone_delay + module_delay. */
 	FireIgniterAddr ign[16];
 	uint8_t n = Fire_CollectSortedIgniterTargetsByZone(zone, ign, (uint8_t)(sizeof(ign) / sizeof(ign[0])));
-	uint8_t zd = Fire_ZoneDelaySec(zone);
-	uint8_t m0, m1;
-	Fire_GetModuleDelays(zone, &m0, &m1);
 	for (uint8_t i = 0u; i < n; i++) {
-		uint8_t md = (i == 0u) ? m0 : m1;
+		uint8_t zd = Fire_ZoneDelaySec(ign[i].zone);
+		uint8_t md = Fire_ModuleDelaySecForIgniter(&ign[i]);
 		Fire_RetryQueueStart(&ign[i], zd, md, HAL_GetTick());
 	}
 }
@@ -740,10 +830,8 @@ static void Fire_SendPhase2Zone(uint8_t zone)
 	/* Фаза 2: немедленный старт (zone_delay=0), учитываем только module_delay. */
 	FireIgniterAddr ign[16];
 	uint8_t n = Fire_CollectSortedIgniterTargetsByZone(zone, ign, (uint8_t)(sizeof(ign) / sizeof(ign[0])));
-	uint8_t m0, m1;
-	Fire_GetModuleDelays(zone, &m0, &m1);
 	for (uint8_t i = 0u; i < n; i++) {
-		uint8_t md = (i == 0u) ? m0 : m1;
+		uint8_t md = Fire_ModuleDelaySecForIgniter(&ign[i]);
 		Fire_RetryQueueStart(&ign[i], 0u, md, HAL_GetTick());
 	}
 }
