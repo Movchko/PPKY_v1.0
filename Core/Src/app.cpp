@@ -797,7 +797,6 @@ void PControlSetOutCB(uint8_t ch, uint8_t out) {
 	HAL_GPIO_WritePin(POWER_OUT_PORT[ch], POWER_OUT_PIN[ch], (GPIO_PinState)out);
 }
 
-static volatile uint32_t sizesctruct;
 void AppInit() {
 
 	// Чтение сохранённой конфигурации из Flash (область конфигурации)
@@ -884,12 +883,6 @@ void AppInit() {
 
 	/* Инициализация FSM пожара */
 	Fire_Init();
-
-
-
-	PPKYConfig.fire_and[0] = 1;
-	PPKYConfig.fire_and[1] = 1;
-	sizesctruct = sizeof(PPKYConfig);
 
 }
 

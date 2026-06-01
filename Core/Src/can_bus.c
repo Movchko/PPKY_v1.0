@@ -18,6 +18,8 @@
 #define CAN_NO_RX_TIMEOUT_MS  3000
 #define CAN_DUP_WINDOW_MS     30
 #define UART_BRIDGE_QUEUE_SIZE 128
+#define CAN_WATCHDOG_PERIOD_MS      3000u
+#define CAN_TX_STALL_RECOVERY_MS    3000u
 
 typedef struct {
 	uint32_t id;
@@ -43,6 +45,9 @@ static volatile uint8_t  can2_tx_tail = 0;
 
 static volatile uint32_t last_rx_tick_can1 = 0;
 static volatile uint32_t last_rx_tick_can2 = 0;
+static uint32_t can_watchdog_last_ms = 0u;
+static uint32_t can1_tx_stall_since_ms = 0u;
+static uint32_t can2_tx_stall_since_ms = 0u;
 
 typedef struct {
 	uint32_t id;
@@ -108,6 +113,8 @@ extern uint8_t isMainInit;
 extern Device BoardDevicesList[];
 extern uint8_t nDevs;
 static void CanTxEnqueue(uint32_t id, const uint8_t *data, uint8_t bus_mask);
+static void App_CanRecoverBus(FDCAN_HandleTypeDef *hfdcan);
+static void App_CanWatchdog(void);
 
 static uint8_t ring_next_u8(uint8_t idx, uint8_t size)
 {
@@ -160,6 +167,13 @@ static void uart_rx_frame_push(uint32_t id, const uint8_t *data)
 
 static void uart_tx_packet_push(uint8_t can_bus, uint32_t id, const uint8_t *data)
 {
+	/* Временный режим: зеркалим в UART только кадры CAN1.
+	 * CAN2 сейчас не отправляем в UART, чтобы исключить дубли.
+	 */
+	if (can_bus != CAN_BUS_1) {
+		return;
+	}
+
 	uint8_t next = ring_next_u8(uart_tx_head, UART_BRIDGE_QUEUE_SIZE);
 	if (next == uart_tx_tail) {
 		uart_tx_tail = ring_next_u8(uart_tx_tail, UART_BRIDGE_QUEUE_SIZE);
@@ -318,25 +332,22 @@ static void uart_bridge_process_tx(void)
 	}
 }
 
+static void App_CanRecoverBus(FDCAN_HandleTypeDef *hfdcan)
+{
+	uint16_t try = 0xFFFFu;
+	SET_BIT(hfdcan->Instance->CCCR, FDCAN_CCCR_INIT);
+	while (((hfdcan->Instance->CCCR & FDCAN_CCCR_INIT) == 0U) && (try--)) {}
+	try = 0xFFFFu;
+	CLEAR_BIT(hfdcan->Instance->CCCR, FDCAN_CCCR_INIT);
+	while (((hfdcan->Instance->CCCR & FDCAN_CCCR_INIT) != 0U) && (try--)) {}
+}
+
 static void check_can_bus(FDCAN_HandleTypeDef *hfdcan)
 {
 	FDCAN_ProtocolStatusTypeDef protocolStatus = {};
-
-	HAL_FDCAN_GetProtocolStatus(hfdcan, &protocolStatus);
-	if (protocolStatus.BusOff) {
-		uint16_t try = 0xFFFF;
-
-		/* Правильный выход из Bus Off:
-		 * 1) установить INIT
-		 * 2) дождаться установки INIT
-		 * 3) очистить INIT
-		 * 4) дождаться выхода из INIT
-		 */
-		SET_BIT(hfdcan->Instance->CCCR, FDCAN_CCCR_INIT);
-		while (((hfdcan->Instance->CCCR & FDCAN_CCCR_INIT) == 0U) && (try--)) {}
-
-		CLEAR_BIT(hfdcan->Instance->CCCR, FDCAN_CCCR_INIT);
-		while (((hfdcan->Instance->CCCR & FDCAN_CCCR_INIT) != 0U) && (try--)) {}
+	if (HAL_FDCAN_GetProtocolStatus(hfdcan, &protocolStatus) == HAL_OK &&
+	    protocolStatus.BusOff) {
+		App_CanRecoverBus(hfdcan);
 	}
 }
 
@@ -388,8 +399,36 @@ static void CanTxEnqueueOne(CanTxEntry *ring,
 	*head = next;
 }
 
+/* Для BUS_CAN12 выбираем только одну линию:
+ * приоритет CAN1, fallback CAN2, если CAN1 неактивен.
+ * Неактивность определяется по can_bus_error_flags (бит выставлен = no-rx timeout). */
+static uint8_t CanSelectSingleBusMask(uint8_t bus_mask)
+{
+	uint8_t has_can1 = ((bus_mask & BUS_CAN0) != 0u) ? 1u : 0u;
+	uint8_t has_can2 = ((bus_mask & BUS_CAN1) != 0u) ? 1u : 0u;
+
+	if (!(has_can1 && has_can2)) {
+		return bus_mask;
+	}
+
+	uint8_t can1_active = ((can_bus_error_flags & 0x01u) == 0u) ? 1u : 0u;
+	uint8_t can2_active = ((can_bus_error_flags & 0x02u) == 0u) ? 1u : 0u;
+
+	if (can1_active) {
+		return BUS_CAN0;
+	}
+	if (can2_active) {
+		return BUS_CAN1;
+	}
+
+	/* Если обе линии сейчас неактивны — оставляем приоритет CAN1. */
+	return BUS_CAN0;
+}
+
 static void CanTxEnqueue(uint32_t id, const uint8_t *data, uint8_t bus_mask)
 {
+	bus_mask = CanSelectSingleBusMask(bus_mask);
+
 	if ((bus_mask & BUS_CAN0) != 0u) {
 		CanTxEnqueueOne(can1_tx_ring, &can1_tx_head, &can1_tx_tail, id, data);
 	}
@@ -401,7 +440,8 @@ static void CanTxEnqueue(uint32_t id, const uint8_t *data, uint8_t bus_mask)
 static void App_CanTxProcessBus(FDCAN_HandleTypeDef *hfdcan,
 								CanTxEntry *ring,
 								volatile uint8_t *head,
-								volatile uint8_t *tail)
+								volatile uint8_t *tail,
+								uint32_t *stall_since_ms)
 {
 	uint8_t can_bus = (hfdcan == &hfdcan2) ? CAN_BUS_2 : CAN_BUS_1;
 	while (*head != *tail) {
@@ -419,12 +459,19 @@ static void App_CanTxProcessBus(FDCAN_HandleTypeDef *hfdcan,
 		txHeader.MessageMarker = 0;
 
 		if (HAL_FDCAN_GetTxFifoFreeLevel(hfdcan) == 0U) {
+			if (*stall_since_ms == 0u) {
+				*stall_since_ms = HAL_GetTick();
+			}
 			check_can_bus(hfdcan);
 			break;
 		}
 		if (HAL_FDCAN_AddMessageToTxFifoQ(hfdcan, &txHeader, e->data) != HAL_OK) {
+			if (*stall_since_ms == 0u) {
+				*stall_since_ms = HAL_GetTick();
+			}
 			break;
 		}
+		*stall_since_ms = 0u;
 		/* Зеркалим исходящий кадр ППКУ в UART (BSU-обёртка). */
 		uart_tx_packet_push(can_bus, e->id, e->data);
 
@@ -432,6 +479,41 @@ static void App_CanTxProcessBus(FDCAN_HandleTypeDef *hfdcan,
 		if (*tail >= CAN_TX_RING_SIZE) {
 			*tail = 0u;
 		}
+	}
+	if (*head == *tail) {
+		*stall_since_ms = 0u;
+	}
+}
+
+static void App_CanWatchdog(void)
+{
+	uint32_t now = HAL_GetTick();
+	if ((now - can_watchdog_last_ms) < CAN_WATCHDOG_PERIOD_MS) {
+		return;
+	}
+	can_watchdog_last_ms = now;
+
+	FDCAN_ProtocolStatusTypeDef st = {};
+	if (HAL_FDCAN_GetProtocolStatus(&hfdcan1, &st) == HAL_OK && st.BusOff) {
+		App_CanRecoverBus(&hfdcan1);
+		can1_tx_stall_since_ms = 0u;
+	}
+	if (HAL_FDCAN_GetProtocolStatus(&hfdcan2, &st) == HAL_OK && st.BusOff) {
+		App_CanRecoverBus(&hfdcan2);
+		can2_tx_stall_since_ms = 0u;
+	}
+
+	if (can1_tx_head != can1_tx_tail &&
+	    can1_tx_stall_since_ms != 0u &&
+	    (now - can1_tx_stall_since_ms) >= CAN_TX_STALL_RECOVERY_MS) {
+		App_CanRecoverBus(&hfdcan1);
+		can1_tx_stall_since_ms = 0u;
+	}
+	if (can2_tx_head != can2_tx_tail &&
+	    can2_tx_stall_since_ms != 0u &&
+	    (now - can2_tx_stall_since_ms) >= CAN_TX_STALL_RECOVERY_MS) {
+		App_CanRecoverBus(&hfdcan2);
+		can2_tx_stall_since_ms = 0u;
 	}
 }
 
@@ -568,8 +650,9 @@ void App_CanTxProcess(void)
 	uart_bridge_process_rx_frames();
 	uart_bridge_process_tx();
 
-	App_CanTxProcessBus(&hfdcan1, can1_tx_ring, &can1_tx_head, &can1_tx_tail);
-	App_CanTxProcessBus(&hfdcan2, can2_tx_ring, &can2_tx_head, &can2_tx_tail);
+	App_CanTxProcessBus(&hfdcan1, can1_tx_ring, &can1_tx_head, &can1_tx_tail, &can1_tx_stall_since_ms);
+	App_CanTxProcessBus(&hfdcan2, can2_tx_ring, &can2_tx_head, &can2_tx_tail, &can2_tx_stall_since_ms);
+	App_CanWatchdog();
 }
 
 void CANSendData(uint8_t *Buf)
@@ -625,6 +708,11 @@ void HAL_FDCAN_ErrorStatusCallback(FDCAN_HandleTypeDef *hfdcan, uint32_t ErrorSt
 {
 	if ((ErrorStatusITs & FDCAN_IT_BUS_OFF) != RESET) {
 		check_can_bus(hfdcan);
+		if (hfdcan == &hfdcan1) {
+			can1_tx_stall_since_ms = 0u;
+		} else if (hfdcan == &hfdcan2) {
+			can2_tx_stall_since_ms = 0u;
+		}
 	}
 }
 
