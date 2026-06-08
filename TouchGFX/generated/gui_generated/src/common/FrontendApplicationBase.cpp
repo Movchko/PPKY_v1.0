@@ -10,6 +10,14 @@
 #include <touchgfx/hal/HAL.hpp>
 #include <gui/mainscreen_screen/mainscreenView.hpp>
 #include <gui/mainscreen_screen/mainscreenPresenter.hpp>
+#include <gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsView.hpp>
+#include <gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsPresenter.hpp>
+#include <gui/screenmenu_jurnal_screen/ScreenMenu_jurnalView.hpp>
+#include <gui/screenmenu_jurnal_screen/ScreenMenu_jurnalPresenter.hpp>
+#include <gui/screenmenu_config_screen/ScreenMenu_ConfigView.hpp>
+#include <gui/screenmenu_config_screen/ScreenMenu_ConfigPresenter.hpp>
+#include <gui/screenmenu_connection_screen/ScreenMenu_ConnectionView.hpp>
+#include <gui/screenmenu_connection_screen/ScreenMenu_ConnectionPresenter.hpp>
 #include <gui/screenmenu_screen/ScreenMenuView.hpp>
 #include <gui/screenmenu_screen/ScreenMenuPresenter.hpp>
 #include <gui/screen_logo_screen/screen_logoView.hpp>

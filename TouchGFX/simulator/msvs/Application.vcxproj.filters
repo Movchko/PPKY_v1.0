@@ -232,6 +232,54 @@
     <Filter Include="Source Files\generated\gui_generated\screen_devices_screen">
       <UniqueIdentifier>AB1BA97E-8ECD-6A0E-EB21-C2293AC91C51</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\gui\screenmenu_config_screen">
+      <UniqueIdentifier>91D1F1CA-239B-8CBE-18DB-F89CACB2D3AB</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\gui\screenmenu_config_screen">
+      <UniqueIdentifier>648E743D-1D4F-4911-6380-A7DDC5B7C48C</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\gui\screenmenu_connection_screen">
+      <UniqueIdentifier>C36273CB-61EE-F4D6-F53C-77E40E468D16</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\gui\screenmenu_connection_screen">
+      <UniqueIdentifier>A71FA918-4795-C422-0BD3-D9C5F9C62AC7</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\gui\screenmenu_jurnal_screen">
+      <UniqueIdentifier>115F1019-9DAE-8273-2A81-AD6F1A8616CB</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\gui\screenmenu_jurnal_screen">
+      <UniqueIdentifier>61179161-0FE7-1405-BEEF-6AC88710BD7B</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\gui\screenmenu_mcu_details_screen">
+      <UniqueIdentifier>B5180E3C-6038-98AD-8D14-D39851620046</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\gui\screenmenu_mcu_details_screen">
+      <UniqueIdentifier>C246E80D-B586-4000-9D29-F90272061249</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\generated\gui_generated\screenmenu_mcu_details_screen">
+      <UniqueIdentifier>B03A9F9F-0003-CB16-B4FB-8A0148622F58</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\generated\gui_generated\screenmenu_jurnal_screen">
+      <UniqueIdentifier>469EC63F-307B-25BC-3B39-1EE08F055456</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\generated\gui_generated\screenmenu_mcu_details_screen">
+      <UniqueIdentifier>97979C76-9A2D-7D90-348F-B305BC5ED604</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\generated\gui_generated\screenmenu_jurnal_screen">
+      <UniqueIdentifier>62070482-5A15-60CE-86FF-127D810C0F6A</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\generated\gui_generated\screenmenu_connection_screen">
+      <UniqueIdentifier>1FC3F25C-5A10-8D74-E138-44983EE63123</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\generated\gui_generated\screenmenu_connection_screen">
+      <UniqueIdentifier>5559D1EA-73EE-28A0-F571-29D0116584F6</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\generated\gui_generated\screenmenu_config_screen">
+      <UniqueIdentifier>535F97E8-B0BB-80D1-21B2-94B15A1597D8</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\generated\gui_generated\screenmenu_config_screen">
+      <UniqueIdentifier>803B45BD-5348-D390-5D8A-5AE64E96AA48</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(TouchGFXReleasePath)\framework\source\platform\driver\touch\SDL2TouchController.cpp">
@@ -335,6 +383,42 @@
     </ClCompile>
     <ClCompile Include="..\..\generated\gui_generated\src\screen_devices_screen\screen_devicesViewBase.cpp">
       <Filter>Source Files\generated\gui_generated\screen_devices_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\screenmenu_config_screen\ScreenMenu_ConfigPresenter.cpp">
+      <Filter>Source Files\gui\screenmenu_config_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\screenmenu_config_screen\ScreenMenu_ConfigView.cpp">
+      <Filter>Source Files\gui\screenmenu_config_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\generated\gui_generated\src\screenmenu_config_screen\ScreenMenu_ConfigViewBase.cpp">
+      <Filter>Source Files\generated\gui_generated\screenmenu_config_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\screenmenu_connection_screen\ScreenMenu_ConnectionPresenter.cpp">
+      <Filter>Source Files\gui\screenmenu_connection_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\screenmenu_connection_screen\ScreenMenu_ConnectionView.cpp">
+      <Filter>Source Files\gui\screenmenu_connection_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\generated\gui_generated\src\screenmenu_connection_screen\ScreenMenu_ConnectionViewBase.cpp">
+      <Filter>Source Files\generated\gui_generated\screenmenu_connection_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\screenmenu_jurnal_screen\ScreenMenu_jurnalPresenter.cpp">
+      <Filter>Source Files\gui\screenmenu_jurnal_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\screenmenu_jurnal_screen\ScreenMenu_jurnalView.cpp">
+      <Filter>Source Files\gui\screenmenu_jurnal_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\generated\gui_generated\src\screenmenu_jurnal_screen\ScreenMenu_jurnalViewBase.cpp">
+      <Filter>Source Files\generated\gui_generated\screenmenu_jurnal_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\screenmenu_mcu_details_screen\ScreenMenu_MCU_DetailsPresenter.cpp">
+      <Filter>Source Files\gui\screenmenu_mcu_details_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\screenmenu_mcu_details_screen\ScreenMenu_MCU_DetailsView.cpp">
+      <Filter>Source Files\gui\screenmenu_mcu_details_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\generated\gui_generated\src\screenmenu_mcu_details_screen\ScreenMenu_MCU_DetailsViewBase.cpp">
+      <Filter>Source Files\generated\gui_generated\screenmenu_mcu_details_screen</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -849,6 +933,42 @@
     </ClInclude>
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screen_devices_screen\screen_devicesViewBase.hpp">
       <Filter>Header Files\generated\gui_generated\screen_devices_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\screenmenu_config_screen\ScreenMenu_ConfigPresenter.hpp">
+      <Filter>Header Files\gui\screenmenu_config_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\screenmenu_config_screen\ScreenMenu_ConfigView.hpp">
+      <Filter>Header Files\gui\screenmenu_config_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screenmenu_config_screen\ScreenMenu_ConfigViewBase.hpp">
+      <Filter>Header Files\generated\gui_generated\screenmenu_config_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\screenmenu_connection_screen\ScreenMenu_ConnectionPresenter.hpp">
+      <Filter>Header Files\gui\screenmenu_connection_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\screenmenu_connection_screen\ScreenMenu_ConnectionView.hpp">
+      <Filter>Header Files\gui\screenmenu_connection_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screenmenu_connection_screen\ScreenMenu_ConnectionViewBase.hpp">
+      <Filter>Header Files\generated\gui_generated\screenmenu_connection_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\screenmenu_jurnal_screen\ScreenMenu_jurnalPresenter.hpp">
+      <Filter>Header Files\gui\screenmenu_jurnal_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\screenmenu_jurnal_screen\ScreenMenu_jurnalView.hpp">
+      <Filter>Header Files\gui\screenmenu_jurnal_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screenmenu_jurnal_screen\ScreenMenu_jurnalViewBase.hpp">
+      <Filter>Header Files\generated\gui_generated\screenmenu_jurnal_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\screenmenu_mcu_details_screen\ScreenMenu_MCU_DetailsPresenter.hpp">
+      <Filter>Header Files\gui\screenmenu_mcu_details_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\screenmenu_mcu_details_screen\ScreenMenu_MCU_DetailsView.hpp">
+      <Filter>Header Files\gui\screenmenu_mcu_details_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screenmenu_mcu_details_screen\ScreenMenu_MCU_DetailsViewBase.hpp">
+      <Filter>Header Files\generated\gui_generated\screenmenu_mcu_details_screen</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

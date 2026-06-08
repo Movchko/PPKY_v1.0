@@ -16,6 +16,7 @@ public:
     void refreshDeviceUi();
     void nextDevice();
     void prevDevice();
+    uint8_t getSelectedCfgSlot() const;
 #endif
 protected:
 #ifndef SIMULATOR

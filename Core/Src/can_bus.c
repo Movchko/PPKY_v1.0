@@ -10,6 +10,7 @@
 #include "can_bus.h"
 #include "main.h"
 #include "backend.h"
+#include "menu_ui.h"
 #include "stm32h5xx_hal.h"
 #include <string.h>
 
@@ -290,6 +291,9 @@ static void uart_bridge_on_rx_byte(uint8_t b)
 
 static void uart_bridge_rx_start(void)
 {
+	if (!Esp32_IsEnabled()) {
+		return;
+	}
 	if (uart_rx_started != 0u) {
 		return;
 	}
@@ -300,6 +304,9 @@ static void uart_bridge_rx_start(void)
 
 static void uart_bridge_process_rx_frames(void)
 {
+	if (!Esp32_IsEnabled()) {
+		return;
+	}
 	while (uart_rx_head != uart_rx_tail) {
 		UartRxFrame *f = &uart_rx_ring[uart_rx_tail];
 		uart_rx_tail = ring_next_u8(uart_rx_tail, UART_BRIDGE_QUEUE_SIZE);
@@ -318,6 +325,9 @@ static void uart_bridge_process_rx_frames(void)
 
 static void uart_bridge_process_tx(void)
 {
+	if (!Esp32_IsEnabled()) {
+		return;
+	}
 	if (uart_tx_busy != 0u) {
 		return;
 	}
@@ -678,6 +688,9 @@ void UARTSendData(uint8_t *Buf)
 	if (isMainInit == 0u) {
 		return;
 	}
+	if (!Esp32_IsEnabled()) {
+		return;
+	}
 
 	uint32_t id = (*(uint32_t *)Buf);
 	const uint8_t *data = &Buf[4];
@@ -721,6 +734,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	if (huart != &huart2) {
 		return;
 	}
+	if (!Esp32_IsEnabled()) {
+		return;
+	}
 
 	uart_bridge_on_rx_byte(uart_rx_byte);
 	(void)HAL_UART_Receive_IT(&huart2, &uart_rx_byte, 1u);
@@ -741,6 +757,19 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 
 	uart_tx_busy = 0u;
 	uart_rx_started = 0u;
-	(void)HAL_UART_Receive_IT(&huart2, &uart_rx_byte, 1u);
-	uart_rx_started = 1u;
+	if (Esp32_IsEnabled()) {
+		(void)HAL_UART_Receive_IT(&huart2, &uart_rx_byte, 1u);
+		uart_rx_started = 1u;
+	}
+}
+
+void UartBridge_Stop(void)
+{
+	(void)HAL_UART_AbortReceive_IT(&huart2);
+	(void)HAL_UART_AbortTransmit_IT(&huart2);
+	uart_tx_busy = 0u;
+	uart_rx_started = 0u;
+	uart_tx_head = uart_tx_tail;
+	uart_rx_head = uart_rx_tail;
+	uart_rx_reset();
 }

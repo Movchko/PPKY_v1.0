@@ -49,6 +49,7 @@ void Model::tick()
 		modelListener->onFireStatusChanged(fireActive, fireMode, fireZone, fireRemaining,
 						     fireZoneNameCount, fireZoneNames);
 		modelListener->onWarningStatusChanged(warningActive, warningCount, warningBigTitles, warningDetails);
+		modelListener->onAppTick();
 	}
 
 #endif

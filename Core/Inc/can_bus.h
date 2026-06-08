@@ -60,6 +60,9 @@ void App_CanTxProcess(void);
   */
 void CANSendData(uint8_t *Buf);
 
+/** Остановить UART-мост ESP32 (при выключении модуля). */
+void UartBridge_Stop(void);
+
 /** Глобальные флаги ошибки шин: бит 0 = CAN1 (нет приёма), бит 1 = CAN2 */
 extern uint8_t can_bus_error_flags;
 

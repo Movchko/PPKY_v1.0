@@ -76,6 +76,205 @@
         "Interactions": []
       },
       {
+        "Name": "ScreenMenu_MCU_Details",
+        "Components": [
+          {
+            "Type": "Box",
+            "Name": "box1",
+            "Width": 128,
+            "Height": 64
+          },
+          {
+            "Type": "TextArea",
+            "Name": "textAreatime_2",
+            "Width": 128,
+            "Height": 64,
+            "TextId": "__SingleUse_OMNP",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            }
+          }
+        ],
+        "Interactions": [
+          {
+            "InteractionName": "Interaction1",
+            "Trigger": {
+              "Type": "TriggerWhen",
+              "ActionCustomTypeName": "Call ScreenMenu_MCU_Details Button_Press"
+            },
+            "Action": {
+              "Type": "ActionExecuteCode"
+            }
+          }
+        ],
+        "CustomActions": [
+          {
+            "Name": "Button_Press",
+            "HasValue": true,
+            "ValueType": "uint8_t"
+          }
+        ]
+      },
+      {
+        "Name": "ScreenMenu_jurnal",
+        "Components": [
+          {
+            "Type": "Box",
+            "Name": "box1",
+            "Width": 128,
+            "Height": 64
+          },
+          {
+            "Type": "TextArea",
+            "Name": "textAreatime_2",
+            "Width": 128,
+            "Height": 64,
+            "TextId": "__SingleUse_1SPW",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            }
+          }
+        ],
+        "Interactions": [
+          {
+            "InteractionName": "Interaction1",
+            "Trigger": {
+              "Type": "TriggerWhen",
+              "ActionCustomTypeName": "Call ScreenMenu_jurnal Button_Press"
+            },
+            "Action": {
+              "Type": "ActionExecuteCode"
+            }
+          }
+        ],
+        "CustomActions": [
+          {
+            "Name": "Button_Press",
+            "HasValue": true,
+            "ValueType": "uint8_t"
+          }
+        ]
+      },
+      {
+        "Name": "ScreenMenu_Config",
+        "Components": [
+          {
+            "Type": "Box",
+            "Name": "box1",
+            "Width": 128,
+            "Height": 64
+          },
+          {
+            "Type": "TextArea",
+            "Name": "textAreatime_2",
+            "Width": 128,
+            "Height": 64,
+            "TextId": "__SingleUse_750Q",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            }
+          }
+        ],
+        "Interactions": [
+          {
+            "InteractionName": "Interaction1",
+            "Trigger": {
+              "Type": "TriggerWhen",
+              "ActionCustomTypeName": "Call ScreenMenu_Config Button_Press"
+            },
+            "Action": {
+              "Type": "ActionExecuteCode"
+            }
+          }
+        ],
+        "CustomActions": [
+          {
+            "Name": "Button_Press",
+            "HasValue": true,
+            "ValueType": "uint8_t"
+          }
+        ]
+      },
+      {
+        "Name": "ScreenMenu_Connection",
+        "Components": [
+          {
+            "Type": "Box",
+            "Name": "box1",
+            "Width": 128,
+            "Height": 64
+          },
+          {
+            "Type": "TextArea",
+            "Name": "textAreatime_2",
+            "Y": 49,
+            "Width": 36,
+            "Height": 15,
+            "TextId": "__SingleUse_T5YA",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            }
+          },
+          {
+            "Type": "ScrollableContainer",
+            "Name": "scrollableContainer1",
+            "Y": 15,
+            "Width": 128,
+            "Height": 30,
+            "HorizontalScrollEnabled": true,
+            "ScrollbarsAlpha": 255,
+            "Components": [
+              {
+                "Type": "ScrollWheel",
+                "Name": "scrollWheel1",
+                "Y": 2,
+                "Width": 128,
+                "Height": 30,
+                "IsCircular": true,
+                "ItemTemplateName": "mainmenu",
+                "NumberofItems": 2,
+                "Easing": "Back",
+                "EasingOption": "Out",
+                "SwipeAcceleration": 1.0,
+                "DragAcceleration": 1.0,
+                "OverShootPercentage": 75
+              }
+            ]
+          }
+        ],
+        "Interactions": [
+          {
+            "InteractionName": "Interaction1",
+            "Trigger": {
+              "Type": "TriggerWhen",
+              "ActionCustomTypeName": "Call ScreenMenu_Connection Button_Press"
+            },
+            "Action": {
+              "Type": "ActionExecuteCode"
+            }
+          }
+        ],
+        "CustomActions": [
+          {
+            "Name": "Button_Press",
+            "HasValue": true,
+            "ValueType": "uint8_t"
+          }
+        ]
+      },
+      {
         "Name": "ScreenMenu",
         "Components": [
           {

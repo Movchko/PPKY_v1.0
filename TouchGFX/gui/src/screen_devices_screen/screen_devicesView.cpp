@@ -150,4 +150,12 @@ void screen_devicesView::prevDevice()
     selectedIndex = (uint8_t)((selectedIndex == 0u) ? (deviceCount - 1u) : (selectedIndex - 1u));
     renderSelected();
 }
+
+uint8_t screen_devicesView::getSelectedCfgSlot() const
+{
+    if (deviceCount == 0u) {
+        return 0xFFu;
+    }
+    return deviceSlots[selectedIndex];
+}
 #endif

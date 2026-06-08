@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "app.hpp"
+#include "menu_ui.h"
 
 extern PPKYCfg PPKYConfig;
 extern ActiveDeviceInfo g_active_devices[NUM_ACTIVE_DEVICE];
@@ -1680,6 +1681,7 @@ static void Fire_ApplyFireModePolicy(uint32_t now_ms)
 		return;
 	}
 	g_fire.last_fire_mode = mode;
+	Led_Set(LED_AUTO_OFF, (mode == 2u) ? 1u : 0u);
 
 	/* Внешний перевод в manual во время активного пожара должен вести себя как кнопка STOP. */
 	if ((mode == 2u) && Fire_AnyActiveSlot() && (Fire_CountPendingPhase2() > 0u) && !g_fire.zone_countdown_stopped) {
@@ -2051,6 +2053,7 @@ void Fire_Init(void)
 	g_fire.start_all_is_bright = 0u;
 	g_fire.last_ui_nzones = 0u;
 	g_fire.last_fire_mode = PPKYConfig.fire_mode;
+	Led_Set(LED_AUTO_OFF, (PPKYConfig.fire_mode == 2u) ? 1u : 0u);
 	g_fire_ui_manual_select_enabled = 0u;
 	g_fire_ui_selected_index = 0u;
 }
@@ -2058,6 +2061,9 @@ void Fire_Init(void)
 /* Периодический тик 1 мс: FSM, таймеры автопуска и UI-обновления. */
 void Fire_Timer1ms(void)
 {
+	if (MenuUi_IsConfigSessionActive()) {
+		return;
+	}
 	/* 1мс-путь: крутит FSM при активном сценарии или удержании ПУСК ОБЩИЙ. */
 	uint32_t now = HAL_GetTick();
 	Fire_ApplyFireModePolicy(now);
@@ -2075,6 +2081,9 @@ void Fire_Timer1ms(void)
 /* Периодический тик 10 мс: обработка кнопок и удержания ПУСК ОБЩИЙ. */
 void Fire_Timer10ms(void)
 {
+	if (MenuUi_IsConfigSessionActive()) {
+		return;
+	}
 	/* 10мс-путь: кнопки (в т.ч. удержание ПУСК ОБЩИЙ 3с) и edge-trigger событий. */
 	ButtonState st_start_all = Button_GetState(BUT_FORCE);
 	if (st_start_all == ButtonStatePress || st_start_all == ButtonStateLongPress) {
@@ -2117,6 +2126,9 @@ void Fire_Timer10ms(void)
 /* Входящее событие ПОЖАР от МКУ: добавляет зону и запускает сценарий. */
 void Fire_OnStatusFire(uint32_t msg_id)
 {
+	if (MenuUi_IsConfigSessionActive()) {
+		return;
+	}
 	/* Вход статуса пожара от МКУ: учитываем уникальные источники в зоне
 	 * и поддерживаем ПОЖАР1/ПОЖАР2 для режима fire_and[]. */
 	can_ext_id_t id;
@@ -2141,6 +2153,9 @@ void Fire_OnStatusFire(uint32_t msg_id)
 /* Входящий ReplyStatusFire от МКУ (подтверждение статуса пожара). */
 void Fire_OnReplyStatusFire(uint32_t msg_id)
 {
+	if (MenuUi_IsConfigSessionActive()) {
+		return;
+	}
 	(void)msg_id;
 	Fire_Transition(FIRE_EVENT_REPLY_FIRE, HAL_GetTick());
 }
@@ -2148,18 +2163,27 @@ void Fire_OnReplyStatusFire(uint32_t msg_id)
 /* Входящая команда StopExtinguishment от МКУ/CAN. */
 void Fire_OnStopExtinguishment(uint32_t msg_id)
 {
+	if (MenuUi_IsConfigSessionActive()) {
+		return;
+	}
 	(void)msg_id;
 	Fire_Transition(FIRE_EVENT_STOP_EXT, HAL_GetTick());
 }
 
 void Fire_OnPauseExtinguishmentTimer(uint32_t msg_id)
 {
+	if (MenuUi_IsConfigSessionActive()) {
+		return;
+	}
 	(void)msg_id;
 	Fire_PauseCountdownAndDispatch(HAL_GetTick());
 }
 
 void Fire_OnResumeExtinguishmentTimer(uint32_t msg_id)
 {
+	if (MenuUi_IsConfigSessionActive()) {
+		return;
+	}
 	(void)msg_id;
 	Fire_ResumeCountdownAndDispatch(HAL_GetTick());
 }

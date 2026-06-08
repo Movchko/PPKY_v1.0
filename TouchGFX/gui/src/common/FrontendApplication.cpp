@@ -7,6 +7,14 @@
 #include <gui/screenmenu_screen/ScreenMenuPresenter.hpp>
 #include <gui/screen_devices_screen/screen_devicesView.hpp>
 #include <gui/screen_devices_screen/screen_devicesPresenter.hpp>
+#include <gui/screenmenu_connection_screen/ScreenMenu_ConnectionView.hpp>
+#include <gui/screenmenu_connection_screen/ScreenMenu_ConnectionPresenter.hpp>
+#include <gui/screenmenu_config_screen/ScreenMenu_ConfigView.hpp>
+#include <gui/screenmenu_config_screen/ScreenMenu_ConfigPresenter.hpp>
+#include <gui/screenmenu_jurnal_screen/ScreenMenu_jurnalView.hpp>
+#include <gui/screenmenu_jurnal_screen/ScreenMenu_jurnalPresenter.hpp>
+#include <gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsView.hpp>
+#include <gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsPresenter.hpp>
 #include <touchgfx/transitions/NoTransition.hpp>
 
 #ifndef SIMULATOR
@@ -29,7 +37,6 @@ void FrontendApplication::handleTickEvent()
     model.tick();
 
 #ifndef SIMULATOR
-    //Button_Process();
     ModelListener* listener = model.getModelListener();
     if (listener)
     {
@@ -66,4 +73,48 @@ void FrontendApplication::gotoScreenDevicesScreenNoTransition()
 void FrontendApplication::gotoScreenDevicesScreenNoTransitionImpl()
 {
     makeTransition<screen_devicesView, screen_devicesPresenter, NoTransition, Model>(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
+}
+
+void FrontendApplication::gotoScreenMenuConnectionScreenNoTransition()
+{
+    screenMenuConnectionTransitionCallback = Callback<FrontendApplication>(this, &FrontendApplication::gotoScreenMenuConnectionScreenNoTransitionImpl);
+    pendingScreenTransitionCallback = &screenMenuConnectionTransitionCallback;
+}
+
+void FrontendApplication::gotoScreenMenuConnectionScreenNoTransitionImpl()
+{
+    makeTransition<ScreenMenu_ConnectionView, ScreenMenu_ConnectionPresenter, NoTransition, Model>(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
+}
+
+void FrontendApplication::gotoScreenMenuConfigScreenNoTransition()
+{
+    screenMenuConfigTransitionCallback = Callback<FrontendApplication>(this, &FrontendApplication::gotoScreenMenuConfigScreenNoTransitionImpl);
+    pendingScreenTransitionCallback = &screenMenuConfigTransitionCallback;
+}
+
+void FrontendApplication::gotoScreenMenuConfigScreenNoTransitionImpl()
+{
+    makeTransition<ScreenMenu_ConfigView, ScreenMenu_ConfigPresenter, NoTransition, Model>(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
+}
+
+void FrontendApplication::gotoScreenMenuJurnalScreenNoTransition()
+{
+    screenMenuJurnalTransitionCallback = Callback<FrontendApplication>(this, &FrontendApplication::gotoScreenMenuJurnalScreenNoTransitionImpl);
+    pendingScreenTransitionCallback = &screenMenuJurnalTransitionCallback;
+}
+
+void FrontendApplication::gotoScreenMenuJurnalScreenNoTransitionImpl()
+{
+    makeTransition<ScreenMenu_jurnalView, ScreenMenu_jurnalPresenter, NoTransition, Model>(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
+}
+
+void FrontendApplication::gotoScreenMenuMcuDetailsScreenNoTransition()
+{
+    screenMenuMcuDetailsTransitionCallback = Callback<FrontendApplication>(this, &FrontendApplication::gotoScreenMenuMcuDetailsScreenNoTransitionImpl);
+    pendingScreenTransitionCallback = &screenMenuMcuDetailsTransitionCallback;
+}
+
+void FrontendApplication::gotoScreenMenuMcuDetailsScreenNoTransitionImpl()
+{
+    makeTransition<ScreenMenu_MCU_DetailsView, ScreenMenu_MCU_DetailsPresenter, NoTransition, Model>(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
 }

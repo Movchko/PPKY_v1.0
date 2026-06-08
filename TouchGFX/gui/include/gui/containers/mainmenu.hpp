@@ -9,6 +9,7 @@ public:
     mainmenu();
     virtual ~mainmenu() {}
     void updateText(int16_t value);
+    void updateConnectionText(int16_t value);
     virtual void initialize();
 protected:
 };

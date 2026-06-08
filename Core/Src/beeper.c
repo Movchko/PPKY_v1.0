@@ -7,6 +7,7 @@
 
 #include "beeper.h"
 #include "main.h"
+#include "menu_ui.h"
 
 /***********************************************************************************************************/
 /* Внутренние типы и переменные */
@@ -316,7 +317,10 @@ void Beeper_ButtonAcknowledge(void)
  */
 void Beeper_Process(void)
 {
-
+	if (MenuUi_IsConfigSessionActive()) {
+		Beeper_Off();
+		return;
+	}
 
 	switch (beeper_state)
 	{

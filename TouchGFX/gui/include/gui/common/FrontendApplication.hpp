@@ -15,20 +15,29 @@ public:
 
     virtual void handleTickEvent() override;
 
-    /** Переход на экран меню */
     void gotoScreenMenuScreenNoTransition();
-    /** Переход на экран диспетчера устройств */
     void gotoScreenDevicesScreenNoTransition();
+    void gotoScreenMenuConnectionScreenNoTransition();
+    void gotoScreenMenuConfigScreenNoTransition();
+    void gotoScreenMenuJurnalScreenNoTransition();
+    void gotoScreenMenuMcuDetailsScreenNoTransition();
 
-    /** Доступ к модели (для колбэков настроек и т.д.) */
     Model& getModel() { return model; }
 
 private:
     void gotoScreenMenuScreenNoTransitionImpl();
     void gotoScreenDevicesScreenNoTransitionImpl();
+    void gotoScreenMenuConnectionScreenNoTransitionImpl();
+    void gotoScreenMenuConfigScreenNoTransitionImpl();
+    void gotoScreenMenuJurnalScreenNoTransitionImpl();
+    void gotoScreenMenuMcuDetailsScreenNoTransitionImpl();
 
     touchgfx::Callback<FrontendApplication> screenMenuTransitionCallback;
     touchgfx::Callback<FrontendApplication> screenDevicesTransitionCallback;
+    touchgfx::Callback<FrontendApplication> screenMenuConnectionTransitionCallback;
+    touchgfx::Callback<FrontendApplication> screenMenuConfigTransitionCallback;
+    touchgfx::Callback<FrontendApplication> screenMenuJurnalTransitionCallback;
+    touchgfx::Callback<FrontendApplication> screenMenuMcuDetailsTransitionCallback;
 
 #ifndef SIMULATOR
     static const int NUM_BUTTONS = 7;

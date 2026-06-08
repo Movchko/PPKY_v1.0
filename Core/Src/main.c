@@ -176,11 +176,6 @@ int main(void)
    */
   //HAL_ICACHE_Disable();
 
-  // must have for esp32
-  HAL_GPIO_WritePin(ESP32_EN_GPIO_Port, ESP32_EN_Pin, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(ESP32_BOOT_GPIO_Port, ESP32_BOOT_Pin, GPIO_PIN_SET);
-  HAL_Delay(100);
-
   uint8_t isFlash = 0;
   isFlash = SPIF_Init(&hFlash, &hspi1, FLASH_CS_GPIO_Port, FLASH_CS_Pin);
   //TODO:: вывести ошибку FLASH на экран, критичная неисправность

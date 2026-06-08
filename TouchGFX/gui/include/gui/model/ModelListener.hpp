@@ -26,6 +26,7 @@ public:
 				     char (*zoneNames)[ZONE_NAME_SIZE + 1]) {}
     virtual void onWarningStatusChanged(bool active, uint8_t nItems, char (*bigTitles)[WARNING_TITLE_LEN],
 					char (*details)[ZONE_NAME_SIZE + 1]) {}
+    virtual void onAppTick() {}
 #endif
 protected:
     Model* model;

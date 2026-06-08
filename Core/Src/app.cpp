@@ -13,6 +13,7 @@
 #include "gui/common/FrontendHeap.hpp"
 #include "fire.h"
 #include "warning.h"
+#include "menu_ui.h"
 
 
 
@@ -232,6 +233,7 @@ static void MkuHardReset_Process(uint32_t now_ms)
 
 extern "C" void App_OnConfigApplySuccess(void)
 {
+	MenuConfig_OnApplySuccess();
 	/* После успешного APPLY ко всем МКУ делаем отложенный hard reset через 5с. */
 	MkuHardReset_ScheduleAfterApply();
 }
@@ -1066,6 +1068,8 @@ void AppInit() {
 
 	// Сообщаем модели, какую функцию вызывать при смене состояния звука
 	FrontendHeap::getInstance().model.setSoundToggledCallback(Beeper_SoundOnOff);
+	Beeper_SoundOnOff(PPKYConfig.beep != 0u);
+	FrontendHeap::getInstance().model.setSoundOn(PPKYConfig.beep != 0u);
 
 	for(uint8_t i = 0; i < 2; i++) {
 		Power[i] = new PControl(i);
@@ -1290,6 +1294,9 @@ void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 
 extern "C" void Fire_UiUpdate(uint8_t active, uint8_t mode, uint8_t remaining_s, uint8_t n_zones,
 			      char (*zone_names)[ZONE_NAME_SIZE + 1]) {
+	if (MenuUi_IsConfigSessionActive()) {
+		return;
+	}
 	FrontendHeap::getInstance().model.setFireStatusFromApp(
 		active != 0, mode, 0xFFu, remaining_s, n_zones, zone_names);
 }
@@ -1297,6 +1304,9 @@ extern "C" void Fire_UiUpdate(uint8_t active, uint8_t mode, uint8_t remaining_s,
 extern "C" void Warning_UiUpdate(uint8_t active, uint8_t n_items,
 				 char (*big_titles)[WARNING_TITLE_LEN],
 				 char (*details)[ZONE_NAME_SIZE + 1]) {
+	if (MenuUi_IsConfigSessionActive()) {
+		return;
+	}
 	FrontendHeap::getInstance().model.setWarningStatusFromApp(
 		active != 0, n_items, big_titles, details);
 }

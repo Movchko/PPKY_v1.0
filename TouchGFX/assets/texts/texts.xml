@@ -6,6 +6,18 @@
   <Texts>
     <TextGroup Id="Group1" />
     <TextGroup Id="Unsorted">
+      <Text Id="__SingleUse_OMNP" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">*ТИП МКУ* *N*&#10;*ЗОНА*&#10;*СЕРИЙНИК*</Translation>
+      </Text>
+      <Text Id="__SingleUse_1SPW" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">В разработке</Translation>
+      </Text>
+      <Text Id="__SingleUse_750Q" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">ПОДКЛЮЧЕНИЕ</Translation>
+      </Text>
+      <Text Id="__SingleUse_T5YA" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">....</Translation>
+      </Text>
       <Text Id="__SingleUse_P23D" Alignment="Left" TypographyId="Default">
         <Translation Language="GB"></Translation>
       </Text>
@@ -17,6 +29,9 @@
       </Text>
       <Text Id="__SingleUse_H127" Alignment="Center" TypographyId="Large">
         <Translation Language="GB">&lt;value&gt;</Translation>
+      </Text>
+      <Text Id="ResourceId3" Alignment="Left" TypographyId="Default">
+        <Translation Language="GB">New Text</Translation>
       </Text>
       <Text Id="__SingleUse_MO05" Alignment="Left" TypographyId="Default">
         <Translation Language="GB">АВАРИЯ</Translation>
@@ -49,7 +64,7 @@
         <Translation Language="GB">йцукенгшщзхъфывапролджэячсмитьбю ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ-/|\</Translation>
       </Text>
       <Text Id="alphabet" Alignment="Left" TypographyId="Small">
-        <Translation Language="GB">QWERTYUIOPASDFGHJKLZXCVBNM qwertyuiopasdfghjklzxcvbnm*()?:%;№"!</Translation>
+        <Translation Language="GB">QWERTYUIOPASDFGHJKLZXCVBNM qwertyuiopasdfghjklzxcvbnm*()?:%;№"!=+</Translation>
       </Text>
       <Text Id="__SingleUse_D1VE" Alignment="Left" TypographyId="Small">
         <Translation Language="GB">&lt;value&gt;</Translation>
@@ -83,6 +98,9 @@
       </Text>
       <Text Id="Test" Alignment="Center" TypographyId="Large">
         <Translation Language="GB">ТЕСТ</Translation>
+      </Text>
+      <Text Id="Devices" Alignment="Center" TypographyId="Large">
+        <Translation Language="GB">ДИСПЕТЧЕР</Translation>
       </Text>
       <Text Id="__SingleUse_B5JP" Alignment="Center" TypographyId="Large">
         <Translation Language="GB">&lt;value&gt;</Translation>
