@@ -12,8 +12,6 @@
 #include <touchgfx/containers/ScrollableContainer.hpp>
 #include <touchgfx/containers/scrollers/ScrollWheel.hpp>
 #include <gui/containers/mainmenu.hpp>
-#include <gui/containers/CustomContainerTopBar.hpp>
-#include <gui/containers/CustomContainerTime.hpp>
 
 class ScreenMenuViewBase : public touchgfx::View<ScreenMenuPresenter>
 {
@@ -23,11 +21,6 @@ public:
     virtual void setupScreen();
 
     virtual void scrollWheel1UpdateItem(mainmenu& item, int16_t itemIndex)
-    {
-        // Override and implement this function in ScreenMenu
-    }
-
-    virtual void scrollWheel1_1UpdateItem(CustomContainerTime& item, int16_t itemIndex)
     {
         // Override and implement this function in ScreenMenu
     }
@@ -55,10 +48,6 @@ protected:
     touchgfx::ScrollableContainer scrollableContainer1;
     touchgfx::ScrollWheel scrollWheel1;
     touchgfx::DrawableListItems<mainmenu, 2> scrollWheel1ListItems;
-    CustomContainerTopBar customContainerTopBar1;
-    touchgfx::ScrollableContainer scrollableContainer1_1;
-    touchgfx::ScrollWheel scrollWheel1_1;
-    touchgfx::DrawableListItems<CustomContainerTime, 2> scrollWheel1_1ListItems;
 
 private:
 

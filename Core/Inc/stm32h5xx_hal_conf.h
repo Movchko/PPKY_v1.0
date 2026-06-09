@@ -47,7 +47,7 @@
 /*#define HAL_DAC_MODULE_ENABLED */
 /*#define HAL_DCACHE_MODULE_ENABLED */
 /*#define HAL_DCMI_MODULE_ENABLED */
-/*#define HAL_DTS_MODULE_ENABLED */
+#define HAL_DTS_MODULE_ENABLED
 #define HAL_FDCAN_MODULE_ENABLED
 /*#define HAL_GTZC_MODULE_ENABLED */
 /*#define HAL_HASH_MODULE_ENABLED */
@@ -175,7 +175,7 @@
   */
 
 #define  VDD_VALUE                  3300UL /*!< Value of VDD in mv */
-#define  TICK_INT_PRIORITY          (15UL)  /*!< tick interrupt priority (lowest by default) */
+#define  TICK_INT_PRIORITY          (1UL)  /*!< tick interrupt priority */
 #define  USE_RTOS                   0U
 #define  PREFETCH_ENABLE            0U               /*!< Enable prefetch */
 

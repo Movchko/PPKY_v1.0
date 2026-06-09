@@ -3,11 +3,7 @@
 #include <gui/common/FrontendApplication.hpp>
 #include <touchgfx/Application.hpp>
 #include "button.h"
-#include "device_config.h"
 #include "menu_ui.h"
-#include <cstdio>
-
-extern PPKYCfg PPKYConfig;
 
 ScreenMenu_MCU_DetailsPresenter::ScreenMenu_MCU_DetailsPresenter(ScreenMenu_MCU_DetailsView& v)
     : view(v)
@@ -17,25 +13,8 @@ ScreenMenu_MCU_DetailsPresenter::ScreenMenu_MCU_DetailsPresenter(ScreenMenu_MCU_
 void ScreenMenu_MCU_DetailsPresenter::activate()
 {
 #ifndef SIMULATOR
-    uint8_t slot = MenuUi_GetMcuDetailSlot();
-    if (slot >= 32u) {
-        view.setDetailText("Нет данных");
-        return;
-    }
-
-    const MKUCfg* mku = &PPKYConfig.CfgDevices[slot];
-    const Device* dev = &mku->UId.devId;
-
-    char line[160] = {0};
-    (void)std::snprintf(line, sizeof(line),
-        "h=%u z=%u t=%u\n%08lX:%08lX:%08lX",
-        (unsigned)dev->h_adr,
-        (unsigned)dev->zone,
-        (unsigned)dev->d_type,
-        (unsigned long)mku->UId.UId0,
-        (unsigned long)mku->UId.UId1,
-        (unsigned long)mku->UId.UId2);
-    view.setDetailText(line);
+    view.refreshDeviceList();
+    view.selectCfgSlot(MenuUi_GetMcuDetailSlot());
 #endif
 }
 
@@ -50,9 +29,21 @@ void ScreenMenu_MCU_DetailsPresenter::handleButton(uint8_t but, uint8_t state)
         return;
     }
 
+    FrontendApplication* app = static_cast<FrontendApplication*>(touchgfx::Application::getInstance());
+
     if (but == BUT_ESC) {
-        FrontendApplication* app = static_cast<FrontendApplication*>(touchgfx::Application::getInstance());
         app->gotoScreenDevicesScreenNoTransition();
+        return;
+    }
+    if (but == BUT_UP) {
+        view.prevDevice();
+        MenuUi_SetMcuDetailSlot(view.getSelectedCfgSlot());
+        return;
+    }
+    if (but == BUT_DOWN) {
+        view.nextDevice();
+        MenuUi_SetMcuDetailSlot(view.getSelectedCfgSlot());
+        return;
     }
 }
 #endif

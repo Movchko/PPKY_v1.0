@@ -12,6 +12,8 @@
 #include <gui/mainscreen_screen/mainscreenPresenter.hpp>
 #include <gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsView.hpp>
 #include <gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsPresenter.hpp>
+#include <gui/screen_devices_screen/screen_devicesView.hpp>
+#include <gui/screen_devices_screen/screen_devicesPresenter.hpp>
 #include <gui/screenmenu_jurnal_screen/ScreenMenu_jurnalView.hpp>
 #include <gui/screenmenu_jurnal_screen/ScreenMenu_jurnalPresenter.hpp>
 #include <gui/screenmenu_config_screen/ScreenMenu_ConfigView.hpp>
@@ -22,8 +24,6 @@
 #include <gui/screenmenu_screen/ScreenMenuPresenter.hpp>
 #include <gui/screen_logo_screen/screen_logoView.hpp>
 #include <gui/screen_logo_screen/screen_logoPresenter.hpp>
-#include <gui/screen_devices_screen/screen_devicesView.hpp>
-#include <gui/screen_devices_screen/screen_devicesPresenter.hpp>
 
 using namespace touchgfx;
 

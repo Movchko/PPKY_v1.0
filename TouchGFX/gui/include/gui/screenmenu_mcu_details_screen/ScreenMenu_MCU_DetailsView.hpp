@@ -3,7 +3,6 @@
 
 #include <gui_generated/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsViewBase.hpp>
 #include <gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsPresenter.hpp>
-#include <touchgfx/widgets/TextAreaWithWildcard.hpp>
 
 class ScreenMenu_MCU_DetailsView : public ScreenMenu_MCU_DetailsViewBase
 {
@@ -13,13 +12,20 @@ public:
     virtual void setupScreen();
     virtual void tearDownScreen();
 
-    void setDetailText(const char* text);
+#ifndef SIMULATOR
+    void refreshDeviceList();
+    void selectCfgSlot(uint8_t cfg_slot);
+    void nextDevice();
+    void prevDevice();
+    uint8_t getSelectedCfgSlot() const;
+#endif
 protected:
 #ifndef SIMULATOR
-    static const uint16_t DETAIL_TEXT_SIZE = 128;
-    touchgfx::Unicode::UnicodeChar detailTextBuffer[DETAIL_TEXT_SIZE];
-    touchgfx::TextAreaWithOneWildcard detailText;
-    void initDetailText();
+    void renderSelected();
+
+    uint8_t selectedIndex = 0u;
+    uint8_t deviceSlots[32] = {0u};
+    uint8_t deviceCount = 0u;
 #endif
 };
 

@@ -15,11 +15,19 @@ ScreenMenu_MCU_DetailsViewBase::ScreenMenu_MCU_DetailsViewBase()
     box1.setColor(touchgfx::Color::getColorFromRGB(0, 0, 0));
     add(box1);
 
-    textAreatime_2.setPosition(0, 0, 128, 64);
-    textAreatime_2.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
-    textAreatime_2.setLinespacing(0);
-    textAreatime_2.setTypedText(touchgfx::TypedText(T___SINGLEUSE_OMNP));
-    add(textAreatime_2);
+    textArea_MCU.setPosition(0, 25, 128, 15);
+    textArea_MCU.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
+    textArea_MCU.setLinespacing(0);
+    textArea_MCUBuffer[0] = 0;
+    textArea_MCU.setWildcard(textArea_MCUBuffer);
+    textArea_MCU.setTypedText(touchgfx::TypedText(T___SINGLEUSE_SR9N));
+    add(textArea_MCU);
+
+    CustomContainerSrollText_Zone.setXY(0, 0);
+    add(CustomContainerSrollText_Zone);
+
+    CustomContainerSrollText_SN.setXY(0, 47);
+    add(CustomContainerSrollText_SN);
 }
 
 ScreenMenu_MCU_DetailsViewBase::~ScreenMenu_MCU_DetailsViewBase()
@@ -29,5 +37,6 @@ ScreenMenu_MCU_DetailsViewBase::~ScreenMenu_MCU_DetailsViewBase()
 
 void ScreenMenu_MCU_DetailsViewBase::setupScreen()
 {
-
+    CustomContainerSrollText_Zone.initialize();
+    CustomContainerSrollText_SN.initialize();
 }

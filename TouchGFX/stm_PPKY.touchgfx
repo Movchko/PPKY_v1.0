@@ -86,16 +86,38 @@
           },
           {
             "Type": "TextArea",
-            "Name": "textAreatime_2",
+            "Name": "textArea_MCU",
+            "Y": 25,
             "Width": 128,
-            "Height": 64,
-            "TextId": "__SingleUse_OMNP",
+            "Height": 15,
+            "TextId": "__SingleUse_SR9N",
             "TextRotation": "0",
             "Color": {
               "Red": 255,
               "Green": 255,
               "Blue": 255
-            }
+            },
+            "Wildcard1": {
+              "UseBuffer": true,
+              "BufferSize": 12
+            },
+            "Draggable": true,
+            "Moveable": true
+          },
+          {
+            "Type": "CustomContainerInstance",
+            "Name": "CustomContainerSrollText_Zone",
+            "Width": 128,
+            "Height": 18,
+            "CustomContainerDefinitionName": "CustomContainerSollText"
+          },
+          {
+            "Type": "CustomContainerInstance",
+            "Name": "CustomContainerSrollText_SN",
+            "Y": 47,
+            "Width": 128,
+            "Height": 18,
+            "CustomContainerDefinitionName": "CustomContainerSollText"
           }
         ],
         "Interactions": [
@@ -117,6 +139,65 @@
             "ValueType": "uint8_t"
           }
         ]
+      },
+      {
+        "Name": "screen_devices",
+        "Components": [
+          {
+            "Type": "Box",
+            "Name": "box1",
+            "Width": 128,
+            "Height": 64
+          },
+          {
+            "Type": "CustomContainerInstance",
+            "Name": "CustomContainerSrollText",
+            "Width": 128,
+            "Height": 18,
+            "CustomContainerDefinitionName": "CustomContainerSollText"
+          },
+          {
+            "Type": "TextArea",
+            "Name": "textArea_next_MCU",
+            "Y": 49,
+            "Width": 128,
+            "Height": 15,
+            "TextId": "__SingleUse_2J37",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            },
+            "Wildcard1": {
+              "TextId": "__SingleUse_P23D",
+              "UseBuffer": true,
+              "BufferSize": 12
+            },
+            "Draggable": true,
+            "Moveable": true
+          },
+          {
+            "Type": "TextArea",
+            "Name": "textAreaCurrentMCU",
+            "Y": 21,
+            "Width": 128,
+            "Height": 28,
+            "TextId": "__SingleUse_H127",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            },
+            "Wildcard1": {
+              "TextId": "__SingleUse_K01E",
+              "UseBuffer": true,
+              "BufferSize": 14
+            }
+          }
+        ],
+        "Interactions": []
       },
       {
         "Name": "ScreenMenu_jurnal",
@@ -286,9 +367,9 @@
           {
             "Type": "TextArea",
             "Name": "textAreatime_2",
-            "Y": 49,
-            "Width": 36,
-            "Height": 15,
+            "Y": 45,
+            "Width": 128,
+            "Height": 19,
             "TextId": "__SingleUse_WSFU",
             "TextRotation": "0",
             "Color": {
@@ -300,53 +381,20 @@
           {
             "Type": "ScrollableContainer",
             "Name": "scrollableContainer1",
-            "Y": 15,
+            "Y": 17,
             "Width": 128,
-            "Height": 30,
+            "Height": 28,
             "HorizontalScrollEnabled": true,
             "ScrollbarsAlpha": 255,
             "Components": [
               {
                 "Type": "ScrollWheel",
                 "Name": "scrollWheel1",
-                "Y": 2,
                 "Width": 128,
-                "Height": 30,
+                "Height": 28,
                 "IsCircular": true,
                 "ItemTemplateName": "mainmenu",
                 "NumberofItems": 6,
-                "Easing": "Back",
-                "EasingOption": "Out",
-                "SwipeAcceleration": 1.0,
-                "DragAcceleration": 1.0,
-                "OverShootPercentage": 75
-              }
-            ]
-          },
-          {
-            "Type": "CustomContainerInstance",
-            "Name": "customContainerTopBar1",
-            "Width": 128,
-            "Height": 15,
-            "CustomContainerDefinitionName": "CustomContainerTopBar"
-          },
-          {
-            "Type": "ScrollableContainer",
-            "Name": "scrollableContainer1_1",
-            "Width": 79,
-            "Height": 15,
-            "HorizontalScrollEnabled": true,
-            "ScrollbarsVisibleOnPressed": true,
-            "ScrollbarsAlpha": 255,
-            "Components": [
-              {
-                "Type": "ScrollWheel",
-                "Name": "scrollWheel1_1",
-                "Width": 72,
-                "Height": 15,
-                "IsCircular": true,
-                "ItemTemplateName": "CustomContainerTime",
-                "NumberofItems": 2,
                 "Easing": "Back",
                 "EasingOption": "Out",
                 "SwipeAcceleration": 1.0,
@@ -414,65 +462,6 @@
             }
           }
         ]
-      },
-      {
-        "Name": "screen_devices",
-        "Components": [
-          {
-            "Type": "Box",
-            "Name": "box1",
-            "Width": 128,
-            "Height": 64
-          },
-          {
-            "Type": "CustomContainerInstance",
-            "Name": "CustomContainerSrollText",
-            "Width": 128,
-            "Height": 18,
-            "CustomContainerDefinitionName": "CustomContainerSollText"
-          },
-          {
-            "Type": "TextArea",
-            "Name": "textArea_next_MCU",
-            "Y": 49,
-            "Width": 128,
-            "Height": 15,
-            "TextId": "__SingleUse_2J37",
-            "TextRotation": "0",
-            "Color": {
-              "Red": 255,
-              "Green": 255,
-              "Blue": 255
-            },
-            "Wildcard1": {
-              "TextId": "__SingleUse_P23D",
-              "UseBuffer": true,
-              "BufferSize": 12
-            },
-            "Draggable": true,
-            "Moveable": true
-          },
-          {
-            "Type": "TextArea",
-            "Name": "textAreaCurrentMCU",
-            "Y": 21,
-            "Width": 128,
-            "Height": 28,
-            "TextId": "__SingleUse_H127",
-            "TextRotation": "0",
-            "Color": {
-              "Red": 255,
-              "Green": 255,
-              "Blue": 255
-            },
-            "Wildcard1": {
-              "TextId": "__SingleUse_K01E",
-              "UseBuffer": true,
-              "BufferSize": 14
-            }
-          }
-        ],
-        "Interactions": []
       }
     ],
     "CustomContainerDefinitions": [

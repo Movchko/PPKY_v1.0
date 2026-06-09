@@ -52,6 +52,8 @@ DMA_HandleTypeDef handle_GPDMA1_Channel0;
 
 CRC_HandleTypeDef hcrc;
 
+DTS_HandleTypeDef hdts;
+
 FDCAN_HandleTypeDef hfdcan1;
 FDCAN_HandleTypeDef hfdcan2;
 
@@ -92,6 +94,7 @@ static void MX_TIM1_Init(void);
 static void MX_FLASH_Init(void);
 static void MX_ICACHE_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_DTS_Init(void);
 /* USER CODE BEGIN PFP */
 uint8_t isMainInit = 0;
 /* USER CODE END PFP */
@@ -159,8 +162,8 @@ int main(void)
   MX_FLASH_Init();
   MX_ICACHE_Init();
   MX_TIM2_Init();
+  MX_DTS_Init();
   MX_TouchGFX_Init();
-
   /* USER CODE BEGIN 2 */
 
   /* ВАЖНО - включенное кеширование может понизить производительность, если
@@ -184,6 +187,13 @@ int main(void)
    */
 
   HAL_ADC_Start_DMA(&hadc1, (uint32_t *)ADC_VAL, NUM_ADC_CHANNEL);
+
+
+  if(HAL_DTS_Start(&hdts)!= HAL_OK)
+  {
+    /* DTS start Error */
+    Error_Handler();
+  }
 
   /* USER CODE END 2 */
 
@@ -478,6 +488,39 @@ static void MX_CRC_Init(void)
 }
 
 /**
+  * @brief DTS Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_DTS_Init(void)
+{
+
+  /* USER CODE BEGIN DTS_Init 0 */
+
+  /* USER CODE END DTS_Init 0 */
+
+  /* USER CODE BEGIN DTS_Init 1 */
+
+  /* USER CODE END DTS_Init 1 */
+  hdts.Instance = DTS;
+  hdts.Init.QuickMeasure = DTS_QUICKMEAS_DISABLE;
+  hdts.Init.RefClock = DTS_REFCLKSEL_LSE;
+  hdts.Init.TriggerInput = DTS_TRIGGER_HW_NONE;
+  hdts.Init.SamplingTime = DTS_SMP_TIME_15_CYCLE;
+  hdts.Init.Divider = 0;
+  hdts.Init.HighThreshold = 0x0;
+  hdts.Init.LowThreshold = 0x0;
+  if (HAL_DTS_Init(&hdts) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN DTS_Init 2 */
+
+  /* USER CODE END DTS_Init 2 */
+
+}
+
+/**
   * @brief FDCAN1 Initialization Function
   * @param None
   * @retval None
@@ -611,6 +654,7 @@ static void MX_FDCAN2_Init(void)
   /* USER CODE END FDCAN2_Init 2 */
 
 }
+
 /**
   * @brief FLASH Initialization Function
   * @param None
@@ -788,7 +832,6 @@ static void MX_RTC_Init(void)
   {
     Error_Handler();
   }
-  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1);
   privilegeState.rtcPrivilegeFull = RTC_PRIVILEGE_FULL_NO;
   privilegeState.backupRegisterPrivZone = RTC_PRIVILEGE_BKUP_ZONE_NONE;
   privilegeState.backupRegisterStartZone2 = RTC_BKP_DR0;

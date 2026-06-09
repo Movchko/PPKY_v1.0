@@ -88,10 +88,6 @@ void ScreenMenuView::setupScreen()
         scrollWheel1.itemChanged(i);
         scrollWheel1ListItems[i].updateText(i);
     }
-    for (int i = 0; i < scrollWheel1_1ListItems.getNumberOfDrawables(); i++)
-    {
-        scrollWheel1_1.itemChanged(i);
-    }
 #endif
 }
 
@@ -101,11 +97,7 @@ void ScreenMenuView::tearDownScreen()
 }
 #ifndef SIMULATOR
 void ScreenMenuView::SetupMenuChangePos(uint8_t val) {
-    uint8_t i = 0;
-    if (val >= 3) {
-        i = 1;
-    }
-    scrollWheel1_1.itemChanged(i);
+    (void)val;
 }
 
 void ScreenMenuView::scrollWheel1UpdateItem(mainmenu& item, int16_t itemIndex)

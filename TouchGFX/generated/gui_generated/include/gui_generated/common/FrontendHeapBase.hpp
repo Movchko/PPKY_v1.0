@@ -16,6 +16,8 @@
 #include <gui/mainscreen_screen/mainscreenPresenter.hpp>
 #include <gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsView.hpp>
 #include <gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsPresenter.hpp>
+#include <gui/screen_devices_screen/screen_devicesView.hpp>
+#include <gui/screen_devices_screen/screen_devicesPresenter.hpp>
 #include <gui/screenmenu_jurnal_screen/ScreenMenu_jurnalView.hpp>
 #include <gui/screenmenu_jurnal_screen/ScreenMenu_jurnalPresenter.hpp>
 #include <gui/screenmenu_config_screen/ScreenMenu_ConfigView.hpp>
@@ -26,8 +28,6 @@
 #include <gui/screenmenu_screen/ScreenMenuPresenter.hpp>
 #include <gui/screen_logo_screen/screen_logoView.hpp>
 #include <gui/screen_logo_screen/screen_logoPresenter.hpp>
-#include <gui/screen_devices_screen/screen_devicesView.hpp>
-#include <gui/screen_devices_screen/screen_devicesPresenter.hpp>
 
 
 /**
@@ -52,12 +52,12 @@ public:
      */
     typedef touchgfx::meta::TypeList< mainscreenView,
             touchgfx::meta::TypeList< ScreenMenu_MCU_DetailsView,
+            touchgfx::meta::TypeList< screen_devicesView,
             touchgfx::meta::TypeList< ScreenMenu_jurnalView,
             touchgfx::meta::TypeList< ScreenMenu_ConfigView,
             touchgfx::meta::TypeList< ScreenMenu_ConnectionView,
             touchgfx::meta::TypeList< ScreenMenuView,
             touchgfx::meta::TypeList< screen_logoView,
-            touchgfx::meta::TypeList< screen_devicesView,
             touchgfx::meta::Nil > > > > > > >
             > GeneratedViewTypes;
 
@@ -72,12 +72,12 @@ public:
      */
     typedef touchgfx::meta::TypeList< mainscreenPresenter,
             touchgfx::meta::TypeList< ScreenMenu_MCU_DetailsPresenter,
+            touchgfx::meta::TypeList< screen_devicesPresenter,
             touchgfx::meta::TypeList< ScreenMenu_jurnalPresenter,
             touchgfx::meta::TypeList< ScreenMenu_ConfigPresenter,
             touchgfx::meta::TypeList< ScreenMenu_ConnectionPresenter,
             touchgfx::meta::TypeList< ScreenMenuPresenter,
             touchgfx::meta::TypeList< screen_logoPresenter,
-            touchgfx::meta::TypeList< screen_devicesPresenter,
             touchgfx::meta::Nil > > > > > > >
             > GeneratedPresenterTypes;
 

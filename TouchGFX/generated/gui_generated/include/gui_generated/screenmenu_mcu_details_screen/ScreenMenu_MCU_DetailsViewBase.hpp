@@ -8,7 +8,11 @@
 #include <mvp/View.hpp>
 #include <gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsPresenter.hpp>
 #include <touchgfx/widgets/Box.hpp>
-#include <touchgfx/widgets/TextArea.hpp>
+#include <touchgfx/widgets/TextAreaWithWildcard.hpp>
+#include <touchgfx/EasingEquations.hpp>
+#include <touchgfx/mixins/MoveAnimator.hpp>
+#include <touchgfx/mixins/Draggable.hpp>
+#include <gui/containers/CustomContainerSollText.hpp>
 
 class ScreenMenu_MCU_DetailsViewBase : public touchgfx::View<ScreenMenu_MCU_DetailsPresenter>
 {
@@ -36,7 +40,15 @@ protected:
      */
     touchgfx::Box __background;
     touchgfx::Box box1;
-    touchgfx::TextArea textAreatime_2;
+    touchgfx::Draggable< touchgfx::MoveAnimator< touchgfx::TextAreaWithOneWildcard > > textArea_MCU;
+    CustomContainerSollText CustomContainerSrollText_Zone;
+    CustomContainerSollText CustomContainerSrollText_SN;
+
+    /*
+     * Wildcard Buffers
+     */
+    static const uint16_t TEXTAREA_MCU_SIZE = 12;
+    touchgfx::Unicode::UnicodeChar textArea_MCUBuffer[TEXTAREA_MCU_SIZE];
 
 private:
 

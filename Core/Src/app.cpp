@@ -21,6 +21,7 @@ struct PPKYCfg PPKYConfig;       // локальная (рабочая) конф
 struct PPKYCfg SavedPPKYConfig; // копия сохранённой конфигурации из Flash
 
 extern SPIF_HandleTypeDef hFlash;
+extern DTS_HandleTypeDef hdts;
 
 PControl *Power[2];
 
@@ -328,13 +329,26 @@ void AppSetStatus() {
 	uint8_t Rpower = (uint8_t)rpower_v;
 	uint8_t current1 = (CHANNEL_VAL[1] / 50) & 0xFF; // шаг 50мА
 	uint8_t current2 = (CHANNEL_VAL[2] / 50) & 0xFF;
+
+	int32_t temperature;
+	  /* Get temperature in deg C */
+	if(HAL_DTS_GetTemperature(&hdts, &temperature)!= HAL_OK)
+	{
+	    /* DTS GetTemperature Error */
+	}
+
+	if(temperature > 128) temperature = 128;
+	if(temperature < -128) temperature = -128;
+
+	uint8_t temp = (uint8_t)temperature;
+
 	uint8_t status_data[7] = {
 			status_sec_cnt,
 			power,
 			Rpower,
 			current1,
 			current2,
-			0,
+			temp,
 			0
 	};
 	/* Dev=0 — сама плата ППКУ, отправляем через backend */
