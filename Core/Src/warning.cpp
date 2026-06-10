@@ -137,11 +137,17 @@ static void Warning_GetZoneName(const WarningItem& it, char *out, size_t out_sz)
 	}
 }
 
-/* Заглушка под будущий реальный S/N: *ТИП**H_ADR**2026* */
+
 static void Warning_GetSerialPlaceholder(const WarningItem& it, char *out, size_t out_sz)
 {
-	snprintf(out, out_sz, "S/N:%s%u2026",
-		 Warning_McuTypeSerialToken(it.mcu_d_type), (unsigned)it.h_adr);
+	for(uint8_t i = 0; i < 32; i++) {
+		if((it.h_adr == PPKYConfig.CfgDevices[i].UId.devId.h_adr) && (it.mcu_d_type == PPKYConfig.CfgDevices[i].UId.devId.d_type)) {
+			snprintf(out, out_sz, "S/N:%08lX:%08lX:%08lX", PPKYConfig.CfgDevices[i].UId.UId0, PPKYConfig.CfgDevices[i].UId.UId1, PPKYConfig.CfgDevices[i].UId.UId2);
+			return;
+		}
+	}
+
+	snprintf(out, out_sz, "S/N:---");
 }
 
 static void Warning_FormatMkuAndSerial(char *out, size_t out_sz, const WarningItem& it)
@@ -569,7 +575,7 @@ static uint8_t BuildUiPayload(char (*big_titles)[WARN_TITLE_LEN], char (*details
 			continue;
 		}
 		snprintf(big_titles[count], WARN_TITLE_LEN, "ВЫХОД %u", (unsigned)(ch + 1u));
-		snprintf(details[count], ZONE_NAME_SIZE + 1, "ППКУ S/N 123456789");
+		snprintf(details[count], ZONE_NAME_SIZE + 1, "ППКУ S/N:%08lX:%08lX:%08lX", PPKYConfig.UId.UId0, PPKYConfig.UId.UId1, PPKYConfig.UId.UId2);
 		count++;
 	}
 	for (uint8_t ch = 0u; ch < 2u && count < WARN_MAX_ITEMS; ch++) {
@@ -577,7 +583,7 @@ static uint8_t BuildUiPayload(char (*big_titles)[WARN_TITLE_LEN], char (*details
 			continue;
 		}
 		snprintf(big_titles[count], WARN_TITLE_LEN, "ПИТАНИЕ %u", (unsigned)(ch + 1u));
-		snprintf(details[count], ZONE_NAME_SIZE + 1, "ППКУ S/N 123456789");
+		snprintf(details[count], ZONE_NAME_SIZE + 1, "ППКУ S/N:%08lX:%08lX:%08lX", PPKYConfig.UId.UId0, PPKYConfig.UId.UId1, PPKYConfig.UId.UId2);
 		count++;
 	}
 
@@ -609,7 +615,7 @@ static uint8_t BuildUiPayload(char (*big_titles)[WARN_TITLE_LEN], char (*details
 			snprintf(big_titles[count], WARN_TITLE_LEN, "ОБРЫВ CAN%u", (unsigned)it.can_idx);
 
 			//Warning_GetSerialPlaceholder(it, serial, sizeof(serial));
-			snprintf(details[count], ZONE_NAME_SIZE + 1, "ППКУ S/N 123456789");
+			snprintf(details[count], ZONE_NAME_SIZE + 1, "ППКУ S/N:%08lX:%08lX:%08lX", PPKYConfig.UId.UId0, PPKYConfig.UId.UId1, PPKYConfig.UId.UId2);
 		}
 		count++;
 	}
