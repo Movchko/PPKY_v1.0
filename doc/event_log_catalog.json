@@ -1,0 +1,748 @@
+{
+  "schema_version": "1.0",
+  "updated": "2026-06-25",
+  "source_firmware": {
+    "catalog_header": "stm_PPKY/Core/Inc/event_log_catalog.h",
+    "catalog_table": "stm_PPKY/Core/Src/event_log_catalog.c",
+    "record_struct": "stm_PPKY/Core/Inc/event_logger.h",
+    "post_api": "stm_PPKY/Core/Inc/event_log.h"
+  },
+
+  "record": {
+    "size_bytes": 32,
+    "empty_flash_byte": 255,
+    "endianness": "little",
+    "description": "Фиксированная запись лога во внешней SPI Flash. Поля time и checksum заполняются прошивкой автоматически при EventLog_Post().",
+    "fields": [
+      {
+        "name": "time",
+        "offset": 0,
+        "size": 6,
+        "type": "bcd_datetime",
+        "access": "firmware_auto",
+        "description": "Дата и время события в BCD (как в RTC STM32)",
+        "subfields": [
+          { "offset": 0, "name": "year",   "type": "uint8", "format": "bcd", "range": "0..99", "note": "Год 2000+YY" },
+          { "offset": 1, "name": "month",  "type": "uint8", "format": "bcd", "range": "1..12" },
+          { "offset": 2, "name": "day",    "type": "uint8", "format": "bcd", "range": "1..31" },
+          { "offset": 3, "name": "hour",   "type": "uint8", "format": "bcd", "range": "0..23" },
+          { "offset": 4, "name": "minute", "type": "uint8", "format": "bcd", "range": "0..59" },
+          { "offset": 5, "name": "second", "type": "uint8", "format": "bcd", "range": "0..59" }
+        ]
+      },
+      {
+        "name": "master_wagon_num",
+        "offset": 6,
+        "size": 1,
+        "type": "uint8",
+        "access": "payload",
+        "description": "Номер мастера (h_adr ППКУ) или номер вагона в составе. 0 — если не используется."
+      },
+      {
+        "name": "reserved",
+        "offset": 7,
+        "size": 1,
+        "type": "uint8",
+        "access": "firmware_auto",
+        "default": 0,
+        "description": "Резерв, всегда 0 при записи через EventLog_Post()."
+      },
+      {
+        "name": "event_code",
+        "offset": 8,
+        "size": 2,
+        "type": "uint16",
+        "access": "firmware_auto",
+        "description": "Код события (см. events[].code). Little-endian."
+      },
+      {
+        "name": "can_header",
+        "offset": 10,
+        "size": 4,
+        "type": "can_ext_id",
+        "access": "payload",
+        "description": "29-битный extended CAN ID (см. can_ext_id). Little-endian uint32."
+      },
+      {
+        "name": "can_data",
+        "offset": 14,
+        "size": 8,
+        "type": "bytes",
+        "access": "payload",
+        "description": "Данные CAN-кадра (до 8 байт). Неиспользуемые байты — 0."
+      },
+      {
+        "name": "additional",
+        "offset": 22,
+        "size": 8,
+        "type": "bytes",
+        "access": "payload",
+        "description": "Параметры, специфичные для типа события. Неиспользуемые байты — 0."
+      },
+      {
+        "name": "checksum",
+        "offset": 30,
+        "size": 2,
+        "type": "uint16",
+        "access": "firmware_auto",
+        "description": "CRC-16/CCITT-подобная сумма по байтам [0..29]. Little-endian."
+      }
+    ]
+  },
+
+  "checksum": {
+    "algorithm": "crc16_ccitt_like",
+    "init": "0xFFFF",
+    "polynomial": "0x1021",
+    "range_offset": 0,
+    "range_size": 30,
+    "note": "Совпадает с EventLogTier_CalculateChecksum() в event_logger.cpp: для каждого байта crc ^= byte<<8, затем 8 бит сдвига с xor 0x1021 при старшем бите."
+  },
+
+  "can_ext_id": {
+    "description": "device_lib/include/backend.h, union can_ext_id_t, 29-bit extended ID",
+    "endianness": "little",
+    "layout_lsb_first": [
+      { "name": "zone",   "bits": 7,  "offset": 0,  "description": "Номер зоны (0..127)" },
+      { "name": "l_adr",  "bits": 6,  "offset": 7,  "description": "Подадрес виртуального устройства" },
+      { "name": "h_adr",  "bits": 8,  "offset": 13, "description": "Адрес на шине (МКУ/ППКУ)" },
+      { "name": "d_type", "bits": 7,  "offset": 21, "description": "Тип устройства (см. device_types)" },
+      { "name": "dir",    "bits": 1,  "offset": 28, "description": "0 = команда к устройству, 1 = ответ/статус от устройства" }
+    ],
+    "decode_example": "can_header = zone | (l_adr<<7) | (h_adr<<13) | (d_type<<21) | (dir<<28)"
+  },
+
+  "device_types": {
+    "10": { "symbol": "DEVICE_PPKY_TYPE",    "name": "ППКУ" },
+    "11": { "symbol": "DEVICE_IGNITER_TYPE", "name": "Спичка (вирт.)" },
+    "12": { "symbol": "DEVICE_DPT_TYPE",     "name": "ДПТ (вирт.)" },
+    "13": { "symbol": "DEVICE_MCU_IGN_TYPE", "name": "МКУ спички (legacy)" },
+    "14": { "symbol": "DEVICE_MCU_TC_TYPE",  "name": "МКУ ТС (legacy)" },
+    "15": { "symbol": "DEVICE_BUTTON_TYPE",  "name": "Кнопка (вирт.)" },
+    "16": { "symbol": "DEVICE_LSWITCH_TYPE", "name": "Концевик (вирт.)" },
+    "17": { "symbol": "DEVICE_RELAY_TYPE",   "name": "Реле (вирт.)" },
+    "20": { "symbol": "DEVICE_MCU_K1",       "name": "МКУ K1" },
+    "21": { "symbol": "DEVICE_MCU_K2",       "name": "МКУ K2" },
+    "22": { "symbol": "DEVICE_MCU_K3",       "name": "МКУ K3" },
+    "23": { "symbol": "DEVICE_MCU_KR",       "name": "МКУ KR" }
+  },
+
+  "log_levels": {
+    "critical": {
+      "id": 0,
+      "symbol": "EVENT_LOG_LEVEL_CRITICAL",
+      "flash_tier": "critical",
+      "description": "Только важнейшие события"
+    },
+    "general": {
+      "id": 1,
+      "symbol": "EVENT_LOG_LEVEL_GENERAL",
+      "flash_tier": "general",
+      "description": "Прочие события и диагностика"
+    }
+  },
+
+  "payload_api": {
+    "struct": "EventLogPayload_t",
+    "fields": [
+      { "name": "master_wagon_num", "maps_to": "record.master_wagon_num" },
+      { "name": "can_header",       "maps_to": "record.can_header" },
+      { "name": "can_data",         "maps_to": "record.can_data", "size": 8 },
+      { "name": "additional",       "maps_to": "record.additional", "size": 8 }
+    ],
+    "post_function": "EventLog_Post(uint16_t code, const EventLogPayload_t *payload)"
+  },
+
+  "events": [
+    {
+      "code": 1,
+      "symbol": "EVENT_LOG_MASTER_START",
+      "name": "Запуск мастера",
+      "level": "critical",
+      "debug_only": false,
+      "status": "specified",
+      "description": "Включение питания / старт ППКУ (мастера системы).",
+      "uses": {
+        "can_header": "optional",
+        "can_data": "unused",
+        "additional": "optional"
+      },
+      "payload": {
+        "master_wagon_num": {
+          "required": false,
+          "description": "h_adr ППКУ; если 0 — взять из конфигурации при формировании в ПО"
+        },
+        "can_header": {
+          "required": false,
+          "default": 0,
+          "description": "Обычно 0 или ID ППКУ (d_type=10, dir=1)"
+        },
+        "additional": [
+          {
+            "offset": 0,
+            "name": "boot_reason",
+            "type": "uint8",
+            "required": false,
+            "enum": {
+              "0": "power_on",
+              "1": "watchdog",
+              "2": "software_reset",
+              "3": "other"
+            },
+            "description": "Причина перезапуска (планируется)"
+          },
+          {
+            "offset": 1,
+            "name": "fw_version_major",
+            "type": "uint8",
+            "required": false,
+            "description": "Старшая часть версии прошивки (планируется)"
+          },
+          {
+            "offset": 2,
+            "name": "fw_version_minor",
+            "type": "uint8",
+            "required": false,
+            "description": "Младшая часть версии прошивки (планируется)"
+          }
+        ]
+      },
+      "parse_hints": [
+        "Пустая запись (can_header=0, additional=0) допустима на этапе внедрения."
+      ]
+    },
+    {
+      "code": 2,
+      "symbol": "EVENT_LOG_MASTER_STOP",
+      "name": "Выключение мастера",
+      "level": "critical",
+      "debug_only": false,
+      "status": "specified",
+      "description": "Корректное или аварийное выключение ППКУ.",
+      "uses": {
+        "can_header": "optional",
+        "can_data": "unused",
+        "additional": "optional"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "stop_reason",
+            "type": "uint8",
+            "required": false,
+            "enum": {
+              "0": "user_power_off",
+              "1": "power_loss",
+              "2": "critical_fault",
+              "3": "other"
+            },
+            "description": "Причина остановки (планируется)"
+          }
+        ]
+      },
+      "parse_hints": [
+        "Возможное объединение с кодом 1 в одно событие с флагом состояния — пока не реализовано."
+      ]
+    },
+    {
+      "code": 3,
+      "symbol": "EVENT_LOG_SYSTEM_START_OK",
+      "name": "Система запустилась успешно",
+      "level": "critical",
+      "debug_only": false,
+      "status": "specified",
+      "description": "ППКУ завершила инициализацию (Flash, CAN, конфиг, GUI и т.д.).",
+      "uses": {
+        "can_header": "unused",
+        "can_data": "unused",
+        "additional": "recommended"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "init_status",
+            "type": "uint8",
+            "required": false,
+            "description": "Битовая маска успешной инициализации подсистем",
+            "bits": {
+              "0": "spi_flash_ok",
+              "1": "config_ok",
+              "2": "can_ok",
+              "3": "display_ok",
+              "4": "event_log_ok"
+            }
+          },
+          {
+            "offset": 1,
+            "name": "active_mcu_count",
+            "type": "uint8",
+            "required": false,
+            "description": "Число обнаруженных МКУ на момент старта (планируется)"
+          }
+        ]
+      }
+    },
+    {
+      "code": 4,
+      "symbol": "EVENT_LOG_DEVICE_MISSING",
+      "name": "Отсутствует устройство",
+      "level": "general",
+      "debug_only": false,
+      "status": "specified",
+      "description": "Ожидаемое по конфигу устройство не отвечает на шине или пропало из активного списка.",
+      "uses": {
+        "can_header": "recommended",
+        "can_data": "optional",
+        "additional": "recommended"
+      },
+      "payload": {
+        "can_header": {
+          "required": false,
+          "description": "ID первого отсутствующего устройства (МКУ или вирт. канал). Может быть 0, если список только в additional."
+        },
+        "can_data": {
+          "required": false,
+          "description": "Опционально — последний известный статус устройства"
+        },
+        "additional": [
+          {
+            "offset": 0,
+            "name": "encoding",
+            "type": "uint8",
+            "required": true,
+            "default": 0,
+            "enum": {
+              "0": "h_adr_list",
+              "1": "h_adr_bitmask"
+            },
+            "description": "Способ упаковки списка устройств в additional[1..7]"
+          },
+          {
+            "offset": 1,
+            "name": "device_list",
+            "type": "bytes",
+            "size": 7,
+            "required": false,
+            "description": "encoding=0: до 7 байт h_adr (0 = конец списка). encoding=1: битовая маска h_adr 1..56 в 7 байтах (младшие биты = меньшие адреса)"
+          }
+        ]
+      }
+    },
+    {
+      "code": 5,
+      "symbol": "EVENT_LOG_DEVICE_FOUND",
+      "name": "Найдено новое устройство",
+      "level": "general",
+      "debug_only": false,
+      "status": "specified",
+      "description": "На шине появилось устройство, отсутствующее в сохранённом конфиге ППКУ.",
+      "uses": {
+        "can_header": "recommended",
+        "can_data": "optional",
+        "additional": "recommended"
+      },
+      "payload": {
+        "can_header": {
+          "required": true,
+          "description": "CAN ID обнаруженного устройства (dir=1, d_type/h_adr/zone/l_adr)"
+        },
+        "additional": [
+          {
+            "offset": 0,
+            "name": "encoding",
+            "type": "uint8",
+            "enum": { "0": "h_adr_list", "1": "h_adr_bitmask" },
+            "default": 0
+          },
+          {
+            "offset": 1,
+            "name": "device_list",
+            "type": "bytes",
+            "size": 7,
+            "description": "Аналогично событию 4"
+          }
+        ]
+      }
+    },
+    {
+      "code": 6,
+      "symbol": "EVENT_LOG_CONFIG_MISMATCH",
+      "name": "Конфигурация не совпала",
+      "level": "general",
+      "debug_only": false,
+      "status": "specified",
+      "description": "Конфиг МКУ на шине не совпадает с образом в PPKYConfig.CfgDevices (CRC, тип, серийник, позиция).",
+      "uses": {
+        "can_header": "recommended",
+        "can_data": "optional",
+        "additional": "recommended"
+      },
+      "payload": {
+        "can_header": {
+          "required": true,
+          "description": "ID МКУ с расхождением"
+        },
+        "can_data": {
+          "required": false,
+          "description": "Опционально — код ошибки синхронизации (ConfigSync)"
+        },
+        "additional": [
+          {
+            "offset": 0,
+            "name": "mismatch_type",
+            "type": "uint8",
+            "enum": {
+              "0": "crc",
+              "1": "device_type",
+              "2": "serial",
+              "3": "position",
+              "4": "presence"
+            },
+            "description": "Тип несовпадения"
+          },
+          {
+            "offset": 1,
+            "name": "slot_index",
+            "type": "uint8",
+            "description": "Индекс слота в CfgDevices[32] (0..31), 0xFF если неизвестен"
+          },
+          {
+            "offset": 2,
+            "name": "device_list",
+            "type": "bytes",
+            "size": 6,
+            "description": "Доп. список h_adr при множественном расхождении"
+          }
+        ]
+      }
+    },
+    {
+      "code": 7,
+      "symbol": "EVENT_LOG_TELEMETRY",
+      "name": "Данные телеметрии",
+      "level": "general",
+      "debug_only": false,
+      "status": "specified",
+      "description": "Диагностический снимок статуса датчика/канала.",
+      "uses": {
+        "can_header": "required",
+        "can_data": "required",
+        "additional": "optional"
+      },
+      "payload": {
+        "can_header": {
+          "required": true,
+          "description": "ID источника (вирт. ДПТ, спичка, МКУ и т.д.)"
+        },
+        "can_data": {
+          "required": true,
+          "description": "Сырой CAN payload статуса (MsgData[0..7] по протоколу устройства)",
+          "subfields_reference": "stm_PPKY/doc/Протокол_команд_и_статусов.md"
+        },
+        "additional": [
+          {
+            "offset": 0,
+            "name": "telemetry_kind",
+            "type": "uint8",
+            "enum": {
+              "0": "raw_status",
+              "1": "adc_sample",
+              "2": "temperature",
+              "3": "resistance"
+            }
+          },
+          {
+            "offset": 1,
+            "name": "unit",
+            "type": "uint8",
+            "description": "Единица измерения для kind>0 (произвольный код, уточняется)"
+          }
+        ]
+      }
+    },
+    {
+      "code": 8,
+      "symbol": "EVENT_LOG_DEVICE_FAULT",
+      "name": "Ошибка устройства",
+      "level": "critical",
+      "debug_only": false,
+      "status": "specified",
+      "description": "Неисправность по протоколу устройства (обрыв, КЗ, fault-статус, ошибка MAX и т.д.).",
+      "uses": {
+        "can_header": "required",
+        "can_data": "required",
+        "additional": "optional"
+      },
+      "payload": {
+        "can_header": {
+          "required": true,
+          "description": "ID устройства с ошибкой"
+        },
+        "can_data": {
+          "required": true,
+          "description": "Статусное сообщение: MsgData[0]=cmd статуса, MsgData[1..7] по матрице протокола"
+        },
+        "additional": [
+          {
+            "offset": 0,
+            "name": "fault_class",
+            "type": "uint8",
+            "enum": {
+              "0": "line_break",
+              "1": "line_short",
+              "2": "protocol_fault",
+              "3": "can_fault",
+              "4": "power_fault",
+              "5": "other"
+            }
+          },
+          {
+            "offset": 1,
+            "name": "channel",
+            "type": "uint8",
+            "description": "Номер канала/линии (l_adr или индекс), 0 если не применимо"
+          }
+        ]
+      }
+    },
+    {
+      "code": 9,
+      "symbol": "EVENT_LOG_FIRE_DETECTED",
+      "name": "Пожар в системе",
+      "level": "critical",
+      "debug_only": false,
+      "status": "specified",
+      "description": "Зафиксировано начало пожара (зона перешла в состояние FIRE).",
+      "uses": {
+        "can_header": "recommended",
+        "can_data": "optional",
+        "additional": "recommended"
+      },
+      "payload": {
+        "can_header": {
+          "required": false,
+          "description": "ID датчика/канала, инициировавшего пожар"
+        },
+        "additional": [
+          {
+            "offset": 0,
+            "name": "zone",
+            "type": "uint8",
+            "required": true,
+            "description": "Номер зоны пожара (1..100)"
+          },
+          {
+            "offset": 1,
+            "name": "detect_source",
+            "type": "uint8",
+            "enum": {
+              "0": "dpt_resistance",
+              "1": "dpt_thermocouple",
+              "2": "button",
+              "3": "external",
+              "4": "manual"
+            }
+          },
+          {
+            "offset": 2,
+            "name": "zones_mask_lo",
+            "type": "uint8",
+            "description": "Младший байт маски зон (если пожар нескольких зон одним событием)"
+          },
+          {
+            "offset": 3,
+            "name": "zones_mask_hi",
+            "type": "uint8",
+            "description": "Старший байт маски зон (упрощённо, до 16 зон)"
+          }
+        ]
+      }
+    },
+    {
+      "code": 10,
+      "symbol": "EVENT_LOG_EXTINGUISH_START",
+      "name": "Запуск системы тушения",
+      "level": "critical",
+      "debug_only": false,
+      "status": "specified",
+      "description": "Начата процедура пуска огнетушащего состава.",
+      "uses": {
+        "can_header": "optional",
+        "can_data": "unused",
+        "additional": "required"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "start_type",
+            "type": "uint8",
+            "required": true,
+            "enum": {
+              "0": "manual",
+              "1": "automatic",
+              "2": "autonomous"
+            },
+            "description": "Тип запуска тушения"
+          },
+          {
+            "offset": 1,
+            "name": "zone",
+            "type": "uint8",
+            "description": "Зона пуска (0 = все зоны пожара)"
+          },
+          {
+            "offset": 2,
+            "name": "delay_s",
+            "type": "uint8",
+            "description": "Задержка пуска, секунды (если применимо)"
+          }
+        ]
+      }
+    },
+    {
+      "code": 11,
+      "symbol": "EVENT_LOG_EXTINGUISH_FORCE_STOP",
+      "name": "Принудительная остановка тушения",
+      "level": "critical",
+      "debug_only": false,
+      "status": "specified",
+      "description": "Оператор или логика системы остановили тушение до нормального завершения.",
+      "uses": {
+        "can_header": "optional",
+        "can_data": "unused",
+        "additional": "recommended"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "stop_reason",
+            "type": "uint8",
+            "enum": {
+              "0": "operator_button",
+              "1": "limit_switch",
+              "2": "fault_abort",
+              "3": "mode_change",
+              "4": "other"
+            }
+          },
+          {
+            "offset": 1,
+            "name": "zone",
+            "type": "uint8",
+            "description": "Зона, для которой остановлен пуск (0 = глобально)"
+          },
+          {
+            "offset": 2,
+            "name": "fire_mode",
+            "type": "uint8",
+            "description": "Режим тушения PPKYCfg.fire_mode на момент остановки"
+          }
+        ]
+      }
+    },
+    {
+      "code": 12,
+      "symbol": "EVENT_LOG_EXTINGUISH_COMPLETE",
+      "name": "Процедура тушения завершена",
+      "level": "critical",
+      "debug_only": false,
+      "status": "specified",
+      "description": "Тушение завершено штатно (все шаги выполнены или корректно пропущены).",
+      "uses": {
+        "can_header": "optional",
+        "can_data": "unused",
+        "additional": "recommended"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "completion_status",
+            "type": "uint8",
+            "enum": {
+              "0": "full_success",
+              "1": "success_with_skipped_steps",
+              "2": "partial"
+            }
+          },
+          {
+            "offset": 1,
+            "name": "skipped_steps_lo",
+            "type": "uint8",
+            "description": "Младший байт битовой маски пропущенных шагов/модулей"
+          },
+          {
+            "offset": 2,
+            "name": "skipped_steps_hi",
+            "type": "uint8",
+            "description": "Старший байт маски пропущенных шагов"
+          },
+          {
+            "offset": 3,
+            "name": "zone",
+            "type": "uint8",
+            "description": "Зона завершения (0 = все)"
+          }
+        ]
+      }
+    },
+    {
+      "code": 13,
+      "symbol": "EVENT_LOG_EXTINGUISH_INCOMPLETE",
+      "name": "Процедура тушения не завершилась",
+      "level": "critical",
+      "debug_only": false,
+      "status": "specified",
+      "description": "Тушение прервано или не может быть доведено до конца (ошибка, таймаут, отказ модулей).",
+      "uses": {
+        "can_header": "optional",
+        "can_data": "optional",
+        "additional": "required"
+      },
+      "payload": {
+        "can_header": {
+          "required": false,
+          "description": "ID устройства, на котором застряла процедура"
+        },
+        "additional": [
+          {
+            "offset": 0,
+            "name": "abort_reason",
+            "type": "uint8",
+            "required": true,
+            "enum": {
+              "0": "module_no_response",
+              "1": "igniter_fault",
+              "2": "timer_expired",
+              "3": "operator_abort",
+              "4": "config_error",
+              "5": "other"
+            }
+          },
+          {
+            "offset": 1,
+            "name": "fire_state",
+            "type": "uint8",
+            "description": "Код внутреннего состояния fire.c на момент сбоя (произвольный, для отладки)"
+          },
+          {
+            "offset": 2,
+            "name": "zone",
+            "type": "uint8",
+            "description": "Зона, в которой не завершилось тушение"
+          },
+          {
+            "offset": 3,
+            "name": "h_adr",
+            "type": "uint8",
+            "description": "Адрес проблемного МКУ"
+          }
+        ]
+      }
+    }
+  ]
+}

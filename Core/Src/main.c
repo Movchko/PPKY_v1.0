@@ -27,6 +27,7 @@
 #include "app.hpp"
 #include "led.h"
 #include "can_bus.h"
+#include "rtc_cache.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -270,8 +271,7 @@ int main(void)
 
 		 RTC_TimeTypeDef rtc_time;
 		 RTC_DateTypeDef rtc_date;
-		 if (HAL_RTC_GetTime(&hrtc, &rtc_time, RTC_FORMAT_BCD) == HAL_OK &&
-		     HAL_RTC_GetDate(&hrtc, &rtc_date, RTC_FORMAT_BCD) == HAL_OK) {
+		 if (RtcCache_GetBcd(&rtc_time, &rtc_date)) {
 			 uint32_t packed =
 					 ((uint32_t)rtc_date.Month << 24) |
 					 ((uint32_t)rtc_date.Date  << 16) |

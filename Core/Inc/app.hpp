@@ -9,10 +9,46 @@
 #define INC_APP_HPP_
 
 #include "main.h"
+#include "spif.h"
+#include "device_config.h"
 
 #define FLASH_CFG_START_SECTOR 0
 
 #define FLASH_CFG_SECTORS_USED  24
+
+/* Область SPI Flash под конфигурацию ППКУ (секторы 0 .. FLASH_CFG_SECTORS_USED-1). */
+#define FLASH_CFG_BYTES_ALLOCATED   (FLASH_CFG_SECTORS_USED * SPIF_SECTOR_SIZE)
+/* Запас под будущее расширение структуры PPKYCfg (не использовать под данные). */
+#define FLASH_CFG_RESERVE_PERCENT   10u
+#define FLASH_CFG_MAX_USABLE_BYTES  ((FLASH_CFG_BYTES_ALLOCATED * (100u - FLASH_CFG_RESERVE_PERCENT)) / 100u)
+#define FLASH_CFG_STORED_BYTES      (sizeof(PPKYConfigHeader) + sizeof(PPKYCfg))
+
+/* --- Область логера событий во внешней SPI Flash (после конфигурации) --- */
+/* Микросхема платы: W25Q128 (16 Мбайт). При смене чипа обновить SPI_FLASH_SECTOR_COUNT. */
+#define SPI_FLASH_SECTOR_COUNT      4096u
+
+#define FLASH_LOG_START_SECTOR      (FLASH_CFG_START_SECTOR + FLASH_CFG_SECTORS_USED)
+#define FLASH_LOG_TOTAL_SECTORS     (SPI_FLASH_SECTOR_COUNT - FLASH_LOG_START_SECTOR)
+
+#define EVENT_LOG_RECORD_SIZE_BYTES   32u
+#define EVENT_LOG_RECORDS_PER_SECTOR  (SPIF_SECTOR_SIZE / EVENT_LOG_RECORD_SIZE_BYTES)
+
+/* Критический уровень: не менее 50k записей, объём кратен сектору (128 записей/сектор).
+ * 400 секторов × 128 = 51 200 событий (ближайшее «ровное» число секторов ≥ 50k). */
+#define FLASH_LOG_CRITICAL_MIN_RECORDS   50000u
+#define FLASH_LOG_CRITICAL_SECTORS       400u
+#define FLASH_LOG_CRITICAL_RECORDS       (FLASH_LOG_CRITICAL_SECTORS * EVENT_LOG_RECORDS_PER_SECTOR)
+
+#define FLASH_LOG_CRITICAL_START_SECTOR  FLASH_LOG_START_SECTOR
+#define FLASH_LOG_CRITICAL_END_SECTOR    (FLASH_LOG_CRITICAL_START_SECTOR + FLASH_LOG_CRITICAL_SECTORS - 1u)
+
+#define FLASH_LOG_GENERAL_SECTORS        (FLASH_LOG_TOTAL_SECTORS - FLASH_LOG_CRITICAL_SECTORS)
+#define FLASH_LOG_GENERAL_START_SECTOR   (FLASH_LOG_CRITICAL_END_SECTOR + 1u)
+#define FLASH_LOG_GENERAL_END_SECTOR     (FLASH_LOG_GENERAL_START_SECTOR + FLASH_LOG_GENERAL_SECTORS - 1u)
+#define FLASH_LOG_GENERAL_RECORDS        (FLASH_LOG_GENERAL_SECTORS * EVENT_LOG_RECORDS_PER_SECTOR)
+
+#define FLASH_LOG_UNUSED_TAIL_SECTORS    0u
+
 #define NUM_ACTIVE_DEVICE 32
 
 #define RTC_PING_PERIOD_S 60000u

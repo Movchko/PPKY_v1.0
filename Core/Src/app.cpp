@@ -14,6 +14,7 @@
 #include "fire.h"
 #include "warning.h"
 #include "menu_ui.h"
+#include "rtc_cache.h"
 
 
 
@@ -95,9 +96,6 @@ extern uint8_t nDevs;
 extern int32_t CHANNEL_VAL[NUM_ADC_CHANNEL];
 
 uint8_t status_sec_cnt = 0;
-
-RTC_TimeTypeDef cur_time = {0};
-RTC_DateTypeDef cur_date;
 
 void AplyConfig() {
 	ConfigSync_StartApply();
@@ -354,19 +352,19 @@ void AppSetStatus() {
 	/* Dev=0 — сама плата ППКУ, отправляем через backend */
 	SendMessage(0, 0, status_data, SEND_NOW, BUS_CAN12);
 
-	if (HAL_RTC_GetTime(&hrtc, &cur_time, RTC_FORMAT_BCD) != HAL_OK) {
-			return;
+	RTC_TimeTypeDef time_bcd;
+	RTC_DateTypeDef date_bcd;
+	if (!RtcCache_GetBcd(&time_bcd, &date_bcd)) {
+		return;
 	}
-	if (HAL_RTC_GetDate(&hrtc, &cur_date, RTC_FORMAT_BCD) != HAL_OK) {
-			return;
-	}
+
 	uint8_t date[7] = {
-			cur_time.Hours,
-			cur_time.Minutes,
-			cur_time.Seconds,
-			cur_date.Year,
-			cur_date.Month,
-			cur_date.Date,
+			time_bcd.Hours,
+			time_bcd.Minutes,
+			time_bcd.Seconds,
+			date_bcd.Year,
+			date_bcd.Month,
+			date_bcd.Date,
 			0
 	};
 
@@ -1102,6 +1100,8 @@ void AppInit() {
 	extern uint8_t isMaster;
 	isMaster = 1;
 
+	RtcCache_Refresh();
+
 	/* Инициализация FSM пожара */
 	Fire_Init();
 
@@ -1198,6 +1198,7 @@ void AppTimer1ms() {
 
 	if(counter1s >= 1000) {
 		counter1s = 0;
+		RtcCache_Tick1s();
 		AppSetStatus();
 		status_sec_cnt++;
 	}
@@ -1243,7 +1244,7 @@ void RcvSetSystemTime(uint8_t *MsgData) {
 	t.Seconds = MsgData[2];
 	t.SubSeconds = 0;
 	RTC_DateTypeDef d;
-	if (HAL_RTC_GetDate(&hrtc, &d, RTC_FORMAT_BCD) != HAL_OK) {
+	if (!RtcCache_GetBcd(NULL, &d)) {
 		return;
 	}
 	// Обновляем дату из команды, формат RTC: BCD YY/MM/DD
@@ -1254,6 +1255,7 @@ void RcvSetSystemTime(uint8_t *MsgData) {
 		return;
 	}
 	HAL_RTC_SetDate(&hrtc, &d, RTC_FORMAT_BCD);
+	RtcCache_Refresh();
 }
 /*
 uint32_t GetID() {

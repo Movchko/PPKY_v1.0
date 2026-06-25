@@ -3,7 +3,7 @@
 #include <cstring>
 
 #ifndef SIMULATOR
-#include "stm32h5xx_hal_rtc.h"
+#include "rtc_cache.h"
 #endif
 
 Model::Model() : modelListener(0), soundOn(true)
@@ -29,8 +29,7 @@ void Model::tick()
 
 			RTC_TimeTypeDef sTime;
 			RTC_DateTypeDef sDate;
-			if (HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN) == HAL_OK &&
-			    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN) == HAL_OK) {
+			if (RtcCache_GetBin(&sTime, &sDate)) {
 				uint8_t sec = (uint8_t)sTime.Seconds;
 				if (sec != lastSec) {
 					lastSec = sec;

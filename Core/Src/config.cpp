@@ -5,6 +5,9 @@
 #include "backend.h"
 #include "menu_ui.h"
 
+static_assert(FLASH_CFG_STORED_BYTES <= FLASH_CFG_MAX_USABLE_BYTES,
+              "PPKY config size exceeds SPI flash allocation (10% reserve required)");
+
 extern struct PPKYCfg PPKYConfig;       // локальная (рабочая) конфигурация
 extern struct PPKYCfg SavedPPKYConfig; // копия сохранённой конфигурации из Flash
 extern SPIF_HandleTypeDef hFlash;
