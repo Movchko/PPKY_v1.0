@@ -36,14 +36,16 @@ static constexpr uint8_t POSITION_MAX_HADR = 32u;
 static constexpr uint32_t POSITION_RX_TIMEOUT_MS = 3500u;
 
 typedef struct {
-	uint8_t w[2];
-	uint8_t count;
-	uint32_t last_update_ms;
+	uint8_t w_can1;
+	uint8_t w_can2;
+	uint8_t has_can1;
+	uint8_t has_can2;
+	uint32_t last_can1_ms;
+	uint32_t last_can2_ms;
 } PositionRxInfo;
 
 static PositionRxInfo g_position_rx[POSITION_MAX_HADR + 1u];
-static uint8_t g_position_fault_active = 0u;
-static uint8_t g_position_fault_h_adr = 0u;
+static uint32_t g_position_fault_mask = 0u;
 
 /* --- Механизм автоматической установки адресов по команде 10 --- */
 typedef enum {
@@ -108,8 +110,7 @@ static void AddrAuto_ClearActiveDevices(void) {
 	memset(g_position_rx, 0, sizeof(g_position_rx));
 	g_active_devices_count = 0;
 	g_mku_mismatch_flag = 0;
-	g_position_fault_active = 0u;
-	g_position_fault_h_adr = 0u;
+	g_position_fault_mask = 0u;
 }
 
 static void AddrAuto_Start(void) {
@@ -655,7 +656,22 @@ static void RelayAuto_Process(void)
 	}
 }
 
-static void PositionRx_OnPacket(uint32_t MsgID, uint8_t *MsgData, uint32_t now_ms)
+static void PositionRx_StoreWeight(uint8_t h_adr, uint8_t weight, uint8_t can_bus, uint32_t now_ms)
+{
+	PositionRxInfo *rx = &g_position_rx[h_adr];
+
+	if (can_bus == CAN_BUS_1) {
+		rx->w_can1 = weight;
+		rx->has_can1 = 1u;
+		rx->last_can1_ms = now_ms;
+	} else {
+		rx->w_can2 = weight;
+		rx->has_can2 = 1u;
+		rx->last_can2_ms = now_ms;
+	}
+}
+
+extern "C" void App_PositionRxFromCan(uint32_t MsgID, const uint8_t *MsgData, uint8_t can_bus, uint32_t now_ms)
 {
 	can_ext_id_t id;
 	id.ID = MsgID;
@@ -671,27 +687,44 @@ static void PositionRx_OnPacket(uint32_t MsgID, uint8_t *MsgData, uint32_t now_m
 	if (h_adr == 0u || h_adr > POSITION_MAX_HADR) {
 		return;
 	}
-
-	uint8_t weight = MsgData[1];
-	PositionRxInfo *rx = &g_position_rx[h_adr];
-
-	if (rx->count == 0u) {
-		rx->w[0] = weight;
-		rx->count = 1u;
-	} else if (rx->count == 1u) {
-		if (rx->w[0] != weight) {
-			rx->w[1] = weight;
-			rx->count = 2u;
-		}
-	} else {
-		/* Храним последние два уникальных веса, чтобы повторы одного направления
-		 * не затирали второй вес и не давали ложных mismatch. */
-		if (rx->w[0] != weight && rx->w[1] != weight) {
-			rx->w[0] = rx->w[1];
-			rx->w[1] = weight;
-		}
+	if (can_bus != CAN_BUS_1 && can_bus != CAN_BUS_2) {
+		return;
 	}
-	rx->last_update_ms = now_ms;
+
+	PositionRx_StoreWeight(h_adr, MsgData[1], can_bus, now_ms);
+}
+
+static uint8_t Position_RxReady(const PositionRxInfo *rx, uint8_t can1_ok, uint8_t can2_ok, uint32_t now_ms)
+{
+	if (can1_ok && can2_ok) {
+		return (rx->has_can1 != 0u && rx->has_can2 != 0u &&
+			(now_ms - rx->last_can1_ms) <= POSITION_RX_TIMEOUT_MS &&
+			(now_ms - rx->last_can2_ms) <= POSITION_RX_TIMEOUT_MS) ? 1u : 0u;
+	}
+	if (can1_ok) {
+		return (rx->has_can1 != 0u &&
+			(now_ms - rx->last_can1_ms) <= POSITION_RX_TIMEOUT_MS) ? 1u : 0u;
+	}
+	if (can2_ok) {
+		return (rx->has_can2 != 0u &&
+			(now_ms - rx->last_can2_ms) <= POSITION_RX_TIMEOUT_MS) ? 1u : 0u;
+	}
+	return 0u;
+}
+
+static uint8_t Position_WeightsMatch(const PositionRxInfo *rx, uint8_t exp_a, uint8_t exp_b,
+				     uint8_t can1_ok, uint8_t can2_ok)
+{
+	if (can1_ok && can2_ok) {
+		return (rx->w_can1 == exp_a && rx->w_can2 == exp_b) ? 1u : 0u;
+	}
+	if (can1_ok) {
+		return (rx->w_can1 == exp_a) ? 1u : 0u;
+	}
+	if (can2_ok) {
+		return (rx->w_can2 == exp_b) ? 1u : 0u;
+	}
+	return 0u;
 }
 
 static uint8_t Position_IsOnlineMcuByHadr(uint8_t h_adr)
@@ -713,6 +746,7 @@ static uint8_t Position_IsOnlineMcuByHadr(uint8_t h_adr)
 
 static uint8_t Position_CollectConfiguredHadr(uint8_t *out, uint8_t max_out)
 {
+	/* Порядок слотов CfgDevices[] = порядок МКУ на кольце (не сортировка по h_adr). */
 	uint8_t n = 0u;
 	for (uint8_t i = 0u; i < 32u && n < max_out; i++) {
 		const Device *dv = &PPKYConfig.CfgDevices[i].UId.devId;
@@ -736,16 +770,6 @@ static uint8_t Position_CollectConfiguredHadr(uint8_t *out, uint8_t max_out)
 		}
 	}
 
-	for (uint8_t i = 1u; i < n; i++) {
-		uint8_t key = out[i];
-		uint8_t j = i;
-		while (j > 0u && out[j - 1u] > key) {
-			out[j] = out[j - 1u];
-			j--;
-		}
-		out[j] = key;
-	}
-
 	return n;
 }
 
@@ -766,8 +790,7 @@ static void Position_EvaluateMismatch(uint32_t now_ms)
 	uint8_t can1_ok = Position_IsCan1Healthy();
 	uint8_t can2_ok = Position_IsCan2Healthy();
 
-	g_position_fault_active = 0u;
-	g_position_fault_h_adr = 0u;
+	g_position_fault_mask = 0u;
 	if (n == 0u || (!can1_ok && !can2_ok)) {
 		return;
 	}
@@ -779,34 +802,14 @@ static void Position_EvaluateMismatch(uint32_t now_ms)
 		}
 
 		const PositionRxInfo *rx = &g_position_rx[h_adr];
-		if (rx->count == 0u || (now_ms - rx->last_update_ms) > POSITION_RX_TIMEOUT_MS) {
+		if (!Position_RxReady(rx, can1_ok, can2_ok, now_ms)) {
 			continue;
 		}
 
 		uint8_t exp_a = i;
 		uint8_t exp_b = (uint8_t)(n - 1u - i);
-		uint8_t ok = 0u;
-		if (can1_ok && can2_ok) {
-			/* Оба канала доступны: нужны оба веса (с любого порядка). */
-			if (rx->count < 2u) {
-				/* Недостаточно данных, ждём второй вес, но ошибку пока не ставим. */
-				continue;
-			}
-			uint8_t obs_a = rx->w[0];
-			uint8_t obs_b = rx->w[1];
-			ok = ((obs_a == exp_a && obs_b == exp_b) ||
-			      (obs_a == exp_b && obs_b == exp_a)) ? 1u : 0u;
-		} else if (can1_ok) {
-			/* Деградация: CAN1 жив, CAN2 недоступен — проверяем только CAN1-вес. */
-			ok = (rx->w[0] == exp_a || (rx->count >= 2u && rx->w[1] == exp_a)) ? 1u : 0u;
-		} else if (can2_ok) {
-			/* Деградация: CAN2 жив, CAN1 недоступен — проверяем только CAN2-вес. */
-			ok = (rx->w[0] == exp_b || (rx->count >= 2u && rx->w[1] == exp_b)) ? 1u : 0u;
-		}
-		if (!ok) {
-			g_position_fault_active = 1u;
-			g_position_fault_h_adr = h_adr;
-			return;
+		if (!Position_WeightsMatch(rx, exp_a, exp_b, can1_ok, can2_ok)) {
+			g_position_fault_mask |= (1u << (h_adr - 1u));
 		}
 	}
 }
@@ -1184,7 +1187,7 @@ void AppTimer1ms() {
 	CheckMkuConfigMismatch();
 	Position_EvaluateMismatch(now);
 	RelayAuto_Process();
-	Warning_SetMkuPositionFault(g_position_fault_active, g_position_fault_h_adr);
+	Warning_SetMkuPositionFaultMask(g_position_fault_mask);
 	App_UpdatePowerFaultIndication(now);
 	Fire_Timer1ms();
 
@@ -1269,13 +1272,22 @@ void ResetMCU() {
 	NVIC_SystemReset();
 }
 
+extern "C" void RcvStartExtinguishment(uint32_t MsgID, uint8_t *MsgData, uint8_t is_our_cmd)
+{
+	(void)is_our_cmd;
+	Fire_OnStartExtinguishment(MsgID, MsgData);
+}
 
-
+extern "C" void RcvStartSpButton(uint32_t MsgID, uint8_t *MsgData, uint8_t is_our_cmd)
+{
+	(void)MsgData;
+	(void)is_our_cmd;
+	Fire_OnBusStartSpButton(MsgID);
+}
 
 // посылки от устройств
 void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 	uint32_t now = HAL_GetTick();
-	PositionRx_OnPacket(MsgID, MsgData, now);
 	UpdateActiveDeviceList(MsgID, now);
 	ConfigSync_OnListenerMessage(MsgID, MsgData);
 

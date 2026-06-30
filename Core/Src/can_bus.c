@@ -595,6 +595,8 @@ void CanProcess(void)
 			can_rx_tail = 0;
 		}
 
+		App_PositionRxFromCan(e->id, e->data, e->can_bus, now);
+
 		uint8_t dev;
 		uint8_t other_bus;
 		uint32_t *last_id_other;

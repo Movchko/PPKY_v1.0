@@ -27,6 +27,8 @@ void Fire_Timer10ms(void);
 void Fire_OnStatusFire(uint32_t msg_id);
 void Fire_OnReplyStatusFire(uint32_t msg_id);
 void Fire_OnStopExtinguishment(uint32_t msg_id);
+void Fire_OnBusStartSpButton(uint32_t msg_id);
+void Fire_OnStartExtinguishment(uint32_t msg_id, const uint8_t *msg_data);
 void Fire_OnReplyStartExtinguishment(uint32_t msg_id);
 void Fire_OnReplyStopExtinguishment(uint32_t msg_id);
 void Fire_OnPauseExtinguishmentTimer(uint32_t msg_id);

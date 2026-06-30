@@ -72,6 +72,12 @@ extern uint8_t can_bus_error_flags;
   */
 extern uint8_t device_can_error[CAN_MAX_DEVICES];
 
+/**
+  * Учёт веса позиции МКУ с указанием шины CAN (реализация в app.cpp).
+  * Вызывается для каждого принятого кадра, в т.ч. дубликата со второй шины.
+  */
+void App_PositionRxFromCan(uint32_t msg_id, const uint8_t *msg_data, uint8_t can_bus, uint32_t now_ms);
+
 #ifdef __cplusplus
 }
 #endif

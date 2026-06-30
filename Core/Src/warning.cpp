@@ -80,8 +80,7 @@ static uint32_t g_led_err_blink_toggle_ms = 0u;
 static uint8_t g_prev_active_fault_count = 0u;
 static uint8_t g_prev_sound_fault_count = 0u;
 static uint8_t g_prev_sound_attention_count = 0u;
-static uint8_t g_position_fault_active = 0u;
-static uint8_t g_position_fault_h_adr = 0u;
+static uint32_t g_position_fault_mask = 0u;
 
 /* Текстовое имя типа МКУ для отображения в UI предупреждений. */
 static const char* McuTypeName(uint8_t d_type)
@@ -325,7 +324,11 @@ static uint8_t IsItemStillFaulty(const WarningItem& it)
 		return ((can_bus_error_flags & (1u << (it.can_idx - 1u))) != 0u) ? 1u : 0u;
 	}
 	if (it.kind == WARN_KIND_MCU_POSITION_FAULT) {
-		return (g_position_fault_active && it.h_adr == g_position_fault_h_adr) ? 1u : 0u;
+		uint8_t ha = it.h_adr;
+		if (ha == 0u || ha > 32u) {
+			return 0u;
+		}
+		return ((g_position_fault_mask & (1u << (ha - 1u))) != 0u) ? 1u : 0u;
 	}
 	return 0u;
 }
@@ -497,19 +500,22 @@ static void SyncPpkuCanFaultItems(uint32_t now_ms)
 
 static void SyncMkuPositionFaultItems(uint32_t now_ms)
 {
-	if (g_position_fault_active != 0u) {
-		UpsertItem(WARN_KIND_MCU_POSITION_FAULT, 0u, g_position_fault_h_adr, 0u,
-			   DEVICE_PPKY_TYPE, 0u, 0u, 0u, 0u, now_ms);
-		return;
-	}
-
 	for (uint8_t i = 0u; i < WARN_MAX_ITEMS; i++) {
-		if (!g_items[i].used) {
+		if (!g_items[i].used || g_items[i].kind != WARN_KIND_MCU_POSITION_FAULT) {
 			continue;
 		}
-		if (g_items[i].kind == WARN_KIND_MCU_POSITION_FAULT) {
+		uint8_t ha = g_items[i].h_adr;
+		if (ha == 0u || ha > 32u || ((g_position_fault_mask & (1u << (ha - 1u))) == 0u)) {
 			RemoveItemAt(i);
 		}
+	}
+
+	for (uint8_t ha = 1u; ha <= 32u; ha++) {
+		if ((g_position_fault_mask & (1u << (ha - 1u))) == 0u) {
+			continue;
+		}
+		UpsertItem(WARN_KIND_MCU_POSITION_FAULT, 0u, ha, 0u,
+			   DEVICE_PPKY_TYPE, 0u, 0u, 0u, 0u, now_ms);
 	}
 }
 
@@ -852,10 +858,9 @@ extern "C" void Warning_SetPpkuInputFaultMask(uint8_t mask)
 	g_ppku_input_fault_mask = (uint8_t)(mask & 0x03u);
 }
 
-extern "C" void Warning_SetMkuPositionFault(uint8_t active, uint8_t h_adr)
+extern "C" void Warning_SetMkuPositionFaultMask(uint32_t mask)
 {
-	g_position_fault_active = (active != 0u) ? 1u : 0u;
-	g_position_fault_h_adr = h_adr;
+	g_position_fault_mask = mask & 0xFFFFFFFFu;
 }
 
 extern "C" uint8_t Warning_HasActiveFault(void)

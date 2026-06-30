@@ -13,8 +13,8 @@ void WarningProcess1ms(void);
 void Warning_SetPowerFaultMask(uint8_t mask);
 /* Ошибки входов питания ППКУ: bits0..1 => ПИТАНИЕ1/2 */
 void Warning_SetPpkuInputFaultMask(uint8_t mask);
-/* Ошибка несоответствия физической позиции МКУ (по карте весов кольца). */
-void Warning_SetMkuPositionFault(uint8_t active, uint8_t h_adr);
+/* Ошибки несоответствия физической позиции МКУ (бит h_adr-1 => МКУ с адресом h_adr). */
+void Warning_SetMkuPositionFaultMask(uint32_t mask);
 uint8_t Warning_HasActiveFault(void);
 
 #ifdef __cplusplus

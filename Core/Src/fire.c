@@ -52,6 +52,8 @@ typedef enum {
 	FIRE_EVENT_BTN_START_SP,
 	FIRE_EVENT_BTN_START_ALL,
 	FIRE_EVENT_BTN_STOP,
+	FIRE_EVENT_BUS_START_EXT,
+	FIRE_EVENT_STATUS_FIRE_REDISPLAY,
 	FIRE_EVENT_TICK_1MS
 } FireEvent;
 
@@ -62,6 +64,9 @@ typedef struct {
 	uint8_t  fire1_waiting;
 	uint8_t  ext_retry_attempts;
 	uint8_t  ext_retry_failed;
+	uint8_t  extinguish_locked;
+	uint8_t  fire_redisplay;
+	uint8_t  ext_seen_no_ack;
 	uint8_t  source_count;
 	uint32_t phase2_deadline_ms;
 	uint32_t ext_retry_next_ms;
@@ -134,6 +139,8 @@ static FireContext g_fire;
 static FireRetryItem g_fire_retry_items[FIRE_CMD_RETRY_MAX_ITEMS];
 static uint8_t g_fire_ui_manual_select_enabled = 0u;
 static uint8_t g_fire_ui_selected_index = 0u;
+static uint8_t g_fire_bus_cmd_zone = 0u;
+static uint8_t g_fire_bus_cmd_launch_type = 0u;
 
 /* Управляет яркостью кнопки/подписи ПУСК ОБЩИЙ (обычная/активная). */
 static void Fire_SetStartAllBrightness(uint8_t bright);
@@ -159,6 +166,10 @@ static uint8_t Fire_ZoneCanToIdx(uint8_t zone_can);
 static uint8_t Fire_ZoneDelaySec(uint8_t zone);
 /* Возвращает задержку конкретного igniter-модуля из конфига ППКУ. */
 static uint8_t Fire_ModuleDelaySecForIgniter(const FireIgniterAddr *addr);
+/* Макс. module_delay (сек) среди спичек зоны без end_ack. */
+static uint8_t Fire_ZonePendingMaxModuleDelaySec(uint8_t zone);
+/* Пауза перед проверкой/повтором дотушивания с учётом задержки спички. */
+static uint32_t Fire_ExtinguishGraceMs(uint8_t zone);
 /* Поиск настроенного МКУ в PPKYConfig.CfgDevices. */
 static const MKUCfg* Fire_FindConfiguredMcuByZoneHAdr(uint8_t zone, uint8_t h_adr, uint8_t mcu_d_type);
 /* Проверка, что тип — один из типов МКУ. */
@@ -181,8 +192,12 @@ static uint8_t Fire_HasFire1Waiting(void);
 static uint8_t Fire_ZoneIsFire1Waiting(uint8_t zone);
 static uint8_t Fire_ShouldUseFire1Sound(void);
 static uint8_t Fire_PromoteFire1WhenAndUnavailable(uint32_t now_ms);
-/* Есть ли хотя бы один активный слот пожара. */
-static uint8_t Fire_AnyActiveSlot(void);
+/* Возвращает 1, если по зоне тушение уже запускалось и повторный пуск запрещён. */
+static uint8_t Fire_ZoneIsExtinguishLocked(uint8_t zone);
+/* Отметить зону как тушащуюся по команде с шины (без повторной отправки CAN). */
+static uint8_t Fire_MarkExternalExtinguishZone(uint8_t zone, uint32_t now_ms);
+/* Обновляет флаг «видели спички без end_ack» для корректного UI-списка зон. */
+static void Fire_UpdateExtinguishAckTracking(void);
 /* Считает зоны, где фаза 2 ещё не отправлена. */
 static uint8_t Fire_CountPendingPhase2(void);
 /* Минимальный оставшийся таймер (сек) среди pending-зон. */
@@ -432,6 +447,41 @@ static uint8_t Fire_ModuleDelaySecForIgniter(const FireIgniterAddr *addr)
 		return 0u;
 	}
 	return Fire_ClampU8FromU32(cfg->module_delay[idx]);
+}
+
+static uint8_t Fire_ZonePendingMaxModuleDelaySec(uint8_t zone)
+{
+	uint8_t max_delay = 0u;
+
+	for (uint8_t i = 0u; i < g_active_devices_count; i++) {
+		ActiveDeviceInfo *m = &g_active_devices[i];
+		if (!m->online || m->dev.zone != zone) {
+			continue;
+		}
+		for (uint8_t vi = 0u; vi < m->vdev_count; vi++) {
+			if (!m->vdevs[vi].online || m->vdevs[vi].v_d_type != DEVICE_IGNITER_TYPE) {
+				continue;
+			}
+			if ((m->vdevs[vi].ack_flags & FIRE_IGNITER_END_ACK_MASK) != 0u) {
+				continue;
+			}
+			FireIgniterAddr addr;
+			addr.d_type = DEVICE_IGNITER_TYPE;
+			addr.h_adr = m->dev.h_adr;
+			addr.l_adr = m->vdevs[vi].v_l_adr & 0x3Fu;
+			addr.zone = m->dev.zone & 0x7Fu;
+			uint8_t md = Fire_ModuleDelaySecForIgniter(&addr);
+			if (md > max_delay) {
+				max_delay = md;
+			}
+		}
+	}
+	return max_delay;
+}
+
+static uint32_t Fire_ExtinguishGraceMs(uint8_t zone)
+{
+	return (uint32_t)Fire_ZonePendingMaxModuleDelaySec(zone) * 1000u + FIRE_EXT_RETRY_INTERVAL_MS;
 }
 
 static uint8_t Fire_IsMcuDType(uint8_t d_type)
@@ -831,6 +881,9 @@ static void SetErrIgnNotStart(const FireIgniterAddr *addr)
 static void Fire_SendPhase1Zone(uint8_t zone)
 {
 	/* Фаза 1: старт в зоне с zone_delay + module_delay. */
+	if (Fire_ZoneIsExtinguishLocked(zone)) {
+		return;
+	}
 	FireIgniterAddr ign[16];
 	uint8_t n = Fire_CollectSortedIgniterTargetsByZone(zone, ign, (uint8_t)(sizeof(ign) / sizeof(ign[0])));
 	for (uint8_t i = 0u; i < n; i++) {
@@ -843,6 +896,9 @@ static void Fire_SendPhase1Zone(uint8_t zone)
 static uint8_t Fire_SendPhase2Zone(uint8_t zone)
 {
 	/* Фаза 2: немедленный старт (zone_delay=0), учитываем только module_delay. */
+	if (Fire_ZoneIsExtinguishLocked(zone)) {
+		return 0u;
+	}
 	FireIgniterAddr ign[16];
 	uint8_t n = Fire_CollectSortedIgniterTargetsByZone(zone, ign, (uint8_t)(sizeof(ign) / sizeof(ign[0])));
 	for (uint8_t i = 0u; i < n; i++) {
@@ -887,9 +943,11 @@ static void Fire_MarkSlotPhase2Sent(FireZoneSlot *slot, uint32_t now_ms)
 	}
 	slot->phase2_sent = 1u;
 	slot->fire1_waiting = 0u;
+	slot->extinguish_locked = 1u;
 	slot->ext_retry_attempts = 0u;
 	slot->ext_retry_failed = 0u;
-	slot->ext_retry_next_ms = now_ms + FIRE_EXT_RETRY_INTERVAL_MS;
+	slot->ext_seen_no_ack = 0u;
+	slot->ext_retry_next_ms = now_ms + Fire_ExtinguishGraceMs(slot->zone);
 }
 
 static void Fire_SendStopAllMcus(void)
@@ -1098,6 +1156,10 @@ static uint8_t Fire_TryAddNewFireZone(uint8_t zone, uint32_t source_key, uint8_t
 		if (!Fire_AddSourceToSlot(existing, source_key)) {
 			return 0u;
 		}
+		if (existing->extinguish_locked) {
+			existing->fire_redisplay = 1u;
+			return 3u;
+		}
 		if (existing->fire1_waiting && existing->source_count >= 2u) {
 			existing->fire1_waiting = 0u;
 			existing->phase2_sent = 0u;
@@ -1148,6 +1210,109 @@ static uint8_t Fire_AnyActiveSlot(void)
 		}
 	}
 	return 0u;
+}
+
+static uint8_t Fire_ZoneIsExtinguishLocked(uint8_t zone)
+{
+	int8_t si = Fire_FindSlotZone(zone);
+	if (si < 0) {
+		return 0u;
+	}
+	return g_fire.slots[(uint8_t)si].extinguish_locked;
+}
+
+static uint8_t Fire_EnsureSlotForZone(uint8_t zone, uint32_t now_ms)
+{
+	int8_t si = Fire_FindSlotZone(zone);
+	if (si >= 0) {
+		return 1u;
+	}
+	si = Fire_AllocSlot();
+	if (si < 0) {
+		return 0u;
+	}
+	FireZoneSlot *s = &g_fire.slots[(uint8_t)si];
+	memset(s, 0, sizeof(*s));
+	s->active = 1u;
+	s->zone = zone & 0x7Fu;
+	s->phase2_deadline_ms = now_ms;
+	return 1u;
+}
+
+static uint8_t Fire_MarkExternalExtinguishZone(uint8_t zone, uint32_t now_ms)
+{
+	if (Fire_ZoneIsExtinguishLocked(zone)) {
+		return 0u;
+	}
+	if (!Fire_EnsureSlotForZone(zone, now_ms)) {
+		return 0u;
+	}
+	int8_t si = Fire_FindSlotZone(zone);
+	if (si < 0) {
+		return 0u;
+	}
+	FireZoneSlot *s = &g_fire.slots[(uint8_t)si];
+	if (s->phase2_sent) {
+		return 0u;
+	}
+	Fire_MarkSlotPhase2Sent(s, now_ms);
+	return 1u;
+}
+
+static uint8_t Fire_MarkExternalExtinguishAllZones(uint32_t now_ms)
+{
+	FireIgniterAddr ign[64];
+	uint8_t n = Fire_CollectSortedIgniterTargetsAll(ign, (uint8_t)(sizeof(ign) / sizeof(ign[0])));
+	uint8_t zone_marked[128] = {0};
+	uint8_t any_started = 0u;
+
+	for (uint8_t i = 0u; i < n; i++) {
+		uint8_t z = ign[i].zone & 0x7Fu;
+		if (zone_marked[z]) {
+			continue;
+		}
+		zone_marked[z] = 1u;
+		if (Fire_MarkExternalExtinguishZone(z, now_ms)) {
+			any_started = 1u;
+		}
+	}
+
+	/* Слоты для всех зон с igniter (как при ПУСК ОБЩИЙ на панели). */
+	for (uint8_t z = 0u; z < 128u; z++) {
+		if (!zone_marked[z]) {
+			continue;
+		}
+		if (Fire_FindSlotZone(z) >= 0) {
+			continue;
+		}
+		if (!Fire_EnsureSlotForZone(z, now_ms)) {
+			continue;
+		}
+		int8_t si = Fire_FindSlotZone(z);
+		if (si < 0) {
+			continue;
+		}
+		FireZoneSlot *s = &g_fire.slots[(uint8_t)si];
+		if (!s->phase2_sent) {
+			Fire_MarkSlotPhase2Sent(s, now_ms);
+			any_started = 1u;
+		}
+	}
+
+	return any_started;
+}
+
+static void Fire_UpdateExtinguishAckTracking(void)
+{
+	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
+		FireZoneSlot *s = &g_fire.slots[i];
+		if (!s->active || !s->phase2_sent) {
+			continue;
+		}
+		if (!Fire_ZoneAllIgnitersEndAck(s->zone)) {
+			s->ext_seen_no_ack = 1u;
+		}
+	}
 }
 
 static uint8_t Fire_CountPendingPhase2(void)
@@ -1356,7 +1521,7 @@ static uint8_t Fire_StartAllExistingZonesAndMarkSlots(void)
 			continue;
 		}
 		uint8_t z = g_active_devices[i].dev.zone & 0x7Fu;
-		if (zone_sent[z]) {
+		if (zone_sent[z] || Fire_ZoneIsExtinguishLocked(z)) {
 			continue;
 		}
 		if (Fire_SendPhase2Zone(z)) {
@@ -1476,6 +1641,7 @@ static void Fire_ProcessExtinguishRetries(uint32_t now_ms)
 			continue;
 		}
 		if (Fire_ZoneAllIgnitersEndAck(s->zone)) {
+			s->ext_retry_failed = 0u;
 			continue;
 		}
 		if ((int32_t)(now_ms - s->ext_retry_next_ms) < 0) {
@@ -1487,7 +1653,7 @@ static void Fire_ProcessExtinguishRetries(uint32_t now_ms)
 		}
 		(void)Fire_SendPhase2ZonePending(s->zone);
 		s->ext_retry_attempts++;
-		s->ext_retry_next_ms = now_ms + FIRE_EXT_RETRY_INTERVAL_MS;
+		s->ext_retry_next_ms = now_ms + Fire_ExtinguishGraceMs(s->zone);
 		if (s->ext_retry_attempts >= FIRE_EXT_RETRY_MAX_ATTEMPTS &&
 		    !Fire_ZoneAllIgnitersEndAck(s->zone)) {
 			s->ext_retry_failed = 1u;
@@ -1523,8 +1689,13 @@ static uint8_t Fire_BuildUiZoneList(uint8_t *zones, uint8_t max_out)
 			continue;
 		}
 		/* До полного завершения тушения показываем только "текущие" непотушенные зоны.
-		 * После завершения по всем зонам (end_ack) показываем исторический список. */
-		if (!show_all_history && Fire_ZoneAllIgnitersEndAck(g_fire.slots[i].zone)) {
+		 * После завершения по всем зонам (end_ack) показываем исторический список.
+		 * Зоны с новым пожаром после тушения (fire_redisplay) остаются в списке. */
+		/* Скрываем зону только после реального завершения тушения в этом цикле
+		 * (был end_ack=0 после пуска). Старый end_ack от прошлого цикла не скрывает зону. */
+		if (!show_all_history && Fire_ZoneAllIgnitersEndAck(g_fire.slots[i].zone) &&
+		    g_fire.slots[i].fire_redisplay == 0u &&
+		    g_fire.slots[i].ext_seen_no_ack != 0u) {
 			continue;
 		}
 		uint8_t z = g_fire.slots[i].zone;
@@ -1795,6 +1966,15 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 			fire_processed = 1u;
 		}
 		break;
+	case FIRE_EVENT_STATUS_FIRE_REDISPLAY:
+		/* Повторный пожар в зоне, где тушение уже запускалось: только индикация. */
+		if (g_fire.state == FIRE_STATE_IDLE) {
+			g_fire.state = (PPKYConfig.fire_mode == 2u) ? FIRE_STATE_WAIT_MANUAL : FIRE_STATE_WAIT_AUTO;
+		}
+		Led_ForceStatusBright(LED_FIRE);
+		Fire_BeeperEnterAlert(Fire_ShouldUseFire1Sound());
+		fire_processed = 1u;
+		break;
 	case FIRE_EVENT_REPLY_FIRE:
 		g_fire.reply_received = 1u;
 		break;
@@ -1864,6 +2044,27 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		}
 		}
 		break;
+	case FIRE_EVENT_BUS_START_EXT: {
+		/* Пуск тушения с виртуальной кнопки (CAN StartExtinguishment broadcast). */
+		uint8_t zone = g_fire_bus_cmd_zone;
+
+		if (g_fire_bus_cmd_launch_type == START_EXT_DELAY_MODULE_ONLY) {
+			uint8_t any_started = 0u;
+			if (zone == 0u) {
+				any_started = Fire_MarkExternalExtinguishAllZones(now_ms);
+			} else {
+				any_started = Fire_MarkExternalExtinguishZone(zone, now_ms);
+			}
+			if (any_started) {
+				g_fire.start_launch_pressed_latched = 1u;
+				g_fire.stop_launch_pressed_latched = 0u;
+				g_fire.start_sp_text_blink_until_ms = now_ms + (FIRE_START_SP_TEXT_BLINK_PERIOD_MS * 3u);
+				Fire_SyncStateFromSlots();
+				fire_processed = 1u;
+				start_processed = 1u;
+			}
+		}
+	} break;
 	case FIRE_EVENT_BTN_STOP:
 		/* ОСТАНОВ ПУСКА: ручной режим, стоп МКУ, отображение/авто-таймеры зон off, пожар и слоты сохраняются */
 		if (g_fire.start_launch_pressed_latched) {
@@ -1910,6 +2111,7 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		start_processed = 1u;
 	}
 	Fire_ProcessExtinguishRetries(now_ms);
+	Fire_UpdateExtinguishAckTracking();
 	Fire_SyncStateFromSlots();
 	/* Пока решение не принято (до ПУСК/СТОП/автопуска), удерживаем тревожный звук активным.
 	 * Это защищает от внешних пересечений индикации, которые могут сбросить звук. */
@@ -2146,8 +2348,45 @@ void Fire_OnStatusFire(uint32_t msg_id)
 	} else if (res == 2u) {
 		/* Переход ПОЖАР1 -> ПОЖАР2 после второго датчика в зоне "И". */
 		Fire_Transition(FIRE_EVENT_STATUS_FIRE, now);
+	} else if (res == 3u) {
+		/* Новый пожар в зоне с уже запущенным тушением: только отображение. */
+		Fire_Transition(FIRE_EVENT_STATUS_FIRE_REDISPLAY, now);
 	}
 	SetReplyStatusFire(zone);
+}
+
+void Fire_OnBusStartSpButton(uint32_t msg_id)
+{
+	if (MenuUi_IsConfigSessionActive()) {
+		return;
+	}
+	if (!Backend_IsIgniterBroadcastId(msg_id)) {
+		return;
+	}
+	Fire_Transition(FIRE_EVENT_BTN_START_SP, HAL_GetTick());
+}
+
+void Fire_OnStartExtinguishment(uint32_t msg_id, const uint8_t *msg_data)
+{
+	if (MenuUi_IsConfigSessionActive()) {
+		return;
+	}
+	if (msg_data == NULL) {
+		return;
+	}
+	if (!Backend_IsIgniterBroadcastId(msg_id)) {
+		return;
+	}
+	if (msg_data[0] != (uint8_t)ServiceCmd_Fire_StartExtinguishment) {
+		return;
+	}
+	if (msg_data[4] != START_EXT_DELAY_MODULE_ONLY) {
+		return;
+	}
+
+	g_fire_bus_cmd_zone = msg_data[1] & 0x7Fu;
+	g_fire_bus_cmd_launch_type = msg_data[4];
+	Fire_Transition(FIRE_EVENT_BUS_START_EXT, HAL_GetTick());
 }
 
 /* Входящий ReplyStatusFire от МКУ (подтверждение статуса пожара). */
