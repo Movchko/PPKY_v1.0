@@ -168,12 +168,7 @@ static void uart_rx_frame_push(uint32_t id, const uint8_t *data)
 
 static void uart_tx_packet_push(uint8_t can_bus, uint32_t id, const uint8_t *data)
 {
-	/* Временный режим: зеркалим в UART только кадры CAN1.
-	 * CAN2 сейчас не отправляем в UART, чтобы исключить дубли.
-	 */
-	if (can_bus != CAN_BUS_1) {
-		return;
-	}
+	// Сюда попадает обе шины кан, т.е наверх уходят дубли каждого пакета
 
 	uint8_t next = ring_next_u8(uart_tx_head, UART_BRIDGE_QUEUE_SIZE);
 	if (next == uart_tx_tail) {
@@ -536,7 +531,7 @@ static void can_rx_drain_fifo(FDCAN_HandleTypeDef *hfdcan, uint32_t rx_fifo, uin
 		if (HAL_FDCAN_GetRxMessage(hfdcan, rx_fifo, &msg, data) != HAL_OK) {
 			break;
 		}
-		uart_tx_packet_push(can_bus, msg.Identifier, data);
+		//uart_tx_packet_push(can_bus, msg.Identifier, data);
 		CanRxPush(msg.Identifier, data, can_bus);
 	}
 }
@@ -643,6 +638,7 @@ void CanProcess(void)
 
 		/* Уникальный пакет: разобрать один раз, ждать дубликат с другой шины */
 		ProtocolParse(e->id, e->data, BUS_CAN12);
+		uart_tx_packet_push(e->can_bus, e->id, e->data);
 
 		*last_id_cur = e->id;
 		memcpy(last_data_cur, e->data, 8);

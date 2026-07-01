@@ -92,6 +92,16 @@ void PControl::Process(uint32_t now_ms) {
 			break;
 		}
 
+		// Зафиксированная ошибка: ST не сбрасывается без повторного включения — пробуем раз в 10 с
+		if (error_flag) {
+			if (now_ms >= next_retry_ms) {
+				next_retry_ms = now_ms + 10000u;
+				PControlSetOut(Num, 1);
+				state = PControl_Normal;
+			}
+			break;
+		}
+
 		// КЗ/ошибка могла уйти: если ST вернулся в 0, выходим из Fault и позволяем снова включиться
 		if (status == 0u) {
 			state = PControl_Idle;
@@ -107,6 +117,7 @@ void PControl::Process(uint32_t now_ms) {
 			// Больше не пытаемся включаться, фиксируем ошибку питания
 			error_flag = true;
 			PControlSetOut(Num, 0);
+			next_retry_ms = now_ms + 10000u;
 			break;
 		}
 

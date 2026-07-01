@@ -623,6 +623,9 @@ static void RelayAuto_Process(void)
 				trigger = RelayAuto_IsFireTriggerInZone(zone);
 			} else if (mode == 2u) {
 				trigger = RelayAuto_IsFaultTriggerInZone(zone);
+				if (trigger == 0u) {
+					trigger = RelayAuto_IsFireTriggerInZone(zone);
+				}
 			} else {
 				trigger = RelayAuto_IsLswitchOpenTriggerInZone(zone);
 			}
@@ -1022,45 +1025,22 @@ void AppInit() {
 	// Чтение сохранённой конфигурации из Flash (область конфигурации)
 	uint32_t cfg_addr = SPIF_SectorToAddress(FLASH_CFG_START_SECTOR);
 	PPKYConfigHeader hdr;
-
-	//SPIF_EraseChip(&hFlash);
-/*
-	for (uint32_t s = 0; s < FLASH_CFG_SECTORS_USED; s++) {
-		SPIF_EraseSector(&hFlash, FLASH_CFG_START_SECTOR + s);
-	}
-*/
 	SPIF_ReadAddress(&hFlash, cfg_addr, (uint8_t *)&hdr, sizeof(hdr));
 
 	bool header_ok = (hdr.magic == PPKY_CFG_HEADER_MAGIC) &&
 			         (hdr.size  == sizeof(PPKYConfig));
 
-	//ReadSavedConfig();
 
 	if (header_ok) {
-
-
 		ReadSavedConfig();
-/*
-		// Заголовок валиден — читаем полезную часть
-		SPIF_ReadAddress(&hFlash,
-				         cfg_addr + sizeof(PPKYConfigHeader),
-						 (uint8_t *)&SavedPPKYConfig,
-						 sizeof(SavedPPKYConfig));
-						 */
 		PPKYConfig = SavedPPKYConfig;
 	} else {
 		// Заголовок мусор: считаем, что конфигурации нет
 		// Сбрасываем на значения по умолчанию и сохраняем в область конфигурации
-		//DefaultConfig();
-
-		FillConfigTemplate();
-
+		DefaultConfig();
+		//FillConfigTemplate();
 		SaveConfig();
 	}
-
-	//FillConfigTemplate();
-
-	//SaveConfig();
 
 	// Передаём указатели в backend (для сервисных команд работы с конфигурацией)
 	SetConfigPtr((uint8_t *)&SavedPPKYConfig, (uint8_t *)&PPKYConfig);
@@ -1091,12 +1071,7 @@ void AppInit() {
 		Power[i]->PControlInit(PControlGetSTCB, PControlGetADCCB, PControlSetOutCB);
 		Power[i]->SetEnable(1);
 	}
-/*
-	HAL_Delay(1000);
-	Power[0]->PControlSetOut(0, true);
-	HAL_Delay(1000);
-	Power[1]->PControlSetOut(1, true);
-	*/
+
 	isAppInit = true;
 	extern bool isListener;
 	isListener = true;
@@ -1107,7 +1082,6 @@ void AppInit() {
 
 	/* Инициализация FSM пожара */
 	Fire_Init();
-
 }
 
 extern "C" void PControl_OnStatusFault(uint8_t ch, uint32_t now_ms) {
@@ -1219,10 +1193,6 @@ void AppTimer10ms() {
 	Fire_Timer10ms();
 	Beeper_Process();
 	Led_Process();
-	//for(uint8_t i = 0; i < 2; i++) {
-	//st[i] = Power[i]->PControlGetST(i);
-	//}
-
 }
 
 
@@ -1338,13 +1308,5 @@ extern "C" void Warning_UiUpdate(uint8_t active, uint8_t n_items,
 	FrontendHeap::getInstance().model.setWarningStatusFromApp(
 		active != 0, n_items, big_titles, details);
 }
-
-
-
-
-
-
-
-
 
 
