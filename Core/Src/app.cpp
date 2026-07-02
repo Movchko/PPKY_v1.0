@@ -263,6 +263,8 @@ void PPKY_GetLastPowerOnDate(RTC_DateTypeDef *out_date, RTC_TimeTypeDef *out_tim
 	}
 }
 
+
+
 void CommandCB(uint8_t Dev, uint8_t Command, uint8_t *Parameters) {
 	(void)Dev;
 	switch(Command) {
@@ -307,7 +309,6 @@ void CommandCB(uint8_t Dev, uint8_t Command, uint8_t *Parameters) {
 		/* Применить конфиг-образ из ППКУ ко всем МКУ и проверить по CRC. */
 		ConfigSync_StartApply();
 	}break;
-
 	default: break;
 	}
 

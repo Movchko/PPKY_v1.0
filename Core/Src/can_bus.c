@@ -17,7 +17,7 @@
 #define CAN_RX_RING_SIZE      256
 #define CAN_TX_RING_SIZE      256
 #define CAN_NO_RX_TIMEOUT_MS  3000
-#define CAN_DUP_WINDOW_MS     30
+#define CAN_DUP_WINDOW_MS     50
 #define UART_BRIDGE_QUEUE_SIZE 128
 #define CAN_WATCHDOG_PERIOD_MS      3000u
 #define CAN_TX_STALL_RECOVERY_MS    3000u
@@ -168,7 +168,6 @@ static void uart_rx_frame_push(uint32_t id, const uint8_t *data)
 
 static void uart_tx_packet_push(uint8_t can_bus, uint32_t id, const uint8_t *data)
 {
-	// Сюда попадает обе шины кан, т.е наверх уходят дубли каждого пакета
 
 	uint8_t next = ring_next_u8(uart_tx_head, UART_BRIDGE_QUEUE_SIZE);
 	if (next == uart_tx_tail) {
@@ -638,7 +637,7 @@ void CanProcess(void)
 
 		/* Уникальный пакет: разобрать один раз, ждать дубликат с другой шины */
 		ProtocolParse(e->id, e->data, BUS_CAN12);
-		uart_tx_packet_push(e->can_bus, e->id, e->data);
+		uart_tx_packet_push(CAN_BUS_1, e->id, e->data);
 
 		*last_id_cur = e->id;
 		memcpy(last_data_cur, e->data, 8);

@@ -1263,9 +1263,14 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 uint8_t SetUpdateWord(uint32_t num, uint32_t word)
 { return 0;}
-uint32_t GetAppVersion(void)
+#define APP_VERSION_U32 1u
+
+const char *GetAppVersion(void)
 {
-    return 1;
+    static char ver_buf[48];
+    /* fw: версия прошивки (пока константа) */
+    (void)snprintf(ver_buf, sizeof(ver_buf), "fw=%u", (unsigned)APP_VERSION_U32);
+    return ver_buf;
 }
 
 uint8_t FinishUpdateTransmit(void) {
