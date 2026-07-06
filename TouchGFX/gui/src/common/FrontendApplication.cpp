@@ -19,6 +19,8 @@
 
 #ifndef SIMULATOR
 #include "button.h"
+#include "fire.h"
+#include "menu_ui.h"
 #endif
 
 using namespace touchgfx;
@@ -37,6 +39,16 @@ void FrontendApplication::handleTickEvent()
     model.tick();
 
 #ifndef SIMULATOR
+    if (Fire_IsActive() && !MenuUi_IsMainScreenActive()) {
+        if (MenuUi_IsConfigSessionActive()) {
+            Esp32_SetEnabled(0u);
+            MenuUi_SetConfigSession(0u);
+        }
+        gotomainscreenScreenNoTransition();
+        FrontendApplicationBase::handleTickEvent();
+        return;
+    }
+
     ModelListener* listener = model.getModelListener();
     if (listener)
     {

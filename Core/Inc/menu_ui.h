@@ -17,6 +17,9 @@ typedef enum {
 void MenuUi_SetConfigSession(uint8_t active);
 uint8_t MenuUi_IsConfigSessionActive(void);
 
+void MenuUi_SetMainScreenActive(uint8_t active);
+uint8_t MenuUi_IsMainScreenActive(void);
+
 void Esp32_SetEnabled(uint8_t enabled);
 uint8_t Esp32_IsEnabled(void);
 

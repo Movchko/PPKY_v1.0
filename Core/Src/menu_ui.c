@@ -5,6 +5,7 @@
 #include "can_bus.h"
 
 static uint8_t g_config_session_active = 0u;
+static uint8_t g_main_screen_active = 0u;
 static uint8_t g_esp32_enabled = 0u;
 
 static MenuCfgState g_cfg_state = MENU_CFG_STATE_IDLE;
@@ -25,6 +26,16 @@ void MenuUi_SetConfigSession(uint8_t active)
 uint8_t MenuUi_IsConfigSessionActive(void)
 {
 	return g_config_session_active;
+}
+
+void MenuUi_SetMainScreenActive(uint8_t active)
+{
+	g_main_screen_active = active ? 1u : 0u;
+}
+
+uint8_t MenuUi_IsMainScreenActive(void)
+{
+	return g_main_screen_active;
 }
 
 void Esp32_SetEnabled(uint8_t enabled)

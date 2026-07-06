@@ -2,7 +2,12 @@
 #include <gui/mainscreen_screen/mainscreenPresenter.hpp>
 #include <gui/common/FrontendApplication.hpp>
 #include <touchgfx/Application.hpp>
+
+#ifndef SIMULATOR
 #include "button.h"
+#include "fire.h"
+#include "menu_ui.h"
+#endif
 
 mainscreenPresenter::mainscreenPresenter(mainscreenView& v)
     : view(v)
@@ -12,12 +17,16 @@ mainscreenPresenter::mainscreenPresenter(mainscreenView& v)
 
 void mainscreenPresenter::activate()
 {
-
+#ifndef SIMULATOR
+    MenuUi_SetMainScreenActive(1u);
+#endif
 }
 
 void mainscreenPresenter::deactivate()
 {
-
+#ifndef SIMULATOR
+    MenuUi_SetMainScreenActive(0u);
+#endif
 }
 
 void mainscreenPresenter::setDateTime(uint8_t hour, uint8_t min, uint8_t sec, uint8_t day, uint8_t month, uint8_t year)
@@ -38,6 +47,9 @@ void mainscreenPresenter::handleButton(uint8_t but, uint8_t state)
 
     if (but == BUT_ENTER)
     {
+        if (Fire_IsActive()) {
+            return;
+        }
         FrontendApplication* app = static_cast<FrontendApplication*>(touchgfx::Application::getInstance());
         app->gotoScreenMenuScreenNoTransition();
         return;

@@ -918,13 +918,24 @@ static void UpdateActiveVirtualDevices(uint32_t MsgID, uint8_t *MsgData, uint32_
 
 	uint8_t was_online = m->vdevs[v_idx].online;
 	uint8_t old_status_cmd = m->vdevs[v_idx].status_cmd;
+	uint8_t old_line_state = m->vdevs[v_idx].status_params[0];
 
 	m->vdevs[v_idx].online = 1u;
 	m->vdevs[v_idx].last_seen_ms = now_ms;
 	m->vdevs[v_idx].prev_status_cmd = old_status_cmd;
-	/* Липкий флаг: если уже был 1 — не сбрасываем. Становится 1 только при реальной смене статуса. */
+	/* Липкий флаг: если уже был 1 — не сбрасываем. Становится 1 при смене status_cmd или line_state. */
 	if (m->vdevs[v_idx].status_changed == 0u) {
-		m->vdevs[v_idx].status_changed = (was_online ? (old_status_cmd != new_status_cmd) : 0u);
+		uint8_t changed = 0u;
+		if (was_online) {
+			if (old_status_cmd != new_status_cmd) {
+				changed = 1u;
+			} else if (v_d_type == DEVICE_DPT_TYPE ||
+			           v_d_type == DEVICE_BUTTON_TYPE ||
+			           v_d_type == DEVICE_LSWITCH_TYPE) {
+				changed = (MsgData[1] != old_line_state) ? 1u : 0u;
+			}
+		}
+		m->vdevs[v_idx].status_changed = changed;
 	}
 	m->vdevs[v_idx].status_cmd = new_status_cmd;
 	memcpy(m->vdevs[v_idx].status_params, &MsgData[1], 7u);
