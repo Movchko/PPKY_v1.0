@@ -2027,6 +2027,8 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		/* ПУСК ОБЩИЙ: запуск тушения всех существующих зон с module_delay (zone_delay=0),
 		 * независимо от статуса ПОЖАРА/слотов */
 		{
+			BroadcastSetStatusFire(0u, FIRE_STATUS_SRC_PPKU_START_ALL,
+			                       DEVICE_PPKY_TYPE, 0u);
 			uint8_t any_started = Fire_StartAllExistingZonesAndMarkSlots();
 			/* Если есть активные пожарные слоты — ручной общий пуск должен
 			 * завершить их ожидание фазы 2 (таймер далее не идёт). */

@@ -78,6 +78,7 @@ typedef struct {
 	uint8_t h_adr;
 	uint8_t l_adr;
 	uint8_t target_state;
+	uint8_t fire_latched;
 } RelayAutoTrack;
 
 static RelayAutoTrack g_relay_auto_track[RELAY_AUTO_MAX_TRACK];
@@ -488,18 +489,14 @@ static void RelayAuto_OnFireServiceCmd(uint32_t MsgID, uint8_t command)
 	id.ID = MsgID;
 	uint8_t z_can = (uint8_t)(id.field.zone & 0x7Fu);
 	if (command == ServiceCmd_Fire_SetStatusFire) {
-		if (z_can >= 1u && z_can <= ZONE_NUMBER) {
+		if (z_can == 0u) {
+			memset(g_relay_fire_zone_active, 1, sizeof(g_relay_fire_zone_active));
+		} else if (z_can >= 1u && z_can <= ZONE_NUMBER) {
 			uint8_t zi = (uint8_t)(z_can - 1u);
 			g_relay_fire_zone_active[zi] = 1u;
 		}
-	} else if (command == ServiceCmd_Fire_StopExtinguishment) {
-		if (z_can == 0u) {
-			memset(g_relay_fire_zone_active, 0, sizeof(g_relay_fire_zone_active));
-		} else if (z_can >= 1u && z_can <= ZONE_NUMBER) {
-			uint8_t zi = (uint8_t)(z_can - 1u);
-			g_relay_fire_zone_active[zi] = 0u;
-		}
 	}
+	/* StopExtinguishment / Pause: реле не возвращаем — сработавшее состояние держим до reboot. */
 }
 
 static uint8_t RelayAuto_IsFaultTriggerInZone(uint8_t zone)
@@ -646,14 +643,21 @@ static void RelayAuto_Process(void)
 					g_relay_auto_track[(uint8_t)track_idx].h_adr = h_adr;
 					g_relay_auto_track[(uint8_t)track_idx].l_adr = l_adr;
 					g_relay_auto_track[(uint8_t)track_idx].target_state = (uint8_t)(target_state ^ 1u);
+					g_relay_auto_track[(uint8_t)track_idx].fire_latched = 0u;
 				}
 			}
 
 			if (track_idx >= 0) {
 				RelayAutoTrack *tr = &g_relay_auto_track[(uint8_t)track_idx];
 				if (tr->target_state != target_state) {
+					if (mode == 1u && trigger != 0u && tr->fire_latched != 0u) {
+						continue;
+					}
 					RelayAuto_SendTarget(zone, h_adr, l_adr, target_state);
 					tr->target_state = target_state;
+					if (mode == 1u && trigger != 0u) {
+						tr->fire_latched = 1u;
+					}
 				}
 			}
 		}
@@ -1281,7 +1285,9 @@ void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 	if(Command >= ServiceCmd_Fire_SetStatusFire && Command <= ServiceCmd_Fire_SetReplyResumeExtinguishmentTimer) {
 		RelayAuto_OnFireServiceCmd(MsgID, Command);
 		if(Command == ServiceCmd_Fire_SetStatusFire) {
-			Fire_OnStatusFire(MsgID);
+			if (FireStatus_IsSensorSource(MsgData[4])) {
+				Fire_OnStatusFire(MsgID);
+			}
 		} else if (Command == ServiceCmd_Fire_ReplyStatusFire) {
 			Fire_OnReplyStatusFire(MsgID);
 		} else if (Command == ServiceCmd_Fire_StopExtinguishment) {
