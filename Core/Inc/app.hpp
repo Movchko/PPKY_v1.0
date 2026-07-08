@@ -13,8 +13,10 @@
 #include "device_config.h"
 
 #define FLASH_CFG_START_SECTOR 0
+#define FLASH_CFG_START_BLOCK FLASH_CFG_START_SECTOR / (SPIF_BLOCK_SIZE / SPIF_SECTOR_SIZE)
 
-#define FLASH_CFG_SECTORS_USED  24
+#define FLASH_CFG_SECTORS_USED  16*2//24 - было, теперь 32 - это 2 блока
+#define FLASH_CFG_BLOCK_USED  FLASH_CFG_SECTORS_USED / (SPIF_BLOCK_SIZE / SPIF_SECTOR_SIZE)//24 - было, теперь 32 - это 2 блока
 
 /* Область SPI Flash под конфигурацию ППКУ (секторы 0 .. FLASH_CFG_SECTORS_USED-1). */
 #define FLASH_CFG_BYTES_ALLOCATED   (FLASH_CFG_SECTORS_USED * SPIF_SECTOR_SIZE)

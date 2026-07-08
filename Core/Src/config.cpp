@@ -243,9 +243,13 @@ void FlashWriteData(uint8_t *ConfigPtr, uint32_t ConfigSize) {
 	// Конфигурация: FLASH_CFG_START_SECTOR, заголовок PPKYConfigHeader, затем PPKYCfg.
 	// Стираем только нужное кол-во секторов (ускоряет сохранение).
 	uint32_t cfg_addr = SPIF_SectorToAddress(FLASH_CFG_START_SECTOR);
-
+	/*
 	for (uint32_t s = 0; s < FLASH_CFG_SECTORS_USED; s++) {
 		SPIF_EraseSector(&hFlash, FLASH_CFG_START_SECTOR + s);
+	}
+	*/
+	for (uint32_t s = 0; s < FLASH_CFG_BLOCK_USED; s++) {
+		SPIF_EraseBlock(&hFlash, FLASH_CFG_START_BLOCK + s);
 	}
 
 	PPKYConfigHeader hdr;
