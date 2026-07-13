@@ -16,6 +16,7 @@ void Warning_SetPpkuInputFaultMask(uint8_t mask);
 /* Ошибки несоответствия физической позиции МКУ (бит h_adr-1 => МКУ с адресом h_adr). */
 void Warning_SetMkuPositionFaultMask(uint32_t mask);
 uint8_t Warning_HasActiveFault(void);
+uint8_t Warning_HasActiveAttention(void);
 
 #ifdef __cplusplus
 }

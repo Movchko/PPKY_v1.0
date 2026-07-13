@@ -867,3 +867,8 @@ extern "C" uint8_t Warning_HasActiveFault(void)
 {
 	return HasActiveFaultNow();
 }
+
+extern "C" uint8_t Warning_HasActiveAttention(void)
+{
+	return CountActiveAttentionNow() > 0u ? 1u : 0u;
+}

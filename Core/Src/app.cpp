@@ -1127,7 +1127,6 @@ uint32_t warning_process_delay = 5000;
 
 static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 {
-	static uint8_t prev_power_fault_mask = 0u;
 	uint8_t power_fault_mask = 0u;       /* Ошибки выходов power-модуля (внешнее питание МКУ). */
 	uint8_t ppku_input_fault_mask = 0u;  /* Ошибки входов питания ППКУ. */
 
@@ -1150,18 +1149,15 @@ static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 			power_fault_mask |= (uint8_t)(1u << i);
 		}
 	}
-	if (power_fault_mask > prev_power_fault_mask) {
-		Led_ForceStatusBright(LED_ERR);
-	}
-	prev_power_fault_mask = power_fault_mask;
 	Warning_SetPowerFaultMask(power_fault_mask);
 	Warning_SetPpkuInputFaultMask(ppku_input_fault_mask);
 
 	/* При отсутствии основного ввода индикатор питания должен гаснуть. */
 	Led_Set(LED_POWER, ((ppku_input_fault_mask & 0x01u) != 0u) ? 0u : 1u);
 
-	uint8_t has_fault = (power_fault_mask != 0u || ppku_input_fault_mask != 0u) ? 1u : Warning_HasActiveFault();
-	Led_Set(LED_ERR, has_fault ? 1u : 0u);
+	/* LED_ERR управляется в WarningProcess1ms (неисправность + внимание/мигание). */
+	uint8_t has_fault = (power_fault_mask != 0u || ppku_input_fault_mask != 0u) ? 1u :
+			    (Warning_HasActiveFault() || Warning_HasActiveAttention()) ? 1u : 0u;
 	if (!has_fault && !Fire_IsActive()) {
 		Led_Set(LED_NORM, 1u);
 	} else {
