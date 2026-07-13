@@ -15,6 +15,8 @@
 #include "warning.h"
 #include "menu_ui.h"
 #include "rtc_cache.h"
+#include "event_log.h"
+#include "log_transport.h"
 
 
 
@@ -1098,6 +1100,10 @@ void AppInit() {
 
 	/* Инициализация FSM пожара */
 	Fire_Init();
+
+	(void)EventLog_Init(&hFlash);
+	EventLog_LogMasterBoot();
+	LogTransport_Init();
 }
 
 extern "C" void PControl_OnStatusFault(uint8_t ch, uint32_t now_ms) {
@@ -1177,6 +1183,7 @@ void AppTimer1ms() {
 	App_UpdatePowerFaultIndication(now);
 	Fire_Timer1ms();
 
+	LogTransport_Process();
 	BackendProcess();
 	if(warning_process_delay)
 		warning_process_delay--;

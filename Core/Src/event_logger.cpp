@@ -5,13 +5,19 @@
  */
 
 #include "event_logger.h"
+#include <stddef.h>
 #include <string.h>
+
+static_assert(sizeof(EventLogRecord_t) == EVENT_LOG_RECORD_SIZE,
+              "EventLogRecord_t must match flash record size");
+static_assert(offsetof(EventLogRecord_t, checksum) == 30u,
+              "EventLogRecord_t checksum offset mismatch");
 
 uint16_t EventLogTier_CalculateChecksum(const EventLogRecord_t *record)
 {
 	uint16_t crc = 0xFFFFu;
 	const uint8_t *data = (const uint8_t *)record;
-	const uint32_t size = sizeof(EventLogRecord_t) - sizeof(record->checksum);
+	const uint32_t size = EVENT_LOG_RECORD_SIZE - sizeof(uint16_t);
 
 	for (uint32_t i = 0; i < size; i++) {
 		crc ^= (uint16_t)data[i] << 8;
@@ -67,6 +73,39 @@ uint32_t EventLogTier_GetCapacityRecords(const EventLogTier_t *tier)
 	return total_sectors * EVENT_LOG_RECORDS_PER_SECTOR_FLASH;
 }
 
+static bool EventLogTier_SectorIsEmpty(EventLogTier_t *tier, uint32_t sector)
+{
+	EventLogRecord_t record;
+	const uint32_t sector_address = SPIF_SectorToAddress(sector);
+
+	for (uint32_t record_offset = 0u; record_offset < EVENT_LOG_RECORDS_PER_SECTOR_FLASH;
+	     record_offset++) {
+		const uint32_t record_address = sector_address + (record_offset * EVENT_LOG_RECORD_SIZE);
+
+		if (SPIF_ReadAddress(tier->spif_handle, record_address, (uint8_t *)&record,
+		                     EVENT_LOG_RECORD_SIZE) != true) {
+			return false;
+		}
+		if (!EventLogTier_IsRecordEmpty(&record)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static uint32_t EventLogTier_GetWriteIndex(const EventLogTier_t *tier, uint32_t total_capacity)
+{
+	if (tier->total_records >= total_capacity) {
+		return (tier->last_index + 1u) % total_capacity;
+	}
+	if (tier->total_records > 0u) {
+		return (tier->last_index + 1u) % total_capacity;
+	}
+
+	const uint32_t sector_index = tier->current_sector - tier->start_sector;
+	return sector_index * EVENT_LOG_RECORDS_PER_SECTOR_FLASH + tier->current_offset;
+}
+
 bool EventLogTier_Init(EventLogTier_t *tier,
                        SPIF_HandleTypeDef *spif_handle,
                        uint32_t start_sector,
@@ -103,22 +142,26 @@ bool EventLogTier_Init(EventLogTier_t *tier,
 		for (uint32_t sector = start_sector; sector <= end_sector; sector++) {
 			const uint32_t sector_address = SPIF_SectorToAddress(sector);
 			const uint32_t sector_base_index = (sector - start_sector) * EVENT_LOG_RECORDS_PER_SECTOR_FLASH;
-			const uint32_t last_record_address = sector_address
-				+ ((EVENT_LOG_RECORDS_PER_SECTOR_FLASH - 1u) * EVENT_LOG_RECORD_SIZE);
+			const uint32_t first_record_address = sector_address;
 
-			if (SPIF_ReadAddress(spif_handle, last_record_address, (uint8_t *)&record, EVENT_LOG_RECORD_SIZE) == true) {
-				if (!EventLogTier_IsRecordEmpty(&record)) {
-					tier->total_records += EVENT_LOG_RECORDS_PER_SECTOR_FLASH;
-					last_valid_index = sector_base_index + EVENT_LOG_RECORDS_PER_SECTOR_FLASH - 1u;
-					continue;
+			if (SPIF_ReadAddress(spif_handle, first_record_address, (uint8_t *)&record,
+			                     EVENT_LOG_RECORD_SIZE) != true) {
+				if (first_empty_index == total_capacity) {
+					first_empty_index = sector_base_index;
 				}
+				continue;
+			}
+			if (EventLogTier_IsRecordEmpty(&record)) {
+				continue;
 			}
 
-			for (uint32_t record_offset = 0; record_offset < EVENT_LOG_RECORDS_PER_SECTOR_FLASH; record_offset++) {
+			for (uint32_t record_offset = 0; record_offset < EVENT_LOG_RECORDS_PER_SECTOR_FLASH;
+			     record_offset++) {
 				const uint32_t record_address = sector_address + (record_offset * EVENT_LOG_RECORD_SIZE);
 				const uint32_t current_index = sector_base_index + record_offset;
 
-				if (SPIF_ReadAddress(spif_handle, record_address, (uint8_t *)&record, EVENT_LOG_RECORD_SIZE) == false) {
+				if (SPIF_ReadAddress(spif_handle, record_address, (uint8_t *)&record,
+				                     EVENT_LOG_RECORD_SIZE) != true) {
 					if (first_empty_index == total_capacity) {
 						first_empty_index = current_index;
 					}
@@ -132,15 +175,25 @@ bool EventLogTier_Init(EventLogTier_t *tier,
 					break;
 				}
 
+				if (!EventLogTier_VerifyChecksum(&record)) {
+					if (tier->total_records == 0u) {
+						continue;
+					}
+					if (first_empty_index == total_capacity) {
+						first_empty_index = current_index;
+					}
+					break;
+				}
+
 				tier->total_records++;
 				last_valid_index = current_index;
 			}
 		}
 
-		if (first_empty_index < total_capacity) {
-			tier->last_index = (first_empty_index > 0u) ? (first_empty_index - 1u) : 0u;
-		} else if (tier->total_records > 0u) {
+		if (tier->total_records > 0u) {
 			tier->last_index = last_valid_index;
+		} else {
+			tier->last_index = 0u;
 		}
 
 		uint32_t next_index;
@@ -176,13 +229,7 @@ bool EventLogTier_Write(EventLogTier_t *tier, EventLogRecord_t *record)
 
 		const uint32_t total_sectors = tier->end_sector - tier->start_sector + 1u;
 		const uint32_t total_capacity = total_sectors * EVENT_LOG_RECORDS_PER_SECTOR_FLASH;
-
-		uint32_t write_index;
-		if (tier->total_records == 0u) {
-			write_index = 0u;
-		} else {
-			write_index = (tier->last_index + 1u) % total_capacity;
-		}
+		const uint32_t write_index = EventLogTier_GetWriteIndex(tier, total_capacity);
 
 		const uint32_t sector_index = write_index / EVENT_LOG_RECORDS_PER_SECTOR_FLASH;
 		const uint32_t offset_in_sector = write_index % EVENT_LOG_RECORDS_PER_SECTOR_FLASH;
@@ -190,7 +237,9 @@ bool EventLogTier_Write(EventLogTier_t *tier, EventLogRecord_t *record)
 		const uint32_t record_address = SPIF_SectorToAddress(target_sector)
 			+ (offset_in_sector * EVENT_LOG_RECORD_SIZE);
 
-		if (offset_in_sector == 0u) {
+		if (offset_in_sector == 0u &&
+		    (tier->total_records >= total_capacity ||
+		     EventLogTier_SectorIsEmpty(tier, target_sector))) {
 			if (SPIF_EraseSector(tier->spif_handle, target_sector) == false) {
 				break;
 			}

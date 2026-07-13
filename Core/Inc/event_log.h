@@ -60,6 +60,20 @@ const EventLogCapacityInfo_t *EventLog_GetCapacityInfo(void);
  */
 bool EventLog_Post(uint16_t code, const EventLogPayload_t *payload);
 
+/**
+ * @brief Запись события с явной меткой времени (BCD, как в record.time).
+ * @param time_bcd 6 байт: YY MM DD HH MM SS (формат RTC).
+ */
+bool EventLog_PostAt(const uint8_t time_bcd[6],
+                     uint16_t code,
+                     const EventLogPayload_t *payload);
+
+/**
+ * @brief События 2 и 1 при включении: выключение (время из RTC_BKP_DR1),
+ *        затем запуск (текущее RTC). Вызывать один раз после EventLog_Init().
+ */
+void EventLog_LogMasterBoot(void);
+
 EventLogTier_t *EventLog_GetCriticalTier(void);
 EventLogTier_t *EventLog_GetGeneralTier(void);
 

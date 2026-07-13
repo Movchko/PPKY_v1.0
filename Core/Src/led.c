@@ -200,6 +200,7 @@ void Led_Snake(uint8_t state) {
 		HAL_Delay(50);
 	}
 
+
 /*
 	for(uint8_t i = 0; i < NUM_LED; i++) {
 		LedSet(i, state);

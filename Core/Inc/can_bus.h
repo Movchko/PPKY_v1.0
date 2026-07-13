@@ -63,6 +63,9 @@ void CANSendData(uint8_t *Buf);
 /** Остановить UART-мост ESP32 (при выключении модуля). */
 void UartBridge_Stop(void);
 
+/** UART2 свободен для передачи лога (очередь CAN-моста пуста и TX не занят). */
+uint8_t UartBridge_IsTxIdle(void);
+
 /** Глобальные флаги ошибки шин: бит 0 = CAN1 (нет приёма), бит 1 = CAN2 */
 extern uint8_t can_bus_error_flags;
 

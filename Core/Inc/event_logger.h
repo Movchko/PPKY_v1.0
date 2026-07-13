@@ -20,6 +20,10 @@ extern "C" {
 #define EVENT_LOG_SECTOR_SIZE      SPIF_SECTOR_SIZE
 #define EVENT_LOG_RECORDS_PER_SECTOR_FLASH  (EVENT_LOG_SECTOR_SIZE / EVENT_LOG_RECORD_SIZE)
 
+#if defined(__GNUC__)
+#pragma pack(push, 1)
+#endif
+
 typedef struct {
 	uint8_t  time[6];
 	uint8_t  master_wagon_num;
@@ -30,6 +34,10 @@ typedef struct {
 	uint8_t  additional[8];
 	uint16_t checksum;
 } EventLogRecord_t;
+
+#if defined(__GNUC__)
+#pragma pack(pop)
+#endif
 
 typedef struct {
 	SPIF_HandleTypeDef *spif_handle;

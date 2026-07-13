@@ -7,8 +7,12 @@
 #include "event_log.h"
 #include "app.hpp"
 #include "rtc_cache.h"
+#include "device_config.h"
 
 #include <string.h>
+
+extern struct PPKYCfg PPKYConfig;
+extern RTC_HandleTypeDef hrtc;
 
 static EventLogTier_t g_critical_tier;
 static EventLogTier_t g_general_tier;
@@ -66,13 +70,18 @@ static void EventLog_FillTimeBcd(uint8_t time[6])
 }
 
 static bool EventLog_WriteToTier(EventLogTier_t *tier,
+                                 const uint8_t *time_bcd,
                                  uint16_t code,
                                  const EventLogPayload_t *payload)
 {
 	EventLogRecord_t record;
 
 	memset(&record, 0, sizeof(record));
-	EventLog_FillTimeBcd(record.time);
+	if (time_bcd != NULL) {
+		memcpy(record.time, time_bcd, sizeof(record.time));
+	} else {
+		EventLog_FillTimeBcd(record.time);
+	}
 	record.event_code = code;
 	record.reserved = 0u;
 
@@ -86,23 +95,117 @@ static bool EventLog_WriteToTier(EventLogTier_t *tier,
 	return EventLogTier_Write(tier, &record);
 }
 
+static bool EventLog_BcdFieldValid(uint8_t bcd, uint8_t min_val, uint8_t max_val)
+{
+	const uint8_t tens = (uint8_t)((bcd >> 4) & 0x0Fu);
+	const uint8_t ones = (uint8_t)(bcd & 0x0Fu);
+	const uint8_t val = (uint8_t)(tens * 10u + ones);
+
+	if (tens > 9u || ones > 9u) {
+		return false;
+	}
+	return (val >= min_val) && (val <= max_val);
+}
+
+static uint32_t EventLog_PackMmDdHhMm(uint8_t month, uint8_t day, uint8_t hours, uint8_t minutes)
+{
+	return ((uint32_t)month << 24) | ((uint32_t)day << 16) |
+	       ((uint32_t)hours << 8) | (uint32_t)minutes;
+}
+
+static uint8_t EventLog_DecYearBcd(uint8_t year_bcd)
+{
+	uint8_t val = (uint8_t)(((year_bcd >> 4) & 0x0Fu) * 10u + (year_bcd & 0x0Fu));
+
+	val = (val > 0u) ? (uint8_t)(val - 1u) : 99u;
+	return (uint8_t)(((val / 10u) << 4) | (val % 10u));
+}
+
+static bool EventLog_ReadLastRunTimeBcd(uint8_t time_bcd[6])
+{
+	RTC_DateTypeDef bkp_date = {};
+	RTC_TimeTypeDef bkp_time = {};
+	RTC_DateTypeDef cur_date = {};
+	RTC_TimeTypeDef cur_time = {};
+	const uint32_t bkp_raw = HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR1);
+
+	if (time_bcd == NULL || bkp_raw == 0u) {
+		return false;
+	}
+
+	PPKY_GetLastPowerOnDate(&bkp_date, &bkp_time);
+
+	if (!EventLog_BcdFieldValid(bkp_date.Month, 1u, 12u) ||
+	    !EventLog_BcdFieldValid(bkp_date.Date, 1u, 31u) ||
+	    !EventLog_BcdFieldValid(bkp_time.Hours, 0u, 23u) ||
+	    !EventLog_BcdFieldValid(bkp_time.Minutes, 0u, 59u)) {
+		return false;
+	}
+
+	if (!RtcCache_GetBcd(&cur_time, &cur_date)) {
+		time_bcd[0] = 0u;
+	} else {
+		time_bcd[0] = cur_date.Year;
+		if (EventLog_PackMmDdHhMm(cur_date.Month, cur_date.Date, cur_time.Hours, cur_time.Minutes) <
+		    EventLog_PackMmDdHhMm(bkp_date.Month, bkp_date.Date, bkp_time.Hours, bkp_time.Minutes)) {
+			time_bcd[0] = EventLog_DecYearBcd(cur_date.Year);
+		}
+	}
+	time_bcd[1] = bkp_date.Month;
+	time_bcd[2] = bkp_date.Date;
+	time_bcd[3] = bkp_time.Hours;
+	time_bcd[4] = bkp_time.Minutes;
+	time_bcd[5] = 0u;
+	return true;
+}
+
+static bool EventLog_PostInternal(const uint8_t *time_bcd,
+                                   uint16_t code,
+                                   const EventLogPayload_t *payload)
+{
+	const EventLogDescriptor_t *desc;
+	EventLogTier_t *tier;
+
+	if (!g_initialized) {
+		return false;
+	}
+
+	desc = EventLogCatalog_Find(code);
+	if (desc == NULL) {
+		return false;
+	}
+
+	if (desc->debug_only != 0u && g_debug_enabled == 0u) {
+		return true;
+	}
+
+	tier = (desc->level == EVENT_LOG_LEVEL_CRITICAL) ? &g_critical_tier : &g_general_tier;
+	return EventLog_WriteToTier(tier, time_bcd, code, payload);
+}
+
 bool EventLog_Init(SPIF_HandleTypeDef *spif_handle)
 {
-	bool ok_critical;
-	bool ok_general;
+	uint32_t general_end_sector = FLASH_LOG_GENERAL_END_SECTOR;
 
 	EventLog_FillCapacityInfo();
 
-	ok_critical = EventLogTier_Init(&g_critical_tier,
-	                                spif_handle,
-	                                FLASH_LOG_CRITICAL_START_SECTOR,
-	                                FLASH_LOG_CRITICAL_END_SECTOR);
-	ok_general = EventLogTier_Init(&g_general_tier,
-	                               spif_handle,
-	                               FLASH_LOG_GENERAL_START_SECTOR,
-	                               FLASH_LOG_GENERAL_END_SECTOR);
+	if (spif_handle != NULL && spif_handle->SectorCnt > 0u &&
+	    general_end_sector >= spif_handle->SectorCnt) {
+		general_end_sector = spif_handle->SectorCnt - 1u;
+	}
 
-	g_initialized = ok_critical && ok_general;
+	const bool ok_critical = EventLogTier_Init(&g_critical_tier,
+	                                           spif_handle,
+	                                           FLASH_LOG_CRITICAL_START_SECTOR,
+	                                           FLASH_LOG_CRITICAL_END_SECTOR);
+	if (general_end_sector >= FLASH_LOG_GENERAL_START_SECTOR) {
+		(void)EventLogTier_Init(&g_general_tier,
+		                        spif_handle,
+		                        FLASH_LOG_GENERAL_START_SECTOR,
+		                        general_end_sector);
+	}
+
+	g_initialized = ok_critical;
 	return g_initialized;
 }
 
@@ -128,24 +231,39 @@ const EventLogCapacityInfo_t *EventLog_GetCapacityInfo(void)
 
 bool EventLog_Post(uint16_t code, const EventLogPayload_t *payload)
 {
-	const EventLogDescriptor_t *desc;
-	EventLogTier_t *tier;
+	return EventLog_PostInternal(NULL, code, payload);
+}
+
+bool EventLog_PostAt(const uint8_t time_bcd[6],
+                     uint16_t code,
+                     const EventLogPayload_t *payload)
+{
+	if (time_bcd == NULL) {
+		return false;
+	}
+	return EventLog_PostInternal(time_bcd, code, payload);
+}
+
+void EventLog_LogMasterBoot(void)
+{
+	EventLogPayload_t payload;
+	uint8_t stop_time_bcd[6];
 
 	if (!g_initialized) {
-		return false;
+		return;
 	}
 
-	desc = EventLogCatalog_Find(code);
-	if (desc == NULL) {
-		return false;
+	memset(&payload, 0, sizeof(payload));
+	payload.master_wagon_num = PPKYConfig.UId.devId.h_adr;
+
+	if (EventLog_ReadLastRunTimeBcd(stop_time_bcd)) {
+		payload.additional[0] = 1u; /* power_loss — восстановлено по BKP после обесточивания */
+		(void)EventLog_PostAt(stop_time_bcd, EVENT_LOG_MASTER_STOP, &payload);
 	}
 
-	if (desc->debug_only != 0u && g_debug_enabled == 0u) {
-		return true;
-	}
-
-	tier = (desc->level == EVENT_LOG_LEVEL_CRITICAL) ? &g_critical_tier : &g_general_tier;
-	return EventLog_WriteToTier(tier, code, payload);
+	memset(payload.additional, 0, sizeof(payload.additional));
+	payload.additional[0] = 0u; /* power_on */
+	(void)EventLog_Post(EVENT_LOG_MASTER_START, &payload);
 }
 
 EventLogTier_t *EventLog_GetCriticalTier(void)

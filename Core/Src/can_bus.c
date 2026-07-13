@@ -21,6 +21,8 @@
 #define UART_BRIDGE_QUEUE_SIZE 128
 #define CAN_WATCHDOG_PERIOD_MS      3000u
 #define CAN_TX_STALL_RECOVERY_MS    3000u
+#define LOG_PKT_TYPE_REQ            16u
+#define LOG_UART_BODY_MAX           246u
 
 typedef struct {
 	uint32_t id;
@@ -84,9 +86,10 @@ static volatile uint8_t  uart_tx_busy = 0;
 static volatile uint8_t  uart_rx_started = 0;
 static uint8_t           uart_rx_byte = 0;
 static UartRxState       uart_rx_state = UART_RX_PREAMBLE_0;
-static uint8_t           uart_body_buf[BSU_PKT_CAN_PAYLOAD];
+static uint8_t           uart_body_buf[LOG_UART_BODY_MAX];
 static uint16_t          uart_pkt_size = 0;
 static uint16_t          uart_pkt_type = 0;
+static uint16_t          uart_pkt_seq = 0;
 static uint16_t          uart_body_total = 0;
 static uint16_t          uart_body_pos = 0;
 static uint16_t          uart_crc_acc = 0;
@@ -107,12 +110,19 @@ static uint32_t pending_timeout[CAN_MAX_DEVICES];
 uint8_t can_bus_error_flags = 0;
 uint8_t device_can_error[CAN_MAX_DEVICES] = {0};
 
-extern FDCAN_HandleTypeDef hfdcan1;
-extern FDCAN_HandleTypeDef hfdcan2;
+extern UART_HandleTypeDef hfdcan1;
+extern UART_HandleTypeDef hfdcan2;
 extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef huart4;
 extern uint8_t isMainInit;
 extern Device BoardDevicesList[];
 extern uint8_t nDevs;
+void LogTransport_OnUart2LogRequest(uint16_t seq,
+                                    const uint8_t *payload,
+                                    uint16_t payload_len);
+void LogTransport_OnUartRxByte(UART_HandleTypeDef *huart);
+void LogTransport_OnUartTxComplete(UART_HandleTypeDef *huart);
+void LogTransport_OnUartError(UART_HandleTypeDef *huart);
 static void CanTxEnqueue(uint32_t id, const uint8_t *data, uint8_t bus_mask);
 static void App_CanRecoverBus(FDCAN_HandleTypeDef *hfdcan);
 static void App_CanWatchdog(void);
@@ -235,17 +245,30 @@ static void uart_bridge_on_rx_byte(uint8_t b)
 		uart_rx_state = UART_RX_SEQ_LO;
 		break;
 	case UART_RX_SEQ_LO:
+		uart_pkt_seq = b;
 		uart_crc_acc = (uint16_t)(uart_crc_acc + b);
 		uart_rx_state = UART_RX_SEQ_HI;
 		break;
 	case UART_RX_SEQ_HI:
+		uart_pkt_seq |= (uint16_t)b << 8;
 		uart_crc_acc = (uint16_t)(uart_crc_acc + b);
-		if (uart_pkt_size < BSU_PKT_CAN_SIZE) {
+		if (uart_pkt_size < (BSU_PKT_HEADER_SIZE + BSU_PKT_CHECKSUM_SIZE) ||
+		    uart_pkt_size > LOG_UART_BODY_MAX + BSU_PKT_HEADER_SIZE + BSU_PKT_CHECKSUM_SIZE) {
 			uart_rx_reset();
 			break;
 		}
 		uart_body_total = (uint16_t)(uart_pkt_size - BSU_PKT_HEADER_SIZE - BSU_PKT_CHECKSUM_SIZE);
-		if (uart_body_total != BSU_PKT_CAN_PAYLOAD) {
+		if (uart_pkt_type == BSU_PKT_TYPE_CAN || uart_pkt_type == BSU_PKT_TYPE_CAN2) {
+			if (uart_body_total != BSU_PKT_CAN_PAYLOAD) {
+				uart_rx_reset();
+				break;
+			}
+		} else if (uart_pkt_type == LOG_PKT_TYPE_REQ) {
+			if (uart_body_total > LOG_UART_BODY_MAX) {
+				uart_rx_reset();
+				break;
+			}
+		} else {
 			uart_rx_reset();
 			break;
 		}
@@ -266,13 +289,18 @@ static void uart_bridge_on_rx_byte(uint8_t b)
 	case UART_RX_CRC_HI: {
 		uint16_t recv_crc = (uint16_t)(uart_crc_lo | ((uint16_t)b << 8));
 		uint16_t calc_crc = (uint16_t)(uart_crc_acc & 0xFFFFu);
-		if (recv_crc == calc_crc &&
-		    (uart_pkt_type == BSU_PKT_TYPE_CAN || uart_pkt_type == BSU_PKT_TYPE_CAN2)) {
-			uint32_t can_id = (uint32_t)uart_body_buf[0] |
-			                  ((uint32_t)uart_body_buf[1] << 8) |
-			                  ((uint32_t)uart_body_buf[2] << 16) |
-			                  ((uint32_t)uart_body_buf[3] << 24);
-			uart_rx_frame_push(can_id, &uart_body_buf[4]);
+		if (recv_crc == calc_crc) {
+			if (uart_pkt_type == BSU_PKT_TYPE_CAN || uart_pkt_type == BSU_PKT_TYPE_CAN2) {
+				uint32_t can_id = (uint32_t)uart_body_buf[0] |
+				                  ((uint32_t)uart_body_buf[1] << 8) |
+				                  ((uint32_t)uart_body_buf[2] << 16) |
+				                  ((uint32_t)uart_body_buf[3] << 24);
+				uart_rx_frame_push(can_id, &uart_body_buf[4]);
+			} else if (uart_pkt_type == LOG_PKT_TYPE_REQ) {
+				LogTransport_OnUart2LogRequest(uart_pkt_seq,
+				                               uart_body_buf,
+				                               uart_body_total);
+			}
 		}
 		uart_rx_reset();
 		break;
@@ -728,6 +756,10 @@ void HAL_FDCAN_ErrorStatusCallback(FDCAN_HandleTypeDef *hfdcan, uint32_t ErrorSt
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
+	if (huart == &huart4) {
+		LogTransport_OnUartRxByte(huart);
+		return;
+	}
 	if (huart != &huart2) {
 		return;
 	}
@@ -742,16 +774,24 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart == &huart2) {
+		LogTransport_OnUartTxComplete(huart);
 		uart_tx_busy = 0u;
+	} else if (huart == &huart4) {
+		LogTransport_OnUartTxComplete(huart);
 	}
 }
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
+	if (huart == &huart4) {
+		LogTransport_OnUartError(huart);
+		return;
+	}
 	if (huart != &huart2) {
 		return;
 	}
 
+	LogTransport_OnUartTxComplete(huart);
 	uart_tx_busy = 0u;
 	uart_rx_started = 0u;
 	if (Esp32_IsEnabled()) {
@@ -769,4 +809,9 @@ void UartBridge_Stop(void)
 	uart_tx_head = uart_tx_tail;
 	uart_rx_head = uart_rx_tail;
 	uart_rx_reset();
+}
+
+uint8_t UartBridge_IsTxIdle(void)
+{
+	return (uint8_t)((uart_tx_busy == 0u) && (uart_tx_head == uart_tx_tail));
 }
