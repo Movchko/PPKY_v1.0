@@ -74,6 +74,25 @@ bool EventLog_PostAt(const uint8_t time_bcd[6],
  */
 void EventLog_LogMasterBoot(void);
 
+/**
+ * @brief Событие 7 TELEMETRY: уникальный CAN RX после дедупа кольца.
+ *        can_header + can_data; additional[0]=0 (raw_status).
+ */
+void EventLog_LogCanTelemetry(uint32_t can_id, const uint8_t *data);
+
+/** media: 0=WiFi(UART2), 1=RS485(UART4). Пишет фронт сессии (повтор не чаще 30 с простоя). */
+void EventLog_LogHostLink(uint8_t media);
+
+/** Успешная заливка конфига во все целевые МКУ (APPLY). */
+void EventLog_LogConfigApplyOk(uint8_t mcu_ok_count, uint8_t mcu_total);
+
+/**
+ * Не удалось залить конфиг в конкретный МКУ.
+ * reason: 0=timeout, 1=bad_size, 2=echo_mismatch, 3=crc_mismatch.
+ */
+void EventLog_LogConfigApplyFail(uint8_t d_type, uint8_t h_adr, uint8_t l_adr, uint8_t zone,
+                                 uint8_t slot, uint8_t reason);
+
 EventLogTier_t *EventLog_GetCriticalTier(void);
 EventLogTier_t *EventLog_GetGeneralTier(void);
 

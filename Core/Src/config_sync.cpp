@@ -5,6 +5,7 @@
 extern "C" {
 #include "backend.h"
 #include "service.h"
+#include "event_log.h"
 }
 
 typedef enum {
@@ -190,15 +191,25 @@ static void CfgSync_ResendReq(uint32_t now_ms) {
 	SendMessageFull(can_id, data, SEND_NOW, BUS_CAN12);
 }
 
-static void CfgSync_MarkCurrentFailed(void) {
+static void CfgSync_MarkCurrentFailed(uint8_t reason) {
 	g_cfg_sync.failed_count++;
 	if (g_crc_mismatch_flag != nullptr) {
 		*g_crc_mismatch_flag = 1u;
+	}
+	if (g_cfg_sync.op == CFGSYNC_OP_APPLY_ALL) {
+		EventLog_LogConfigApplyFail(g_cfg_sync.current_dev.d_type,
+		                            g_cfg_sync.current_dev.h_adr,
+		                            g_cfg_sync.current_dev.l_adr,
+		                            g_cfg_sync.current_dev.zone,
+		                            g_cfg_sync.current_slot,
+		                            reason);
 	}
 }
 
 static void CfgSync_Finish(uint8_t success, uint8_t save_ppky_cfg) {
 	CfgSyncOp finished_op = g_cfg_sync.op;
+	uint8_t failed_count = g_cfg_sync.failed_count;
+	uint8_t target_count = g_cfg_sync.target_count;
 	g_cfg_sync.busy = 0u;
 	g_cfg_sync.waiting_reply = 0u;
 	g_cfg_sync.success = success ? 1u : 0u;
@@ -208,8 +219,15 @@ static void CfgSync_Finish(uint8_t success, uint8_t save_ppky_cfg) {
 	if (save_ppky_cfg && g_save_config_cb != nullptr) {
 		g_save_config_cb();
 	}
-	if (success && finished_op == CFGSYNC_OP_APPLY_ALL && g_apply_success_cb != nullptr) {
-		g_apply_success_cb();
+	if (finished_op == CFGSYNC_OP_APPLY_ALL) {
+		if (success) {
+			uint8_t ok_count = (target_count >= failed_count) ?
+			                   (uint8_t)(target_count - failed_count) : 0u;
+			EventLog_LogConfigApplyOk(ok_count, target_count);
+			if (g_apply_success_cb != nullptr) {
+				g_apply_success_cb();
+			}
+		}
 	}
 }
 
@@ -285,7 +303,7 @@ static void CfgSync_HandleCfgSizeReply(const uint8_t *MsgData, uint32_t now_ms) 
 
 	if (g_cfg_sync.remote_cfg_size == 0u || g_cfg_sync.remote_cfg_size > sizeof(MKUCfg) ||
 	    (g_cfg_sync.remote_cfg_size & 0x3u) != 0u) {
-		CfgSync_MarkCurrentFailed();
+		CfgSync_MarkCurrentFailed(1u); /* bad_size */
 		CfgSync_NextTargetOrFinish(now_ms);
 		return;
 	}
@@ -311,7 +329,7 @@ static void CfgSync_HandleCfgSizeReply(const uint8_t *MsgData, uint32_t now_ms) 
 
 	/* CFGSYNC_OP_APPLY_ALL */
 	if (g_cfg_sync.remote_cfg_size != sizeof(MKUCfg)) {
-		CfgSync_MarkCurrentFailed();
+		CfgSync_MarkCurrentFailed(1u); /* bad_size */
 		CfgSync_NextTargetOrFinish(now_ms);
 		return;
 	}
@@ -372,7 +390,7 @@ static void CfgSync_HandleCfgCrcReply(const uint8_t *MsgData, uint32_t now_ms) {
 	                        ((uint32_t)MsgData[4] << 0);
 
 	if (g_cfg_sync.remote_crc != g_cfg_sync.expected_crc) {
-		CfgSync_MarkCurrentFailed();
+		CfgSync_MarkCurrentFailed(3u); /* crc_mismatch */
 	}
 	CfgSync_NextTargetOrFinish(now_ms);
 }
@@ -394,7 +412,7 @@ static void CfgSync_HandleSetCfgWordReply(const uint8_t *MsgData, uint32_t now_m
 	                       ((uint32_t)MsgData[5] << 8)  |
 	                       ((uint32_t)MsgData[6] << 0);
 	if (remote_word != expected_word) {
-		CfgSync_MarkCurrentFailed();
+		CfgSync_MarkCurrentFailed(2u); /* echo_mismatch */
 		CfgSync_NextTargetOrFinish(now_ms);
 		return;
 	}
@@ -477,7 +495,7 @@ extern "C" void ConfigSync_Process1ms(uint32_t now_ms) {
 		return;
 	}
 
-	CfgSync_MarkCurrentFailed();
+	CfgSync_MarkCurrentFailed(0u); /* timeout */
 	CfgSync_NextTargetOrFinish(now_ms);
 }
 

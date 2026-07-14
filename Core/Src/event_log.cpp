@@ -8,6 +8,8 @@
 #include "app.hpp"
 #include "rtc_cache.h"
 #include "device_config.h"
+#include "backend.h"
+#include "stm32h5xx_hal.h"
 
 #include <string.h>
 
@@ -264,6 +266,105 @@ void EventLog_LogMasterBoot(void)
 	memset(payload.additional, 0, sizeof(payload.additional));
 	payload.additional[0] = 0u; /* power_on */
 	(void)EventLog_Post(EVENT_LOG_MASTER_START, &payload);
+}
+
+void EventLog_LogCanTelemetry(uint32_t can_id, const uint8_t *data)
+{
+	EventLogPayload_t payload;
+
+	if (!g_initialized || data == NULL) {
+		return;
+	}
+
+	memset(&payload, 0, sizeof(payload));
+	payload.master_wagon_num = PPKYConfig.UId.devId.h_adr;
+	payload.can_header = can_id & 0x1FFFFFFFu;
+	memcpy(payload.can_data, data, 8u);
+	payload.additional[0] = 0u; /* telemetry_kind: raw_status */
+	(void)EventLog_Post(EVENT_LOG_TELEMETRY, &payload);
+}
+
+#define HOST_LINK_IDLE_MS 30000u
+
+void EventLog_LogHostLink(uint8_t media)
+{
+	static uint32_t s_last_ms[2] = {0u, 0u};
+	static uint8_t s_active[2] = {0u, 0u};
+	EventLogPayload_t payload;
+	uint32_t now;
+	uint8_t idx;
+
+	if (!g_initialized) {
+		return;
+	}
+
+	idx = (media != 0u) ? 1u : 0u;
+	now = HAL_GetTick();
+	if (s_active[idx] != 0u && (uint32_t)(now - s_last_ms[idx]) < HOST_LINK_IDLE_MS) {
+		s_last_ms[idx] = now;
+		return;
+	}
+
+	s_active[idx] = 1u;
+	s_last_ms[idx] = now;
+
+	memset(&payload, 0, sizeof(payload));
+	payload.master_wagon_num = PPKYConfig.UId.devId.h_adr;
+	payload.additional[0] = idx; /* 0=WiFi, 1=RS485 */
+	(void)EventLog_Post(EVENT_LOG_HOST_LINK, &payload);
+}
+
+void EventLog_LogConfigApplyOk(uint8_t mcu_ok_count, uint8_t mcu_total)
+{
+	EventLogPayload_t payload;
+
+	if (!g_initialized) {
+		return;
+	}
+
+	memset(&payload, 0, sizeof(payload));
+	payload.master_wagon_num = PPKYConfig.UId.devId.h_adr;
+	payload.additional[0] = mcu_ok_count;
+	payload.additional[1] = mcu_total;
+	(void)EventLog_Post(EVENT_LOG_CONFIG_APPLY_OK, &payload);
+}
+
+void EventLog_LogConfigApplyFail(uint8_t d_type, uint8_t h_adr, uint8_t l_adr, uint8_t zone,
+                                 uint8_t slot, uint8_t reason)
+{
+	EventLogPayload_t payload;
+	can_ext_id_t id;
+
+	if (!g_initialized) {
+		return;
+	}
+
+	memset(&payload, 0, sizeof(payload));
+	payload.master_wagon_num = PPKYConfig.UId.devId.h_adr;
+
+	id.ID = 0u;
+	id.field.zone = zone & 0x7Fu;
+	id.field.l_adr = l_adr & 0x3Fu;
+	id.field.h_adr = h_adr;
+	id.field.d_type = d_type & 0x7Fu;
+	id.field.dir = 1u;
+	payload.can_header = id.ID & 0x1FFFFFFFu;
+
+	payload.additional[0] = reason;
+	payload.additional[1] = slot;
+	payload.additional[2] = h_adr;
+	payload.additional[3] = zone & 0x7Fu;
+	payload.additional[4] = d_type & 0x7Fu;
+	(void)EventLog_Post(EVENT_LOG_CONFIG_APPLY_FAIL, &payload);
+}
+
+/* Вызов из device_lib ConfigServiceCmd при командах конфига от хоста. */
+extern "C" void App_OnHostConfigCommand(uint8_t bus, uint8_t command)
+{
+	(void)command;
+	if ((bus & BUS_UART1) != 0u) {
+		EventLog_LogHostLink(0u); /* WiFi / ESP32 UART2 */
+	}
 }
 
 EventLogTier_t *EventLog_GetCriticalTier(void)

@@ -5,6 +5,7 @@
 #include "log_transport.h"
 #include "backend.h"
 #include "can_bus.h"
+#include "event_log.h"
 #include "main.h"
 #include "log_stream.h"
 
@@ -281,6 +282,7 @@ static void log_transport_handle_log_request(LogTransportPort_t port,
 {
 	LogStream_HandleRequest(port, seq, payload, payload_len);
 	log_transport_pump_stream();
+	EventLog_LogHostLink((port == LOG_PORT_UART4) ? 1u : 0u);
 }
 
 static void log_transport_try_tx_uart4(void)

@@ -10,6 +10,7 @@
 #include "can_bus.h"
 #include "main.h"
 #include "backend.h"
+#include "event_log.h"
 #include "menu_ui.h"
 #include "stm32h5xx_hal.h"
 #include <string.h>
@@ -665,6 +666,7 @@ void CanProcess(void)
 
 		/* Уникальный пакет: разобрать один раз, ждать дубликат с другой шины */
 		ProtocolParse(e->id, e->data, BUS_CAN12);
+		EventLog_LogCanTelemetry(e->id, e->data);
 		uart_tx_packet_push(CAN_BUS_1, e->id, e->data);
 
 		*last_id_cur = e->id;

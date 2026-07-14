@@ -4,6 +4,8 @@
 #include <cstring>
 
 #include "app.hpp"
+#include "backend.h"
+#include "event_log.h"
 #include "fire.h"
 #include "led.h"
 #include "beeper.h"
@@ -34,6 +36,8 @@ enum AttentionSoundPhase : uint8_t {
 };
 static uint8_t g_power_fault_mask = 0u;
 static uint8_t g_ppku_input_fault_mask = 0u;
+static uint8_t g_prev_power_fault_mask = 0u;
+static uint8_t g_prev_ppku_input_fault_mask = 0u;
 static FaultSoundPhase g_fault_sound_phase = FAULT_SOUND_IDLE;
 static uint32_t g_fault_sound_deadline_ms = 0u;
 static AttentionSoundPhase g_attention_sound_phase = ATTN_SOUND_IDLE;
@@ -168,18 +172,26 @@ static uint8_t IsTrackedVdevType(uint8_t v_d_type)
 }
 
 /* Проверяет, что состояние линии относится к неисправности.
- * Для LSWITCH дополнительно считаем line_state=5 (Fault) аварией концевика.
+ * line_state=5 (Fault) — протокол для DPT/BUTTON/LSWITCH.
  */
 static uint8_t IsFaultLineStateForVdev(uint8_t v_d_type, uint8_t line_state)
 {
-	if (line_state == 1u || line_state == 2u) {
-		return 1u; /* 1=Обрыв, 2=КЗ */
-	}
-	if (v_d_type == DEVICE_LSWITCH_TYPE && line_state == 5u) {
-		return 1u; /* 5=Неисправность концевика */
+	(void)v_d_type;
+	if (line_state == 1u || line_state == 2u || line_state == 5u) {
+		return 1u; /* 1=Обрыв, 2=КЗ, 5=Неисправность */
 	}
 	return 0u;
 }
+
+/* fault_class для EVENT_LOG_DEVICE_FAULT (catalog additional[0]). */
+enum : uint8_t {
+	FAULT_CLASS_LINE_BREAK = 0u,
+	FAULT_CLASS_LINE_SHORT = 1u,
+	FAULT_CLASS_PROTOCOL   = 2u,
+	FAULT_CLASS_CAN        = 3u,
+	FAULT_CLASS_POWER      = 4u,
+	FAULT_CLASS_OTHER      = 5u
+};
 
 static uint8_t IsAttentionKind(uint8_t kind)
 {
@@ -192,6 +204,142 @@ static uint8_t IsFaultKind(uint8_t kind)
 		kind == WARN_KIND_MCU_CAN_FAULT ||
 		kind == WARN_KIND_PPKU_CAN_FAULT ||
 		kind == WARN_KIND_MCU_POSITION_FAULT) ? 1u : 0u;
+}
+
+static uint32_t BuildFaultCanHeader(uint8_t d_type, uint8_t h_adr, uint8_t l_adr, uint8_t zone)
+{
+	can_ext_id_t id;
+
+	id.ID = 0u;
+	id.field.zone = zone & 0x7Fu;
+	id.field.l_adr = l_adr & 0x3Fu;
+	id.field.h_adr = h_adr;
+	id.field.d_type = d_type & 0x7Fu;
+	id.field.dir = 1u; /* статус / ответ устройства */
+	return id.ID & 0x1FFFFFFFu;
+}
+
+static uint8_t FaultClassFromWarningItem(const WarningItem& it)
+{
+	if (it.kind == WARN_KIND_MCU_CAN_FAULT || it.kind == WARN_KIND_PPKU_CAN_FAULT) {
+		return FAULT_CLASS_CAN;
+	}
+	if (it.kind == WARN_KIND_MCU_POSITION_FAULT) {
+		return FAULT_CLASS_OTHER;
+	}
+	if (it.line_state == 1u) {
+		return FAULT_CLASS_LINE_BREAK;
+	}
+	if (it.line_state == 2u) {
+		return FAULT_CLASS_LINE_SHORT;
+	}
+	if (it.line_state == 5u) {
+		return FAULT_CLASS_PROTOCOL;
+	}
+	return FAULT_CLASS_OTHER;
+}
+
+static void FillVdevStatusCanData(const WarningItem& it, uint8_t *can_data)
+{
+	memset(can_data, 0, 8u);
+	for (uint8_t mi = 0u; mi < g_active_devices_count; mi++) {
+		ActiveDeviceInfo *m = &g_active_devices[mi];
+		if (!m->online) {
+			continue;
+		}
+		if (m->dev.zone != it.zone || m->dev.h_adr != it.h_adr || m->dev.d_type != it.mcu_d_type) {
+			continue;
+		}
+		for (uint8_t vi = 0u; vi < m->vdev_count; vi++) {
+			auto *v = &m->vdevs[vi];
+			if (!v->online || v->v_l_adr != it.v_l_adr || v->v_d_type != it.v_d_type) {
+				continue;
+			}
+			can_data[0] = v->status_cmd;
+			memcpy(&can_data[1], v->status_params, 7u);
+			return;
+		}
+	}
+}
+
+static void EventLog_PostDeviceFaultItem(const WarningItem& it, uint8_t cleared)
+{
+	EventLogPayload_t payload;
+
+	if (!IsFaultKind(it.kind)) {
+		return;
+	}
+
+	memset(&payload, 0, sizeof(payload));
+	payload.master_wagon_num = PPKYConfig.UId.devId.h_adr;
+	payload.additional[0] = FaultClassFromWarningItem(it);
+	payload.additional[2] = cleared ? 1u : 0u; /* 0=появилась, 1=устранена */
+
+	if (it.kind == WARN_KIND_VDEV_FAULT) {
+		payload.can_header = BuildFaultCanHeader(it.v_d_type, it.h_adr, it.v_l_adr, it.zone);
+		FillVdevStatusCanData(it, payload.can_data);
+		payload.additional[1] = it.v_l_adr;
+	} else if (it.kind == WARN_KIND_MCU_CAN_FAULT) {
+		payload.can_header = BuildFaultCanHeader(it.mcu_d_type, it.h_adr, 0u, it.zone);
+		payload.can_data[0] = it.line_state;
+		payload.can_data[1] = it.can_idx;
+		payload.additional[1] = it.can_idx;
+	} else if (it.kind == WARN_KIND_PPKU_CAN_FAULT) {
+		payload.can_header = BuildFaultCanHeader(DEVICE_PPKY_TYPE,
+							 PPKYConfig.UId.devId.h_adr, 0u, 0u);
+		payload.can_data[0] = it.line_state;
+		payload.can_data[1] = it.can_idx;
+		payload.additional[1] = it.can_idx;
+	} else if (it.kind == WARN_KIND_MCU_POSITION_FAULT) {
+		payload.can_header = BuildFaultCanHeader(DEVICE_PPKY_TYPE,
+							 PPKYConfig.UId.devId.h_adr, 0u, 0u);
+		payload.can_data[0] = it.h_adr;
+		payload.additional[1] = it.h_adr;
+	}
+
+	(void)EventLog_Post(EVENT_LOG_DEVICE_FAULT, &payload);
+}
+
+static void EventLog_PostPowerFault(uint8_t channel, uint8_t is_ppku_input, uint8_t cleared)
+{
+	EventLogPayload_t payload;
+
+	memset(&payload, 0, sizeof(payload));
+	payload.master_wagon_num = PPKYConfig.UId.devId.h_adr;
+	payload.can_header = BuildFaultCanHeader(DEVICE_PPKY_TYPE,
+						 PPKYConfig.UId.devId.h_adr, 0u, 0u);
+	payload.can_data[0] = is_ppku_input ? 1u : 0u; /* 0=выход power, 1=вход ППКУ */
+	payload.can_data[1] = channel;
+	payload.additional[0] = FAULT_CLASS_POWER;
+	payload.additional[1] = channel;
+	payload.additional[2] = cleared ? 1u : 0u;
+	(void)EventLog_Post(EVENT_LOG_DEVICE_FAULT, &payload);
+}
+
+static void SyncPowerFaultEventLog(void)
+{
+	uint8_t power_new = (uint8_t)(g_power_fault_mask & (uint8_t)(~g_prev_power_fault_mask));
+	uint8_t input_new = (uint8_t)(g_ppku_input_fault_mask & (uint8_t)(~g_prev_ppku_input_fault_mask));
+	uint8_t power_clr = (uint8_t)(g_prev_power_fault_mask & (uint8_t)(~g_power_fault_mask));
+	uint8_t input_clr = (uint8_t)(g_prev_ppku_input_fault_mask & (uint8_t)(~g_ppku_input_fault_mask));
+
+	for (uint8_t ch = 0u; ch < 2u; ch++) {
+		if ((power_new & (1u << ch)) != 0u) {
+			EventLog_PostPowerFault((uint8_t)(ch + 1u), 0u, 0u);
+		}
+		if ((input_new & (1u << ch)) != 0u) {
+			EventLog_PostPowerFault((uint8_t)(ch + 1u), 1u, 0u);
+		}
+		if ((power_clr & (1u << ch)) != 0u) {
+			EventLog_PostPowerFault((uint8_t)(ch + 1u), 0u, 1u);
+		}
+		if ((input_clr & (1u << ch)) != 0u) {
+			EventLog_PostPowerFault((uint8_t)(ch + 1u), 1u, 1u);
+		}
+	}
+
+	g_prev_power_fault_mask = g_power_fault_mask;
+	g_prev_ppku_input_fault_mask = g_ppku_input_fault_mask;
 }
 
 /* Поиск записи неисправности по ключу устройства/канала. */
@@ -215,12 +363,17 @@ static int FindItem(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l_adr,
 	return -1;
 }
 
-/* Удаляет запись неисправности по индексу. */
+/* Удаляет запись неисправности по индексу.
+ * Если запись была активной неисправностью — пишет событие устранения. */
 static void RemoveItemAt(uint8_t idx)
 {
-	if (idx < WARN_MAX_ITEMS) {
-		memset(&g_items[idx], 0, sizeof(g_items[idx]));
+	if (idx >= WARN_MAX_ITEMS || !g_items[idx].used) {
+		return;
 	}
+	if (IsFaultKind(g_items[idx].kind) && g_items[idx].fault_now != 0u) {
+		EventLog_PostDeviceFaultItem(g_items[idx], 1u);
+	}
+	memset(&g_items[idx], 0, sizeof(g_items[idx]));
 }
 
 /* Безопасное сравнение таймера с учётом переполнения HAL_GetTick(). */
@@ -229,19 +382,24 @@ static uint8_t TimeReached(uint32_t now_ms, uint32_t deadline_ms)
 	return ((int32_t)(now_ms - deadline_ms) >= 0) ? 1u : 0u;
 }
 
-/* Добавляет/обновляет запись неисправности и продлевает окно отображения. */
-static void UpsertItem(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l_adr,
+/* Добавляет/обновляет запись неисправности и продлевает окно отображения.
+ * Возвращает 1 при появлении новой активной неисправности (фронт). */
+static uint8_t UpsertItem(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l_adr,
 		       uint8_t mcu_d_type, uint8_t v_d_type, uint8_t line_state,
 		       uint8_t can_idx, int16_t extra, uint32_t now_ms)
 {
 	int idx = FindItem(kind, zone, h_adr, v_l_adr, mcu_d_type, v_d_type, can_idx);
 	if (idx >= 0) {
+		uint8_t became_active = (g_items[(uint8_t)idx].fault_now == 0u) ? 1u : 0u;
 		g_items[(uint8_t)idx].line_state = line_state;
 		g_items[(uint8_t)idx].can_idx = can_idx;
 		g_items[(uint8_t)idx].extra = extra;
 		g_items[(uint8_t)idx].fault_now = 1u;
 		g_items[(uint8_t)idx].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
-		return;
+		if (became_active && IsFaultKind(kind)) {
+			EventLog_PostDeviceFaultItem(g_items[(uint8_t)idx], 0u);
+		}
+		return became_active;
 	}
 	for (uint8_t i = 0u; i < WARN_MAX_ITEMS; i++) {
 		if (g_items[i].used) {
@@ -259,8 +417,12 @@ static void UpsertItem(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l_ad
 		g_items[i].extra = extra;
 		g_items[i].fault_now = 1u;
 		g_items[i].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
-		return;
+		if (IsFaultKind(kind)) {
+			EventLog_PostDeviceFaultItem(g_items[i], 0u);
+		}
+		return 1u;
 	}
+	return 0u;
 }
 
 /* Помечает неисправность как восстановленную (с хвостом отображения). */
@@ -269,6 +431,9 @@ static void MarkRecovered(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l
 {
 	int idx = FindItem(kind, zone, h_adr, v_l_adr, mcu_d_type, v_d_type, can_idx);
 	if (idx >= 0) {
+		if (IsFaultKind(kind) && g_items[(uint8_t)idx].fault_now != 0u) {
+			EventLog_PostDeviceFaultItem(g_items[(uint8_t)idx], 1u);
+		}
 		g_items[(uint8_t)idx].fault_now = 0u;
 		g_items[(uint8_t)idx].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
 	}
@@ -393,12 +558,18 @@ static void PruneInactiveItems(uint32_t now_ms)
 		}
 
 		if (IsItemStillFaulty(g_items[i])) {
+			if (g_items[i].fault_now == 0u && IsFaultKind(g_items[i].kind)) {
+				EventLog_PostDeviceFaultItem(g_items[i], 0u);
+			}
 			g_items[i].fault_now = 1u;
 			g_items[i].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
 			continue;
 		}
 
 		if (g_items[i].fault_now) {
+			if (IsFaultKind(g_items[i].kind)) {
+				EventLog_PostDeviceFaultItem(g_items[i], 1u);
+			}
 			g_items[i].fault_now = 0u;
 			if (TimeReached(now_ms, g_items[i].show_until_ms)) {
 				g_items[i].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
@@ -602,7 +773,7 @@ static uint8_t BuildUiPayload(char (*big_titles)[WARN_TITLE_LEN], char (*details
 
 		if (it.kind == WARN_KIND_VDEV_FAULT) {
 			const char* fault = "ОБРЫВ";
-			if (it.v_d_type == DEVICE_LSWITCH_TYPE && it.line_state == 5u) {
+			if (it.line_state == 5u) {
 				fault = "НЕИСП";
 			} else if (it.line_state == 2u) {
 				fault = "КЗ";
@@ -834,6 +1005,7 @@ void WarningProcess1ms(void)
 	SyncMkuCanFaultItems(now_ms);
 	SyncPpkuCanFaultItems(now_ms);
 	SyncMkuPositionFaultItems(now_ms);
+	SyncPowerFaultEventLog();
 	PruneInactiveItems(now_ms);
 	UpdateErrorLed(now_ms);
 	UpdateFaultSound(now_ms);

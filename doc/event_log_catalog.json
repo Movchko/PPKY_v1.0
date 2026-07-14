@@ -423,9 +423,9 @@
       "symbol": "EVENT_LOG_TELEMETRY",
       "name": "Данные телеметрии",
       "level": "general",
-      "debug_only": false,
-      "status": "specified",
-      "description": "Диагностический снимок статуса датчика/канала.",
+      "debug_only": true,
+      "status": "implemented",
+      "description": "Уникальный CAN RX после дедупа кольца (can_bus CanProcess). Сырой кадр: can_header + can_data. Пишется только при EventLog_SetDebug(1).",
       "uses": {
         "can_header": "required",
         "can_data": "required",
@@ -468,8 +468,8 @@
       "name": "Ошибка устройства",
       "level": "critical",
       "debug_only": false,
-      "status": "specified",
-      "description": "Неисправность по протоколу устройства (обрыв, КЗ, fault-статус, ошибка MAX и т.д.).",
+      "status": "implemented",
+      "description": "Фронт неисправности из warning: обрыв/КЗ/Fault линии vdev, CAN МКУ/ППКУ, позиция МКУ, питание. additional[0]=fault_class, [1]=channel, [2]=fault_phase (0=появилась, 1=устранена).",
       "uses": {
         "can_header": "required",
         "can_data": "required",
@@ -503,6 +503,16 @@
             "name": "channel",
             "type": "uint8",
             "description": "Номер канала/линии (l_adr или индекс), 0 если не применимо"
+          },
+          {
+            "offset": 2,
+            "name": "fault_phase",
+            "type": "uint8",
+            "enum": {
+              "0": "appeared",
+              "1": "cleared"
+            },
+            "description": "0 — неисправность появилась, 1 — устранена устройством/системой"
           }
         ]
       }
@@ -796,6 +806,118 @@
         "ПУСК СП — только при активном пожаре и фактическом пуске тушения.",
         "ОСТАНОВ ПУСКА — только при наличии активного слота пожара."
       ]
+    },
+    {
+      "code": 15,
+      "symbol": "EVENT_LOG_HOST_LINK",
+      "name": "Подключение хоста",
+      "level": "critical",
+      "debug_only": false,
+      "status": "implemented",
+      "description": "Обнаружена сессия внешнего ПО: WiFi (UART2/ESP32) или RS485 (UART4). Фронт сессии; повтор не чаще 30 с простоя.",
+      "uses": {
+        "can_header": "unused",
+        "can_data": "unused",
+        "additional": "required"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "media",
+            "type": "uint8",
+            "required": true,
+            "enum": {
+              "0": "wifi",
+              "1": "rs485"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "code": 16,
+      "symbol": "EVENT_LOG_CONFIG_APPLY_OK",
+      "name": "Конфиг залит в МКУ",
+      "level": "critical",
+      "debug_only": false,
+      "status": "implemented",
+      "description": "ConfigSync APPLY: конфиг успешно записан во все целевые МКУ.",
+      "uses": {
+        "can_header": "unused",
+        "can_data": "unused",
+        "additional": "required"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "mcu_ok_count",
+            "type": "uint8",
+            "description": "Число МКУ с успешной заливкой"
+          },
+          {
+            "offset": 1,
+            "name": "mcu_total",
+            "type": "uint8",
+            "description": "Число целевых МКУ в APPLY"
+          }
+        ]
+      }
+    },
+    {
+      "code": 17,
+      "symbol": "EVENT_LOG_CONFIG_APPLY_FAIL",
+      "name": "Не удалось залить конфиг в МКУ",
+      "level": "critical",
+      "debug_only": false,
+      "status": "implemented",
+      "description": "ConfigSync APPLY: ошибка заливки конкретного МКУ. can_header = ID МКУ.",
+      "uses": {
+        "can_header": "required",
+        "can_data": "unused",
+        "additional": "required"
+      },
+      "payload": {
+        "can_header": {
+          "required": true,
+          "description": "ID МКУ, куда не удалось залить конфиг"
+        },
+        "additional": [
+          {
+            "offset": 0,
+            "name": "reason",
+            "type": "uint8",
+            "enum": {
+              "0": "timeout",
+              "1": "bad_size",
+              "2": "echo_mismatch",
+              "3": "crc_mismatch"
+            }
+          },
+          {
+            "offset": 1,
+            "name": "slot",
+            "type": "uint8",
+            "description": "Слот CfgDevices[0..31]"
+          },
+          {
+            "offset": 2,
+            "name": "h_adr",
+            "type": "uint8"
+          },
+          {
+            "offset": 3,
+            "name": "zone",
+            "type": "uint8"
+          },
+          {
+            "offset": 4,
+            "name": "d_type",
+            "type": "uint8"
+          }
+        ]
+      }
     }
   ]
 }
