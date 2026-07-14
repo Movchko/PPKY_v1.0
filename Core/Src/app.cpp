@@ -1289,7 +1289,7 @@ void ListenerCommandCB(uint32_t MsgID, uint8_t *MsgData) {
 		RelayAuto_OnFireServiceCmd(MsgID, Command);
 		if(Command == ServiceCmd_Fire_SetStatusFire) {
 			if (FireStatus_IsSensorSource(MsgData[4])) {
-				Fire_OnStatusFire(MsgID);
+				Fire_OnStatusFire(MsgID, MsgData);
 			}
 		} else if (Command == ServiceCmd_Fire_ReplyStatusFire) {
 			Fire_OnReplyStatusFire(MsgID);

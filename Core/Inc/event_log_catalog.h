@@ -34,6 +34,7 @@ typedef enum {
 	EVENT_LOG_EXTINGUISH_FORCE_STOP  = 11,
 	EVENT_LOG_EXTINGUISH_COMPLETE    = 12,
 	EVENT_LOG_EXTINGUISH_INCOMPLETE  = 13,
+	EVENT_LOG_PANEL_BUTTON           = 14,
 } EventLogCode_t;
 
 typedef struct {

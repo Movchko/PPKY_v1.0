@@ -25,6 +25,7 @@ const EventLogDescriptor_t g_event_log_catalog[] = {
 	EV(EVENT_LOG_EXTINGUISH_FORCE_STOP,  EVENT_LOG_LEVEL_CRITICAL, 0),
 	EV(EVENT_LOG_EXTINGUISH_COMPLETE,    EVENT_LOG_LEVEL_CRITICAL, 0),
 	EV(EVENT_LOG_EXTINGUISH_INCOMPLETE,  EVENT_LOG_LEVEL_CRITICAL, 0),
+	EV(EVENT_LOG_PANEL_BUTTON,           EVENT_LOG_LEVEL_CRITICAL, 0),
 };
 
 const uint32_t g_event_log_catalog_count = sizeof(g_event_log_catalog) / sizeof(g_event_log_catalog[0]);

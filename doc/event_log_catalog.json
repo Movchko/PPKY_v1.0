@@ -743,6 +743,59 @@
           }
         ]
       }
+    },
+    {
+      "code": 14,
+      "symbol": "EVENT_LOG_PANEL_BUTTON",
+      "name": "Нажатие кнопки панели",
+      "level": "critical",
+      "debug_only": false,
+      "status": "implemented",
+      "description": "Действие оператора на панели ППКУ (ПУСК ОБЩИЙ / ПУСК СП / ОСТАНОВ ПУСКА). Один код события; кнопка в additional[0].",
+      "uses": {
+        "can_header": "unused",
+        "can_data": "unused",
+        "additional": "required"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "button",
+            "type": "uint8",
+            "required": true,
+            "enum": {
+              "0": "start_all",
+              "1": "start_sp",
+              "2": "stop_launch"
+            },
+            "description": "Какая кнопка сработала"
+          },
+          {
+            "offset": 1,
+            "name": "zone",
+            "type": "uint8",
+            "description": "Зона (1..N) для ПУСК СП при ручном выборе; 0 = все / глобально"
+          },
+          {
+            "offset": 2,
+            "name": "fire_mode",
+            "type": "uint8",
+            "description": "PPKYCfg.fire_mode на момент нажатия"
+          },
+          {
+            "offset": 3,
+            "name": "hold_s",
+            "type": "uint8",
+            "description": "Для start_all — время удержания, сек (обычно 3); иначе 0"
+          }
+        ]
+      },
+      "parse_hints": [
+        "ПУСК ОБЩИЙ пишется только после удержания ≥3 с.",
+        "ПУСК СП — только при активном пожаре и фактическом пуске тушения.",
+        "ОСТАНОВ ПУСКА — только при наличии активного слота пожара."
+      ]
     }
   ]
 }
