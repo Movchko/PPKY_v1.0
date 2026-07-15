@@ -1028,6 +1028,46 @@
           }
         ]
       }
+    },
+    {
+      "code": 21,
+      "symbol": "EVENT_LOG_FIRE_RESET",
+      "name": "Сброс пожара в зоне",
+      "level": "critical",
+      "debug_only": false,
+      "status": "implemented",
+      "description": "ГОСТ: оператор сбросил пожар удержанием ОСТАНОВ ≥5 с (Fire_GostResetFire). По записи на каждую активную зону.",
+      "uses": {
+        "can_header": "unused",
+        "can_data": "unused",
+        "additional": "required"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "zone",
+            "type": "uint8",
+            "required": true,
+            "description": "Номер зоны (1..N); 0 если зона не выбрана / нет активных слотов"
+          },
+          {
+            "offset": 1,
+            "name": "source",
+            "type": "uint8",
+            "enum": {
+              "0": "gost_panel_hold_stop"
+            },
+            "description": "Источник сброса"
+          },
+          {
+            "offset": 2,
+            "name": "fire_mode",
+            "type": "uint8",
+            "description": "PPKYCfg.fire_mode на момент сброса"
+          }
+        ]
+      }
     }
   ]
 }

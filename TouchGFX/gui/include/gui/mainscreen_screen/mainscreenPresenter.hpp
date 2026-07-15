@@ -39,6 +39,7 @@ public:
 				     char (*zoneNames)[ZONE_NAME_SIZE + 1]) override;
     virtual void onWarningStatusChanged(bool active, uint8_t nItems, char (*bigTitles)[WARNING_TITLE_LEN],
 					char (*details)[ZONE_NAME_SIZE + 1]) override;
+    virtual void onSoundOnChanged(bool soundOn) override;
 #endif
 private:
     mainscreenPresenter();

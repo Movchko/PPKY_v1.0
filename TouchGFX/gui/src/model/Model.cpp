@@ -12,6 +12,20 @@ Model::Model() : modelListener(0), soundOn(true)
     soundToggledCallback = 0;
 #endif
 }
+
+void Model::setSoundOn(bool on)
+{
+	if (soundOn == on) {
+		return;
+	}
+	soundOn = on;
+#ifndef SIMULATOR
+	if (modelListener) {
+		modelListener->onSoundOnChanged(soundOn);
+	}
+#endif
+}
+
 unsigned char pos = 0;
 void Model::tick()
 {

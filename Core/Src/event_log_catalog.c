@@ -32,6 +32,7 @@ const EventLogDescriptor_t g_event_log_catalog[] = {
 	EV(EVENT_LOG_SOUND_TOGGLE,           EVENT_LOG_LEVEL_CRITICAL, 0),
 	EV(EVENT_LOG_FIRE_MODE_CHANGE,       EVENT_LOG_LEVEL_CRITICAL, 0),
 	EV(EVENT_LOG_TELEMETRY_SAMPLE,       EVENT_LOG_LEVEL_GENERAL,  0),
+	EV(EVENT_LOG_FIRE_RESET,             EVENT_LOG_LEVEL_CRITICAL, 0),
 };
 
 const uint32_t g_event_log_catalog_count = sizeof(g_event_log_catalog) / sizeof(g_event_log_catalog[0]);

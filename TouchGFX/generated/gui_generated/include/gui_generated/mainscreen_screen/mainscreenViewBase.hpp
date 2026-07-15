@@ -15,6 +15,7 @@
 #include <touchgfx/EasingEquations.hpp>
 #include <touchgfx/mixins/MoveAnimator.hpp>
 #include <touchgfx/mixins/Draggable.hpp>
+#include <touchgfx/widgets/Image.hpp>
 
 class mainscreenViewBase : public touchgfx::View<mainscreenPresenter>
 {
@@ -38,6 +39,7 @@ protected:
     CustomContainerSollText CustomContainerSrollText;
     touchgfx::Draggable< touchgfx::MoveAnimator< touchgfx::TextAreaWithOneWildcard > > textAreatime_top_bar;
     touchgfx::TextAreaWithOneWildcard textArea1;
+    touchgfx::Image NO_BEEP;
 
     /*
      * Wildcard Buffers

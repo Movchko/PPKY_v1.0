@@ -109,6 +109,18 @@ void Beeper_ButtonAcknowledge(void);
  */
 void Beeper_SoundOnOff(bool soundOn);
 
+/**
+ * @brief GOST: возобновить звук при новом извещении, если был вручную выключен.
+ * Вне GOST_MODE — no-op.
+ */
+void Beeper_ResumeSoundOnNewEvent(void);
+
+/**
+ * @brief Колбэк синхронизации UI/конфига при автовозобновлении звука (из AppInit).
+ */
+typedef void (*Beeper_SoundStateUiCallback)(bool soundOn);
+void Beeper_SetSoundStateUiCallback(Beeper_SoundStateUiCallback cb);
+
 #ifdef __cplusplus
 }
 #endif

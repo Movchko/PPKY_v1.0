@@ -8,6 +8,9 @@
 #include "beeper.h"
 #include "main.h"
 #include "menu_ui.h"
+#include "gost_mode.h"
+#include "device_config.h"
+#include "event_log.h"
 
 /***********************************************************************************************************/
 /* Внутренние типы и переменные */
@@ -34,6 +37,7 @@ static uint8_t beep_phase = 0;  // Фаза для двойного пищани
 static uint8_t fire_alarm_sound = 1u; /* 1 = фаза «звук», 0 = пауза */
 
 static uint8_t beep_sound = 1;
+static Beeper_SoundStateUiCallback g_sound_state_ui_cb = 0;
 static uint16_t pattern_on_ticks = 0;
 static uint16_t pattern_off_ticks = 0;
 static uint16_t pattern_repeat_ticks = 0;
@@ -452,5 +456,36 @@ void Beeper_Process(void)
 }
 
 void Beeper_SoundOnOff(bool soundOn) {
-	beep_sound = soundOn;
+	beep_sound = soundOn ? 1u : 0u;
+	if (!soundOn) {
+		Beeper_Off();
+	}
+}
+
+void Beeper_SetSoundStateUiCallback(Beeper_SoundStateUiCallback cb)
+{
+	g_sound_state_ui_cb = cb;
+}
+
+void Beeper_ResumeSoundOnNewEvent(void)
+{
+#if GOST_MODE
+	extern PPKYCfg PPKYConfig;
+
+	/* ГОСТ 7.6.1.13: после ручного отключения звука новое извещение снова включает звук. */
+	if (beep_sound != 0u) {
+		return;
+	}
+	if (PPKYConfig.beep_block != 0u) {
+		return;
+	}
+	beep_sound = 1u;
+	PPKYConfig.beep = 1u;
+	if (g_sound_state_ui_cb != 0) {
+		g_sound_state_ui_cb(true);
+	}
+	EventLog_LogSoundToggle(1u, 1u); /* source: auto (новое событие) */
+#else
+	/* Вне режима сдачи по ГОСТ mute остаётся до ручного включения. */
+#endif
 }

@@ -71,6 +71,15 @@
               "UseBuffer": true,
               "BufferSize": 14
             }
+          },
+          {
+            "Type": "Image",
+            "Name": "NO_BEEP",
+            "X": 115,
+            "Width": 14,
+            "Height": 14,
+            "Visible": false,
+            "RelativeFilename": "no_beep.png"
           }
         ],
         "Interactions": []

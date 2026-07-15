@@ -41,6 +41,7 @@ typedef enum {
 	EVENT_LOG_SOUND_TOGGLE           = 18,
 	EVENT_LOG_FIRE_MODE_CHANGE       = 19,
 	EVENT_LOG_TELEMETRY_SAMPLE       = 20,
+	EVENT_LOG_FIRE_RESET             = 21,
 } EventLogCode_t;
 
 typedef struct {

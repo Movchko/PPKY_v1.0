@@ -1092,6 +1092,9 @@ void AppInit() {
 
 	// Сообщаем модели, какую функцию вызывать при смене состояния звука
 	FrontendHeap::getInstance().model.setSoundToggledCallback(Beeper_SoundOnOff);
+	Beeper_SetSoundStateUiCallback(+[](bool soundOn) {
+		FrontendHeap::getInstance().model.setSoundOn(soundOn);
+	});
 	Beeper_SoundOnOff(PPKYConfig.beep != 0u);
 	FrontendHeap::getInstance().model.setSoundOn(PPKYConfig.beep != 0u);
 

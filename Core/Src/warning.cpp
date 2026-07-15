@@ -869,6 +869,9 @@ static void UpdateFaultSound(uint32_t now_ms)
 			g_fault_sound_deadline_ms = 0u;
 		}
 
+		if (attention_count > g_prev_sound_attention_count) {
+			Beeper_ResumeSoundOnNewEvent();
+		}
 		if (attention_count > g_prev_sound_attention_count || g_attention_sound_phase == ATTN_SOUND_IDLE) {
 			Beeper_StopPattern();
 			Beeper_StartPulseTrain(SOUND_ATTN_SIGNAL_ON_MS, SOUND_ATTN_SIGNAL_OFF_MS,
@@ -907,6 +910,9 @@ static void UpdateFaultSound(uint32_t now_ms)
 	}
 
 	/* Любая новая неисправность должна заново выдать 1.3с сигнальный звук. */
+	if (fault_count > g_prev_sound_fault_count) {
+		Beeper_ResumeSoundOnNewEvent();
+	}
 	if (fault_count > g_prev_sound_fault_count || g_fault_sound_phase == FAULT_SOUND_IDLE) {
 		Beeper_StopPattern();
 		Beeper_StartPulseTrain(SOUND_FAULT_SIGNAL_ON_MS, SOUND_FAULT_SIGNAL_OFF_MS,

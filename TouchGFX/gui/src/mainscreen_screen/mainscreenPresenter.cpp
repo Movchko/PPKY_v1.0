@@ -19,6 +19,10 @@ void mainscreenPresenter::activate()
 {
 #ifndef SIMULATOR
     MenuUi_SetMainScreenActive(1u);
+    /* Один раз при входе на экран — без последующего опроса в tick. */
+    if (model) {
+        view.applyMuteIcon(model->getSoundOn());
+    }
 #endif
 }
 
@@ -70,5 +74,10 @@ void mainscreenPresenter::onWarningStatusChanged(bool active, uint8_t nItems, ch
 						 char (*details)[ZONE_NAME_SIZE + 1])
 {
 	view.updateWarningStatus(active, nItems, bigTitles, details);
+}
+
+void mainscreenPresenter::onSoundOnChanged(bool soundOn)
+{
+	view.applyMuteIcon(soundOn);
 }
 #endif

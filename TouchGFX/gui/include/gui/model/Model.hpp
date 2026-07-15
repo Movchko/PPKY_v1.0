@@ -25,8 +25,8 @@ public:
 
     void tick();
 
-    /** Состояние параметра «звук включен/выключен» в модели */
-    void setSoundOn(bool on) { soundOn = on; }
+    /** Состояние параметра «звук включен/выключен» в модели (уведомление UI только при смене). */
+    void setSoundOn(bool on);
     bool getSoundOn() const { return soundOn; }
 
 #ifndef SIMULATOR

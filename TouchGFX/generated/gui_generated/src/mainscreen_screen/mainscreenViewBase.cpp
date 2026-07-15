@@ -4,6 +4,7 @@
 #include <gui_generated/mainscreen_screen/mainscreenViewBase.hpp>
 #include <touchgfx/Color.hpp>
 #include <texts/TextKeysAndLanguages.hpp>
+#include <images/BitmapDatabase.hpp>
 
 mainscreenViewBase::mainscreenViewBase()
 {
@@ -40,6 +41,11 @@ mainscreenViewBase::mainscreenViewBase()
     textArea1.setWildcard(textArea1Buffer);
     textArea1.setTypedText(touchgfx::TypedText(T___SINGLEUSE_MF0S));
     add(textArea1);
+
+    NO_BEEP.setXY(115, 0);
+    NO_BEEP.setBitmap(touchgfx::Bitmap(BITMAP_NO_BEEP_ID));
+    NO_BEEP.setVisible(false);
+    add(NO_BEEP);
 }
 
 mainscreenViewBase::~mainscreenViewBase()

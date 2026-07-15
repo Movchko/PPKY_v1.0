@@ -13,6 +13,7 @@
 #include "menu_ui.h"
 #include "event_log.h"
 #include "warning.h"
+#include "gost_mode.h"
 
 extern PPKYCfg PPKYConfig;
 extern ActiveDeviceInfo g_active_devices[NUM_ACTIVE_DEVICE];
@@ -38,8 +39,7 @@ extern uint8_t g_active_devices_count;
 /* Один цикл прожига (device_igniter: ramp 200 + hold 800 + wait 50) + запас на статус по шине.
  * Нужен, чтобы дотушивание не слало повторный Start до появления end_ack. */
 #define FIRE_IGNITER_BURN_ONE_SHOT_MS        1500u
-/* Спецрежим сдачи по ГОСТ: зональный ПУСК СП/СТОП + сброс пожара удержанием ОСТАНОВ. */
-#define GOST_MODE    1u
+/* Спецрежим сдачи по ГОСТ: см. gost_mode.h (зональный СТОП/ПУСК, сброс hold 5с, unmute). */
 #define FIRE_MAX_SOURCES_PER_ZONE            8u
 #if GOST_MODE
 #define FIRE_GOST_STOP_RESET_HOLD_MS         5000u
@@ -338,6 +338,7 @@ extern void Fire_UiUpdate(uint8_t active, uint8_t mode, uint8_t remaining_s, uin
 
 static void Fire_BeeperEnterAlert(uint8_t fire1_sound)
 {
+	Beeper_ResumeSoundOnNewEvent();
 	/* Сигнальный режим: для ПОЖАР1 отдельный паттерн, для ПОЖАР2 штатный сигнал. */
 	g_fire.beeper_alert_active = 1u;
 	g_fire.beeper_duty_active = 0u;
@@ -371,6 +372,7 @@ static void Fire_BeeperEnterDuty(uint8_t fire1_sound)
 static void Fire_BeeperEnterStartPattern(uint32_t now_ms)
 {
 	(void)now_ms;
+	Beeper_ResumeSoundOnNewEvent();
 	/* ПУСК: прерывистый звук  */
 	g_fire.beeper_alert_active = 0u;
 	g_fire.beeper_duty_active = 0u;
@@ -1161,6 +1163,19 @@ static void Fire_LogPanelButton(uint8_t button, uint8_t zone, uint8_t hold_s)
 	payload.additional[2] = PPKYConfig.fire_mode;
 	payload.additional[3] = hold_s;
 	(void)EventLog_Post(EVENT_LOG_PANEL_BUTTON, &payload);
+}
+
+/* GOST: сброс пожара (hold ОСТАНОВ ≥5 с). zone=0 — без явной зоны / глобально. */
+static void Fire_LogFireReset(uint8_t zone, uint8_t source)
+{
+	EventLogPayload_t payload;
+
+	memset(&payload, 0, sizeof(payload));
+	payload.master_wagon_num = Fire_LogMasterWagon();
+	payload.additional[0] = zone & 0x7Fu;
+	payload.additional[1] = source; /* 0=gost_panel_hold_stop */
+	payload.additional[2] = PPKYConfig.fire_mode;
+	(void)EventLog_Post(EVENT_LOG_FIRE_RESET, &payload);
 }
 
 static void Fire_MarkSlotPhase2Sent(FireZoneSlot *slot, uint32_t now_ms, uint8_t start_type)
@@ -2183,11 +2198,25 @@ static void Fire_GostResetFire(uint32_t now_ms)
 	 * таймеры/дотушивание остановлены. extinguish_locked снимается вместе со слотами —
 	 * новый датчик той же зоны снова может открыть слот. */
 	uint8_t log_zone = 0u;
+	uint8_t logged_any = 0u;
+
 	if (g_fire_ui_manual_select_enabled) {
 		(void)Fire_GetSelectedZoneFromUi(&log_zone);
 	}
 	if (g_fire_panel_btn_source != 0u) {
 		Fire_LogPanelButton(FIRE_LOG_BTN_STOP, log_zone, 5u);
+	}
+
+	/* По записи на каждую активную зону до очистки слотов. */
+	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
+		if (!g_fire.slots[i].active) {
+			continue;
+		}
+		Fire_LogFireReset(g_fire.slots[i].zone, 0u);
+		logged_any = 1u;
+	}
+	if (logged_any == 0u) {
+		Fire_LogFireReset(log_zone, 0u);
 	}
 
 	Fire_SendStopAllMcus();

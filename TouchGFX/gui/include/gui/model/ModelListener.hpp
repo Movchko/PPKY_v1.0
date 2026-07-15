@@ -26,6 +26,8 @@ public:
 				     char (*zoneNames)[ZONE_NAME_SIZE + 1]) {}
     virtual void onWarningStatusChanged(bool active, uint8_t nItems, char (*bigTitles)[WARNING_TITLE_LEN],
 					char (*details)[ZONE_NAME_SIZE + 1]) {}
+    /** Звук Вкл/Выкл изменился (не каждый tick — только при реальной смене). */
+    virtual void onSoundOnChanged(bool soundOn) {}
     virtual void onAppTick() {}
 #endif
 protected:

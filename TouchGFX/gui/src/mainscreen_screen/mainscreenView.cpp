@@ -129,6 +129,21 @@ void mainscreenView::setupScreen()
     s_fire_nav_last_press_ms = 0u;
     s_warning_nav_last_press_ms = 0u;
     Fire_UiSetManualSelection(0u, 0u);
+    /* База скрывает NO_BEEP; итоговую видимость выставит presenter::activate. */
+#endif
+}
+
+void mainscreenView::applyMuteIcon(bool soundOn)
+{
+#ifndef SIMULATOR
+    const bool show = !soundOn; /* звук откл. → показать NO_BEEP */
+    if (NO_BEEP.isVisible() == show) {
+        return;
+    }
+    NO_BEEP.setVisible(show);
+    NO_BEEP.invalidate();
+#else
+    (void)soundOn;
 #endif
 }
 
