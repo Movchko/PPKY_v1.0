@@ -12,6 +12,7 @@
 #include "backend.h"
 #include "event_log.h"
 #include "menu_ui.h"
+#include "app.hpp"
 #include "stm32h5xx_hal.h"
 #include <string.h>
 
@@ -118,6 +119,8 @@ extern UART_HandleTypeDef huart4;
 extern uint8_t isMainInit;
 extern Device BoardDevicesList[];
 extern uint8_t nDevs;
+extern ActiveDeviceInfo g_active_devices[NUM_ACTIVE_DEVICE];
+extern uint8_t g_active_devices_count;
 void LogTransport_OnUart2LogRequest(uint16_t seq,
                                     const uint8_t *payload,
                                     uint16_t payload_len);
@@ -432,6 +435,26 @@ static void CanTxEnqueueOne(CanTxEntry *ring,
 	*head = next;
 }
 
+/* Кольцо целое (1), если ни у одного online МКУ с can_status_valid
+ * нет КЗ (1) или обрыва (2) по CAN0/CAN1. Нет таких МКУ — тоже целое. */
+uint8_t CanRingIsIntact(void)
+{
+	for (uint8_t i = 0u; i < g_active_devices_count; i++) {
+		const ActiveDeviceInfo *m = &g_active_devices[i];
+		if (!m->online || !m->can_status_valid) {
+			continue;
+		}
+		for (uint8_t can_idx = 0u; can_idx < 2u; can_idx++) {
+			uint8_t shift = (uint8_t)(can_idx * 2u);
+			uint8_t can_state = (uint8_t)((m->can_state_mask >> shift) & 0x3u);
+			if (can_state == 1u || can_state == 2u) {
+				return 0u;
+			}
+		}
+	}
+	return 1u;
+}
+
 /* Для BUS_CAN12 выбираем только одну линию:
  * приоритет CAN1, fallback CAN2, если CAN1 неактивен.
  * Неактивность определяется по can_bus_error_flags (бит выставлен = no-rx timeout). */
@@ -447,12 +470,15 @@ static uint8_t CanSelectSingleBusMask(uint8_t bus_mask)
 	uint8_t can1_active = ((can_bus_error_flags & 0x01u) == 0u) ? 1u : 0u;
 	uint8_t can2_active = ((can_bus_error_flags & 0x02u) == 0u) ? 1u : 0u;
 
-	if (can1_active) {
-		return BUS_CAN0;
-	}
-	if (can2_active) {
-		return BUS_CAN1;
-	}
+
+	if(CanRingIsIntact()) {
+		if (can1_active) {
+			return BUS_CAN0;
+		}
+		if (can2_active) {
+			return BUS_CAN1;
+		}
+	} else return BUS_CAN12;
 
 	/* Если обе линии сейчас неактивны — оставляем приоритет CAN1. */
 	return BUS_CAN0;

@@ -12,6 +12,7 @@
 #include "app.hpp"
 #include "menu_ui.h"
 #include "event_log.h"
+#include "warning.h"
 
 extern PPKYCfg PPKYConfig;
 extern ActiveDeviceInfo g_active_devices[NUM_ACTIVE_DEVICE];
@@ -40,6 +41,16 @@ extern uint8_t g_active_devices_count;
 /* Спецрежим: в ручном выборе пожара кнопки ПУСК СП/СТОП действуют только на выбранную зону. */
 #define FIRE_SELECTED_ZONE_BUTTONS_ENABLE    1u
 #define FIRE_MAX_SOURCES_PER_ZONE            8u
+/* ГОСТ 53325 п.7.6.1.4 прим.2 / Тр. 3.5: частоты мигания обобщённого LED_FIRE */
+#define FIRE_LED_ATTENTION_HALF_MS           1250u /* 0,4 Гц (диапазон 0,2–0,5 Гц) */
+#define FIRE_LED_FIRE1_HALF_MS                400u /* 1,25 Гц (диапазон 1,0–2,0 Гц) */
+
+typedef enum {
+	FIRE_LED_MODE_OFF = 0,
+	FIRE_LED_MODE_FIRE1,
+	FIRE_LED_MODE_FIRE2,
+	FIRE_LED_MODE_ATTENTION
+} FireLedMode;
 
 /* Коды payload catalog events 9–13 (doc/event_log_catalog.json). */
 #define FIRE_LOG_DET_DPT_R                   0u
@@ -155,6 +166,7 @@ typedef struct {
 	uint8_t   stop_launch_pressed_latched;
 	uint8_t   start_launch_pressed_latched;
 	uint8_t   led_fire_on;
+	uint8_t   led_fire_mode; /* FireLedMode */
 	uint8_t   btn_start_all_hold_latched;
 	uint8_t   btn_start_sp_latched;
 	uint8_t   btn_stop_latched;
@@ -233,7 +245,10 @@ static uint8_t Fire_AddSourceToSlot(FireZoneSlot *slot, uint32_t source_key);
 static uint8_t Fire_HasFire1Waiting(void);
 static uint8_t Fire_ZoneIsFire1Waiting(uint8_t zone);
 static uint8_t Fire_ShouldUseFire1Sound(void);
+static uint8_t Fire_ShouldUseFire1Led(void);
 static uint8_t Fire_PromoteFire1WhenAndUnavailable(uint32_t now_ms);
+/* ГОСТ: управление LED_FIRE (ВНИМАНИЕ / ПОЖАР1 / ПОЖАР2). */
+static void Fire_UpdateLedFire(uint32_t now_ms);
 /* Возвращает 1, если по зоне тушение уже запускалось и повторный пуск запрещён. */
 static uint8_t Fire_ZoneIsExtinguishLocked(uint8_t zone);
 /* Отметить зону как тушащуюся по команде с шины (без повторной отправки CAN). */
@@ -1321,6 +1336,22 @@ static uint8_t Fire_ShouldUseFire1Sound(void)
 	return (Fire_HasFire1Waiting() && Fire_CountPendingPhase2() == 0u) ? 1u : 0u;
 }
 
+/* Для LED_FIRE: ПОЖАР1 только если все активные зоны ещё в ожидании второй сработки. */
+static uint8_t Fire_ShouldUseFire1Led(void)
+{
+	uint8_t has_fire1 = 0u;
+	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
+		if (!g_fire.slots[i].active) {
+			continue;
+		}
+		if (!g_fire.slots[i].fire1_waiting) {
+			return 0u; /* есть ПОЖАР2 / сценарий / тушение — выше приоритет */
+		}
+		has_fire1 = 1u;
+	}
+	return has_fire1;
+}
+
 static uint8_t Fire_PromoteFire1WhenAndUnavailable(uint32_t now_ms)
 {
 	/* Автопереход ПОЖАР1 -> ПОЖАР2:
@@ -2021,6 +2052,55 @@ static void Fire_UpdateUiText(uint8_t active, uint8_t mode, uint8_t remaining_s,
 	Fire_UiUpdate(active, mode, remaining_s, n_zones, zone_names);
 }
 
+/* Обобщённый индикатор ПОЖАР по ГОСТ: ВНИМАНИЕ / ПОЖАР1 мигают, ПОЖАР2 непрерывно.
+ * Приоритет: ПОЖАР2 > ПОЖАР1 > ВНИМАНИЕ. */
+static void Fire_UpdateLedFire(uint32_t now_ms)
+{
+	uint8_t mode = FIRE_LED_MODE_OFF;
+
+	if (g_fire.state != FIRE_STATE_IDLE || Fire_AnyActiveSlot()) {
+		mode = Fire_ShouldUseFire1Led() ? FIRE_LED_MODE_FIRE1 : FIRE_LED_MODE_FIRE2;
+	} else if (Warning_HasActiveAttention()) {
+		mode = FIRE_LED_MODE_ATTENTION;
+	}
+
+	if (mode != g_fire.led_fire_mode) {
+		g_fire.led_fire_mode = mode;
+		g_fire.led_toggle_ms = now_ms;
+		g_fire.led_fire_on = (mode != FIRE_LED_MODE_OFF) ? 1u : 0u;
+	}
+
+	if (mode == FIRE_LED_MODE_OFF) {
+		Led_Set(LED_FIRE, 0);
+		g_fire.led_fire_on = 0u;
+		return;
+	}
+
+	if (mode == FIRE_LED_MODE_FIRE2) {
+		Led_Set(LED_FIRE, 1u);
+		g_fire.led_fire_on = 1u;
+		if (g_fire.beeper_alert_active) {
+			Led_ForceStatusBright(LED_FIRE);
+		}
+		return;
+	}
+
+	{
+		uint32_t half_ms = (mode == FIRE_LED_MODE_FIRE1) ?
+				   FIRE_LED_FIRE1_HALF_MS : FIRE_LED_ATTENTION_HALF_MS;
+		if ((now_ms - g_fire.led_toggle_ms) >= half_ms) {
+			g_fire.led_toggle_ms = now_ms;
+			g_fire.led_fire_on = (uint8_t)!g_fire.led_fire_on;
+		}
+		Led_Set(LED_FIRE, g_fire.led_fire_on);
+		if (g_fire.led_fire_on) {
+			if (g_fire.beeper_alert_active || mode == FIRE_LED_MODE_ATTENTION) {
+				Led_ForceStatusBright(LED_FIRE);
+			}
+		}
+	}
+}
+
 static void Fire_SetIdleIndication(void)
 {
 	/* Полный дежурный профиль индикаторов/звука в состоянии IDLE. */
@@ -2034,7 +2114,7 @@ static void Fire_SetIdleIndication(void)
 	Led_Set(LED_START, 0);
 	Led_Set(LED_STOP, 0);
 	Led_Set(LED_AUTO_OFF, (PPKYConfig.fire_mode == 2u) ? 1u : 0u);
-	Led_Set(LED_FIRE, 0);
+	/* LED_FIRE — в Fire_UpdateLedFire (в т.ч. ВНИМАНИЕ при IDLE). */
 	g_fire.stop_launch_pressed_latched = 0u;
 	g_fire.beeper_alert_active = 0u;
 	g_fire.beeper_duty_active = 0u;
@@ -2434,22 +2514,10 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 	}
 
 	if (g_fire.state == FIRE_STATE_IDLE) {
-		Led_Set(LED_FIRE, 0);
-		g_fire.led_fire_on = 0u;
-	} else {
-		Led_Set(LED_FIRE, 1u);
-		g_fire.led_fire_on = 1u;
-		/* До принятия решения по пожару (стоп/пуск/автопуск) держим ПОЖАР ярким,
-		 * несмотря на глобальный механизм автозатухания в led.c. */
-		if (g_fire.beeper_alert_active) {
-			Led_ForceStatusBright(LED_FIRE);
-		}
-	}
-
-	if (g_fire.state == FIRE_STATE_IDLE) {
 		if (g_fire.all_hold_active && g_fire.all_hold_ms < 3000u) {
 			/* Без пожара: показываем только 3-сек таймер удержания ПУСК ОБЩИЙ и мигание подписи */
 			Fire_SetIdleIndication();
+			Fire_UpdateLedFire(now_ms);
 			{
 				uint8_t blink_on = (((now_ms / (FIRE_START_ALL_TEXT_BLINK_PERIOD_MS / 2u)) & 1u) != 0u) ? 1u : 0u;
 				Fire_SetStartAllBrightness(1u);
@@ -2463,6 +2531,7 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 			return;
 		}
 		Fire_SetIdleIndication();
+		Fire_UpdateLedFire(now_ms);
 		if (g_fire.start_launch_pressed_latched) {
 			Led_Set(LED_START, 1u);
 		}
@@ -2473,6 +2542,7 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		return;
 	}
 
+	Fire_UpdateLedFire(now_ms);
 	Fire_ApplyStateLeds(now_ms);
 	if ((g_fire.state == FIRE_STATE_WAIT_AUTO || g_fire.state == FIRE_STATE_WAIT_MANUAL) &&
 	    g_fire.all_hold_active) {
@@ -2527,6 +2597,8 @@ void Fire_Timer1ms(void)
 	}
 	Fire_RetryProcess(now);
 	if (g_fire.state == FIRE_STATE_IDLE && !Fire_AnyActiveSlot() && !g_fire.all_hold_active) {
+		/* IDLE: всё равно крутим LED_FIRE (ВНИМАНИЕ по ГОСТ). */
+		Fire_UpdateLedFire(now);
 		return;
 	}
 	Fire_Transition(FIRE_EVENT_TICK_1MS, now);

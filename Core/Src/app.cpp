@@ -501,21 +501,25 @@ static void RelayAuto_OnFireServiceCmd(uint32_t MsgID, uint8_t command)
 	/* StopExtinguishment / Pause: реле не возвращаем — сработавшее состояние держим до reboot. */
 }
 
+
 static uint8_t RelayAuto_IsFaultTriggerInZone(uint8_t zone)
 {
+
 	for (uint8_t i = 0u; i < g_active_devices_count; i++) {
 		const ActiveDeviceInfo *m = &g_active_devices[i];
 		if (!m->online || ((m->dev.zone & 0x7Fu) != (zone & 0x7Fu))) {
 			continue;
-		}
-		if (m->can_status_valid != 0u && (m->can_state_mask & 0x0Fu) != 0u) {
-			return 1u;
 		}
 		for (uint8_t j = 0u; j < m->vdev_count; j++) {
 			const ActiveDeviceInfo::s_active_vdev *v = &m->vdevs[j];
 			if (!v->online) {
 				continue;
 			}
+
+			if (m->can_status_valid != 0u && (m->can_state_mask & 0x0Fu) != 0u) {
+				return 1u;
+			}
+
 			if (v->v_d_type == DEVICE_IGNITER_TYPE) {
 				if (v->status_cmd == DeviceIgniterStatus_Error ||
 				    v->line_state == DeviceIgniterLineState_Break ||
@@ -656,6 +660,12 @@ static void RelayAuto_Process(void)
 						continue;
 					}
 					RelayAuto_SendTarget(zone, h_adr, l_adr, target_state);
+					/* Пока целевой МКУ offline, команду по шине, скорее всего,
+					 * не приняли — track не двигаем, чтобы повторить после связи. */
+					const int tgt_mcu = FindActiveMcuByZoneHAdrIndex(zone, h_adr);
+					if (tgt_mcu < 0 || g_active_devices[tgt_mcu].online == 0u) {
+						continue;
+					}
 					tr->target_state = target_state;
 					if (mode == 1u && trigger != 0u) {
 						tr->fire_latched = 1u;
@@ -1161,7 +1171,7 @@ static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 	/* При отсутствии основного ввода индикатор питания должен гаснуть. */
 	Led_Set(LED_POWER, ((ppku_input_fault_mask & 0x01u) != 0u) ? 0u : 1u);
 
-	/* LED_ERR управляется в WarningProcess1ms (неисправность + внимание/мигание). */
+	/* LED_ERR — только неисправность (WarningProcess1ms). ВНИМАНИЕ — на LED_FIRE. */
 	uint8_t has_fault = (power_fault_mask != 0u || ppku_input_fault_mask != 0u) ? 1u :
 			    (Warning_HasActiveFault() || Warning_HasActiveAttention()) ? 1u : 0u;
 	if (!has_fault && !Fire_IsActive()) {

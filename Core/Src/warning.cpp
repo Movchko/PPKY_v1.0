@@ -79,8 +79,6 @@ static uint8_t g_last_count = 0xFFu;
 static char g_last_big[WARN_MAX_ITEMS][WARN_TITLE_LEN];
 static char g_last_details[WARN_MAX_ITEMS][ZONE_NAME_SIZE + 1];
 static uint8_t g_led_err_on = 0u;
-static uint8_t g_led_err_blink_phase = 0u;
-static uint32_t g_led_err_blink_toggle_ms = 0u;
 static uint8_t g_prev_active_fault_count = 0u;
 static uint8_t g_prev_sound_fault_count = 0u;
 static uint8_t g_prev_sound_attention_count = 0u;
@@ -930,26 +928,18 @@ static void UpdateFaultSound(uint32_t now_ms)
 	}
 }
 
-/* Управляет LED_ERR: мгновенное включение и мгновенное отключение. */
+/* Управляет LED_ERR: только неисправность (непрерывно). ВНИМАНИЕ — на LED_FIRE. */
 static void UpdateErrorLed(uint32_t now_ms)
 {
 	uint8_t fault_count = CountActiveFaultNow();
 	uint8_t attention_count = CountActiveAttentionNow();
-	if ((fault_count + attention_count) > g_prev_active_fault_count) {
+	uint8_t active_count = (uint8_t)(fault_count + attention_count);
+
+	if (active_count > g_prev_active_fault_count && fault_count > 0u) {
 		Led_ForceStatusBright(LED_ERR);
 	}
-	g_prev_active_fault_count = (uint8_t)(fault_count + attention_count);
-
-	if (attention_count > 0u) {
-		/* При наличии ВНИМАНИЯ индикатор НЕИСПР. должен мигать (0.5с). */
-		if ((now_ms - g_led_err_blink_toggle_ms) >= 500u) {
-			g_led_err_blink_toggle_ms = now_ms;
-			g_led_err_blink_phase = (uint8_t)!g_led_err_blink_phase;
-		}
-		Led_Set(LED_ERR, g_led_err_blink_phase);
-		g_led_err_on = g_led_err_blink_phase;
-		return;
-	}
+	g_prev_active_fault_count = active_count;
+	(void)now_ms;
 
 	if (fault_count > 0u) {
 		Led_Set(LED_ERR, 1u);
@@ -961,8 +951,6 @@ static void UpdateErrorLed(uint32_t now_ms)
 		Led_Set(LED_ERR, 0u);
 		g_led_err_on = 0u;
 	}
-	g_led_err_blink_phase = 0u;
-	g_led_err_blink_toggle_ms = now_ms;
 }
 
 /* Пушит данные в TouchGFX только при реальном изменении (анти-спам). */

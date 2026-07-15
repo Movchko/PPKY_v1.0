@@ -66,6 +66,13 @@ void UartBridge_Stop(void);
 /** UART2 свободен для передачи лога (очередь CAN-моста пуста и TX не занят). */
 uint8_t UartBridge_IsTxIdle(void);
 
+/**
+  * Целостность CAN-кольца по статусам МКУ.
+  * @return 1 — кольцо целое (или нет online МКУ с валидным статусом);
+  *         0 — у какого-то МКУ КЗ/обрыв по CAN0 или CAN1.
+  */
+uint8_t CanRingIsIntact(void);
+
 /** Глобальные флаги ошибки шин: бит 0 = CAN1 (нет приёма), бит 1 = CAN2 */
 extern uint8_t can_bus_error_flags;
 
