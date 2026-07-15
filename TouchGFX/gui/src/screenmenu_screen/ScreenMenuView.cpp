@@ -15,8 +15,8 @@ int16_t ScreenMenuView::getSelectedMenuIndex() const
     if (idx < 0) {
         return 0;
     }
-    if (idx > 4) {
-        return 4;
+    if (idx > 5) {
+        return 5;
     }
     return idx;
 }
@@ -26,8 +26,8 @@ void ScreenMenuView::setMenuIndex(int16_t index)
     if (index < 0) {
         index = 0;
     }
-    if (index > 4) {
-        index = 4;
+    if (index > 5) {
+        index = 5;
     }
     scrollWheel1.animateToItem(index, 10);
 }
@@ -102,8 +102,8 @@ void ScreenMenuView::SetupMenuChangePos(uint8_t val) {
 
 void ScreenMenuView::scrollWheel1UpdateItem(mainmenu& item, int16_t itemIndex)
 {
-    if (itemIndex > 4) {
-        itemIndex = 4;
+    if (itemIndex > 5) {
+        itemIndex = 5;
     }
     item.updateText(itemIndex);
 }

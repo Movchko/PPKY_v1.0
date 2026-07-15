@@ -188,7 +188,8 @@ enum : uint8_t {
 	FAULT_CLASS_PROTOCOL   = 2u,
 	FAULT_CLASS_CAN        = 3u,
 	FAULT_CLASS_POWER      = 4u,
-	FAULT_CLASS_OTHER      = 5u
+	FAULT_CLASS_OTHER      = 5u,
+	FAULT_CLASS_POSITION   = 6u
 };
 
 static uint8_t IsAttentionKind(uint8_t kind)
@@ -223,7 +224,7 @@ static uint8_t FaultClassFromWarningItem(const WarningItem& it)
 		return FAULT_CLASS_CAN;
 	}
 	if (it.kind == WARN_KIND_MCU_POSITION_FAULT) {
-		return FAULT_CLASS_OTHER;
+		return FAULT_CLASS_POSITION;
 	}
 	if (it.line_state == 1u) {
 		return FAULT_CLASS_LINE_BREAK;

@@ -104,6 +104,12 @@ void Beeper_StartPulseTrain(uint16_t pulse_on_ms, uint16_t pulse_off_ms, uint8_t
 void Beeper_ButtonAcknowledge(void);
 
 /**
+ * @brief Тест звуковой индикации (меню ТЕСТ): блокирующий профиль SOUND_TEST_*.
+ * После завершения восстанавливает фоновый паттерн, если был.
+ */
+void Beeper_PlayIndicationTest(void);
+
+/**
  * @brief Функция установки параметра звука ВКЛ/ВЫКЛ
  * Параметр сохраняемый в настройках
  */

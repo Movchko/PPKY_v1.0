@@ -209,6 +209,29 @@ void Led_Snake(uint8_t state) {
 */
 }
 
+void Led_RunIndicationSnake(void)
+{
+	uint8_t saved_state[NUM_LED];
+	uint8_t saved_power[NUM_LED];
+	uint8_t i;
+
+	for (i = 0u; i < NUM_LED; i++) {
+		saved_state[i] = cur_led_state[i];
+		saved_power[i] = cur_led_power[i];
+	}
+
+	Led_Snake(1u);
+	Led_Snake(0u);
+
+	for (i = 0u; i < NUM_LED; i++) {
+		cur_led_state[i] = saved_state[i];
+		cur_led_power[i] = saved_power[i];
+		hw_led_state[i] = 0xFFu; /* форсировать синхронизацию после теста */
+		hw_led_power[i] = 0xFFu;
+	}
+	Led_SyncToI2C();
+}
+
 void Led_TestToogle() {
 	for(uint8_t i = 2; i < (NUM_LED - 2); i++) {
 		if(cur_led_state[i]) {

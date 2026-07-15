@@ -49,6 +49,10 @@ void Led_SetAll(uint8_t power);
 void Led_OffAll();
 void Led_Set(uint8_t led, uint8_t st);
 void Led_Snake(uint8_t state);
+/**
+ * @brief Змейка индикации (вкл → выкл) с сохранением/восстановлением состояний LED.
+ */
+void Led_RunIndicationSnake(void);
 void Led_TestToogle();
 void Led_Process();
 void Led_SetBrightness(uint8_t led, uint8_t power);

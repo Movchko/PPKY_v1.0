@@ -62,6 +62,12 @@ void mainmenu::updateText(int16_t value)
 
 		}break;
 
+		case 5: {
+
+			Unicode::snprintf(textAreaMainMenuBuffer, TEXTAREAMAINMENU_SIZE, "%s", touchgfx::TypedText(TEXTS(T_TEST)).getText());
+
+		}break;
+
 		default: {
 
 			textAreaMainMenuBuffer[0] = 0;

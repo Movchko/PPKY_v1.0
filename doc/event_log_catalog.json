@@ -469,7 +469,7 @@
       "level": "critical",
       "debug_only": false,
       "status": "implemented",
-      "description": "Фронт неисправности из warning: обрыв/КЗ/Fault линии vdev, CAN МКУ/ППКУ, позиция МКУ, питание. additional[0]=fault_class, [1]=channel, [2]=fault_phase (0=появилась, 1=устранена).",
+      "description": "Фронт неисправности из warning: обрыв/КЗ/Fault линии vdev, CAN МКУ/ППКУ, позиция МКУ, питание. additional[0]=fault_class, [1]=channel или h_adr (для position), [2]=fault_phase (0=появилась, 1=устранена).",
       "uses": {
         "can_header": "required",
         "can_data": "required",
@@ -478,11 +478,11 @@
       "payload": {
         "can_header": {
           "required": true,
-          "description": "ID устройства с ошибкой"
+          "description": "ID устройства с ошибкой (для position — ID ППКУ)"
         },
         "can_data": {
           "required": true,
-          "description": "Статусное сообщение: MsgData[0]=cmd статуса, MsgData[1..7] по матрице протокола"
+          "description": "Для vdev/CAN — статусное сообщение; для position — can_data[0]=h_adr МКУ; для power — [0]=input/output, [1]=channel"
         },
         "additional": [
           {
@@ -495,14 +495,15 @@
               "2": "protocol_fault",
               "3": "can_fault",
               "4": "power_fault",
-              "5": "other"
+              "5": "other",
+              "6": "position"
             }
           },
           {
             "offset": 1,
             "name": "channel",
             "type": "uint8",
-            "description": "Номер канала/линии (l_adr или индекс), 0 если не применимо"
+            "description": "Номер канала/линии (l_adr или индекс CAN); для position — h_adr МКУ; 0 если не применимо"
           },
           {
             "offset": 2,

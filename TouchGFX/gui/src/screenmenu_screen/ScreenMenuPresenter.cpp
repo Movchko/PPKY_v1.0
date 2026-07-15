@@ -5,6 +5,8 @@
 #include "button.h"
 #include "device_config.h"
 #include "event_log.h"
+#include "beeper.h"
+#include "led.h"
 extern PPKYCfg PPKYConfig;
 extern void SaveConfig(void);
 
@@ -102,6 +104,11 @@ void ScreenMenuPresenter::handleButton(uint8_t but, uint8_t state)
         }
         if (currentIndex == 4) {
             app->gotoScreenDevicesScreenNoTransition();
+            return;
+        }
+        if (currentIndex == 5) {
+            Beeper_PlayIndicationTest();
+            Led_RunIndicationSnake();
             return;
         }
     }

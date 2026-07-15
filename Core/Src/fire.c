@@ -2350,9 +2350,14 @@ static void Fire_ApplyStateLeds(uint32_t now_ms)
 			Led_Set(LED_STR_START_ALL, 1u);
 		}
 		if (g_fire.beeper_start_pattern_active) {
+#if GOST_MODE
+			/* Тр. 3.6 / ГОСТ 7.6.3.2а: ПУСК — непрерывное свечение (звук остаётся прерывистым). */
+			Led_Set(LED_START, 1u);
+#else
 			uint32_t phase = (now_ms - g_fire.start_pattern_started_ms) %
 					 (BEEPER_PATTERN_START_ON_MS + BEEPER_PATTERN_START_OFF_MS);
 			Led_Set(LED_START, (phase < BEEPER_PATTERN_START_ON_MS) ? 1u : 0u);
+#endif
 		} else {
 			Led_Set(LED_START, ((int32_t)(now_ms - g_fire.start_led_hold_until_ms) < 0) ? 1u : 0u);
 		}
@@ -2375,9 +2380,13 @@ static void Fire_ApplyStateLeds(uint32_t now_ms)
 		Led_Set(LED_BUT_START_ALL, 0);
 		Led_Set(LED_STR_START_ALL, 1);
 		if (g_fire.beeper_start_pattern_active) {
+#if GOST_MODE
+			Led_Set(LED_START, 1u);
+#else
 			uint32_t phase = (now_ms - g_fire.start_pattern_started_ms) %
 					 (BEEPER_PATTERN_START_ON_MS + BEEPER_PATTERN_START_OFF_MS);
 			Led_Set(LED_START, (phase < BEEPER_PATTERN_START_ON_MS) ? 1u : 0u);
+#endif
 		} else {
 			Led_Set(LED_START, ((int32_t)(now_ms - g_fire.start_led_hold_until_ms) < 0) ? 1u : 0u);
 		}
