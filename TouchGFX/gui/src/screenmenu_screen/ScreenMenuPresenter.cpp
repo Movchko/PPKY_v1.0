@@ -4,6 +4,7 @@
 #include <touchgfx/Application.hpp>
 #include "button.h"
 #include "device_config.h"
+#include "event_log.h"
 extern PPKYCfg PPKYConfig;
 extern void SaveConfig(void);
 
@@ -73,6 +74,7 @@ void ScreenMenuPresenter::handleButton(uint8_t but, uint8_t state)
             uint8_t mode = (uint8_t)((PPKYConfig.fire_mode + 1u) % 3u);
             PPKYConfig.fire_mode = mode;
             SaveConfig();
+            EventLog_LogFireModeChange(mode, 0u); /* source: menu */
             refreshLine();
             return;
         }
@@ -84,6 +86,7 @@ void ScreenMenuPresenter::handleButton(uint8_t but, uint8_t state)
             soundOn = !soundOn;
             PPKYConfig.beep = soundOn ? 1u : 0u;
             SaveConfig();
+            EventLog_LogSoundToggle(soundOn ? 1u : 0u, 0u); /* source: menu */
             app->getModel().setSoundOn(soundOn);
             app->getModel().notifySoundToggled(soundOn);
             refreshLine();

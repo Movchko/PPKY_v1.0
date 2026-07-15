@@ -80,8 +80,11 @@ void EventLog_LogMasterBoot(void);
  */
 void EventLog_LogCanTelemetry(uint32_t can_id, const uint8_t *data);
 
-/** media: 0=WiFi(UART2), 1=RS485(UART4). Пишет фронт сессии (повтор не чаще 30 с простоя). */
+/** media: 0=WiFi(UART2), 1=RS485(UART4). Одна запись на сессию канала. */
 void EventLog_LogHostLink(uint8_t media);
+
+/** Сброс сессии HOST_LINK (вызывать при Esp32_SetEnabled(0) для WiFi). */
+void EventLog_HostLinkSessionReset(uint8_t media);
 
 /** Успешная заливка конфига во все целевые МКУ (APPLY). */
 void EventLog_LogConfigApplyOk(uint8_t mcu_ok_count, uint8_t mcu_total);
@@ -92,6 +95,31 @@ void EventLog_LogConfigApplyOk(uint8_t mcu_ok_count, uint8_t mcu_total);
  */
 void EventLog_LogConfigApplyFail(uint8_t d_type, uint8_t h_adr, uint8_t l_adr, uint8_t zone,
                                  uint8_t slot, uint8_t reason);
+
+/** Меню: звук вкл/выкл. enabled: 0=откл, 1=вкл. source: 0=menu. */
+void EventLog_LogSoundToggle(uint8_t enabled, uint8_t source);
+
+/** Меню: смена режима. mode: 0=auto, 1=autonomous, 2=manual. source: 0=menu. */
+void EventLog_LogFireModeChange(uint8_t mode, uint8_t source);
+
+/**
+ * Период выборочной телеметрии (мс). Менять здесь — не в теле тика.
+ * По умолчанию 10 минут.
+ */
+#ifndef EVENT_LOG_TELEMETRY_SAMPLE_PERIOD_MS
+#define EVENT_LOG_TELEMETRY_SAMPLE_PERIOD_MS  (10u * 60u * 1000u)
+#endif
+
+/** Бюджет записей Flash на один вызов 1мс-тика во время снимка. */
+#ifndef EVENT_LOG_TELEMETRY_SAMPLE_BUDGET
+#define EVENT_LOG_TELEMETRY_SAMPLE_BUDGET     4u
+#endif
+
+/**
+ * Периодический снимок статусов МКУ + вирт. устройств (код 20).
+ * Вызывать из AppTimer1ms.
+ */
+void EventLog_ProcessTelemetrySample(uint32_t now_ms);
 
 EventLogTier_t *EventLog_GetCriticalTier(void);
 EventLogTier_t *EventLog_GetGeneralTier(void);

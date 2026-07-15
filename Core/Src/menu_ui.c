@@ -3,6 +3,7 @@
 #include "main.h"
 #include "backend.h"
 #include "can_bus.h"
+#include "event_log.h"
 
 static uint8_t g_config_session_active = 0u;
 static uint8_t g_main_screen_active = 0u;
@@ -56,6 +57,7 @@ void Esp32_SetEnabled(uint8_t enabled)
 		HAL_GPIO_WritePin(ESP32_EN_GPIO_Port, ESP32_EN_Pin, GPIO_PIN_RESET);
 		HAL_GPIO_WritePin(ESP32_BOOT_GPIO_Port, ESP32_BOOT_Pin, GPIO_PIN_RESET);
 		g_esp32_enabled = 0u;
+		EventLog_HostLinkSessionReset(0u); /* WiFi: разрешить новый HOST_LINK */
 	}
 }
 

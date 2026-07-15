@@ -38,6 +38,9 @@ typedef enum {
 	EVENT_LOG_HOST_LINK              = 15,
 	EVENT_LOG_CONFIG_APPLY_OK        = 16,
 	EVENT_LOG_CONFIG_APPLY_FAIL      = 17,
+	EVENT_LOG_SOUND_TOGGLE           = 18,
+	EVENT_LOG_FIRE_MODE_CHANGE       = 19,
+	EVENT_LOG_TELEMETRY_SAMPLE       = 20,
 } EventLogCode_t;
 
 typedef struct {

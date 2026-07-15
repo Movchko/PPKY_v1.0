@@ -25,6 +25,7 @@
 #define CAN_TX_STALL_RECOVERY_MS    3000u
 #define LOG_PKT_TYPE_REQ            16u
 #define LOG_UART_BODY_MAX           246u
+#define CAN_RING_SETTLE_MS    5000
 
 typedef struct {
 	uint32_t id;
@@ -104,6 +105,8 @@ static uint8_t  last_data_can1[CAN_MAX_DEVICES][8];
 static uint32_t last_id_can2[CAN_MAX_DEVICES];
 static uint8_t  last_data_can2[CAN_MAX_DEVICES][8];
 static uint8_t  can_init_done = 0;
+static uint32_t can_ring_settle_until_ms = 0;
+static uint8_t  can_ring_settle_active = 0u;
 
 /** Ожидание дубликата с другой шины: с какой шины ждём, до какого тика */
 static uint8_t  pending_bus[CAN_MAX_DEVICES];
@@ -436,9 +439,20 @@ static void CanTxEnqueueOne(CanTxEntry *ring,
 }
 
 /* Кольцо целое (1), если ни у одного online МКУ с can_status_valid
- * нет КЗ (1) или обрыва (2) по CAN0/CAN1. Нет таких МКУ — тоже целое. */
+ * нет КЗ (1) или обрыва (2) по CAN0/CAN1. Нет таких МКУ — тоже целое.
+ * Первые CAN_RING_SETTLE_MS после CanInit — всегда целое (без повторного
+ * окна после переполнения HAL_GetTick). */
 uint8_t CanRingIsIntact(void)
 {
+	if(can_init_done == 0)
+		return 1;
+	if (can_ring_settle_active) {
+		if ((int32_t)(HAL_GetTick() - can_ring_settle_until_ms) < 0) {
+			return 1u;
+		}
+		can_ring_settle_active = 0u;
+	}
+
 	for (uint8_t i = 0u; i < g_active_devices_count; i++) {
 		const ActiveDeviceInfo *m = &g_active_devices[i];
 		if (!m->online || !m->can_status_valid) {
@@ -601,6 +615,8 @@ void CanInit(void)
 		last_id_can1[i] = CAN_ID_NONE;
 		last_id_can2[i] = CAN_ID_NONE;
 	}
+	can_ring_settle_until_ms = HAL_GetTick() + CAN_RING_SETTLE_MS;
+	can_ring_settle_active = 1u;
 	can_init_done = 1;
 }
 

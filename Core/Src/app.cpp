@@ -871,6 +871,7 @@ static void UpdateMcuCanStatus(uint32_t MsgID, uint8_t *MsgData) {
 	g_active_devices[idx].can_state_mask = MsgData[7];
 	g_active_devices[idx].can_status_valid = 1u;
 	g_active_devices[idx].u24_01v = MsgData[6];
+	memcpy(g_active_devices[idx].mcu_status_data, MsgData, 8u);
 }
 
 static void UpdateActiveVirtualDevices(uint32_t MsgID, uint8_t *MsgData, uint32_t now_ms) {
@@ -1114,6 +1115,9 @@ void AppInit() {
 	(void)EventLog_Init(&hFlash);
 	EventLog_LogMasterBoot();
 	LogTransport_Init();
+
+	/* TEMP: WiFi/ESP32 при старте (для отладки). Обычно включается только из меню связи. */
+	Esp32_SetEnabled(1u);
 }
 
 extern "C" void PControl_OnStatusFault(uint8_t ch, uint32_t now_ms) {
@@ -1139,7 +1143,7 @@ void AppProcess(uint32_t now_ms) {
 
 uint32_t counter1s = 0;
 
-uint32_t warning_process_delay = 5000;
+uint32_t warning_process_delay = 10000;
 
 static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 {
@@ -1188,17 +1192,21 @@ void AppTimer1ms() {
 	RefreshActiveDevices(now);
 	CheckMkuConfigMismatch();
 	Position_EvaluateMismatch(now);
-	RelayAuto_Process();
 	Warning_SetMkuPositionFaultMask(g_position_fault_mask);
 	App_UpdatePowerFaultIndication(now);
 	Fire_Timer1ms();
 
-	LogTransport_Process();
+	EventLog_ProcessTelemetrySample(now);
+
+
 	BackendProcess();
 	if(warning_process_delay)
 		warning_process_delay--;
-	else
+	else {
 		WarningProcess1ms();
+		RelayAuto_Process();
+		LogTransport_Process();
+	}
 
 	counter1s++;
 

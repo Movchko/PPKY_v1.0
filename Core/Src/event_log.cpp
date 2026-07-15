@@ -15,6 +15,8 @@
 
 extern struct PPKYCfg PPKYConfig;
 extern RTC_HandleTypeDef hrtc;
+extern ActiveDeviceInfo g_active_devices[];
+extern uint8_t g_active_devices_count;
 
 static EventLogTier_t g_critical_tier;
 static EventLogTier_t g_general_tier;
@@ -284,34 +286,37 @@ void EventLog_LogCanTelemetry(uint32_t can_id, const uint8_t *data)
 	(void)EventLog_Post(EVENT_LOG_TELEMETRY, &payload);
 }
 
-#define HOST_LINK_IDLE_MS 30000u
+#define HOST_LINK_MEDIA_WIFI   0u
+#define HOST_LINK_MEDIA_RS485  1u
+
+/* Одна запись HOST_LINK на сессию канала (WiFi — до выключения ESP32). */
+static uint8_t s_host_link_logged[2] = {0u, 0u};
 
 void EventLog_LogHostLink(uint8_t media)
 {
-	static uint32_t s_last_ms[2] = {0u, 0u};
-	static uint8_t s_active[2] = {0u, 0u};
 	EventLogPayload_t payload;
-	uint32_t now;
 	uint8_t idx;
 
 	if (!g_initialized) {
 		return;
 	}
 
-	idx = (media != 0u) ? 1u : 0u;
-	now = HAL_GetTick();
-	if (s_active[idx] != 0u && (uint32_t)(now - s_last_ms[idx]) < HOST_LINK_IDLE_MS) {
-		s_last_ms[idx] = now;
+	idx = (media != 0u) ? HOST_LINK_MEDIA_RS485 : HOST_LINK_MEDIA_WIFI;
+	if (s_host_link_logged[idx] != 0u) {
 		return;
 	}
-
-	s_active[idx] = 1u;
-	s_last_ms[idx] = now;
+	s_host_link_logged[idx] = 1u;
 
 	memset(&payload, 0, sizeof(payload));
 	payload.master_wagon_num = PPKYConfig.UId.devId.h_adr;
 	payload.additional[0] = idx; /* 0=WiFi, 1=RS485 */
 	(void)EventLog_Post(EVENT_LOG_HOST_LINK, &payload);
+}
+
+void EventLog_HostLinkSessionReset(uint8_t media)
+{
+	uint8_t idx = (media != 0u) ? HOST_LINK_MEDIA_RS485 : HOST_LINK_MEDIA_WIFI;
+	s_host_link_logged[idx] = 0u;
 }
 
 void EventLog_LogConfigApplyOk(uint8_t mcu_ok_count, uint8_t mcu_total)
@@ -356,6 +361,142 @@ void EventLog_LogConfigApplyFail(uint8_t d_type, uint8_t h_adr, uint8_t l_adr, u
 	payload.additional[3] = zone & 0x7Fu;
 	payload.additional[4] = d_type & 0x7Fu;
 	(void)EventLog_Post(EVENT_LOG_CONFIG_APPLY_FAIL, &payload);
+}
+
+void EventLog_LogSoundToggle(uint8_t enabled, uint8_t source)
+{
+	EventLogPayload_t payload;
+
+	if (!g_initialized) {
+		return;
+	}
+
+	memset(&payload, 0, sizeof(payload));
+	payload.master_wagon_num = PPKYConfig.UId.devId.h_adr;
+	payload.additional[0] = enabled ? 1u : 0u;
+	payload.additional[1] = source;
+	(void)EventLog_Post(EVENT_LOG_SOUND_TOGGLE, &payload);
+}
+
+void EventLog_LogFireModeChange(uint8_t mode, uint8_t source)
+{
+	EventLogPayload_t payload;
+
+	if (!g_initialized) {
+		return;
+	}
+
+	memset(&payload, 0, sizeof(payload));
+	payload.master_wagon_num = PPKYConfig.UId.devId.h_adr;
+	payload.additional[0] = mode;
+	payload.additional[1] = source;
+	(void)EventLog_Post(EVENT_LOG_FIRE_MODE_CHANGE, &payload);
+}
+
+static uint32_t BuildSampleCanHeader(uint8_t d_type, uint8_t h_adr, uint8_t l_adr, uint8_t zone)
+{
+	can_ext_id_t id;
+
+	id.ID = 0u;
+	id.field.zone = zone & 0x7Fu;
+	id.field.l_adr = l_adr & 0x3Fu;
+	id.field.h_adr = h_adr;
+	id.field.d_type = d_type & 0x7Fu;
+	id.field.dir = 1u;
+	return id.ID & 0x1FFFFFFFu;
+}
+
+static void EventLog_PostTelemetrySample(uint32_t can_header, const uint8_t *can_data, uint8_t kind)
+{
+	EventLogPayload_t payload;
+
+	memset(&payload, 0, sizeof(payload));
+	payload.master_wagon_num = PPKYConfig.UId.devId.h_adr;
+	payload.can_header = can_header;
+	if (can_data != NULL) {
+		memcpy(payload.can_data, can_data, 8u);
+	}
+	payload.additional[0] = kind; /* 0=mcu_status, 1=vdev_status */
+	(void)EventLog_Post(EVENT_LOG_TELEMETRY_SAMPLE, &payload);
+}
+
+void EventLog_ProcessTelemetrySample(uint32_t now_ms)
+{
+	static uint32_t s_next_ms = 0u;
+	static uint8_t s_started = 0u;
+	static uint8_t s_dumping = 0u;
+	static uint8_t s_mcu_i = 0u;
+	static int8_t s_vdev_i = -1; /* -1 = следующий шаг — статус МКУ */
+	uint8_t budget;
+
+	if (!g_initialized) {
+		return;
+	}
+
+	if (s_started == 0u) {
+		s_started = 1u;
+		s_next_ms = now_ms + EVENT_LOG_TELEMETRY_SAMPLE_PERIOD_MS;
+		return;
+	}
+
+	if (s_dumping == 0u) {
+		if ((int32_t)(now_ms - s_next_ms) < 0) {
+			return;
+		}
+		s_dumping = 1u;
+		s_mcu_i = 0u;
+		s_vdev_i = -1;
+		s_next_ms = now_ms + EVENT_LOG_TELEMETRY_SAMPLE_PERIOD_MS;
+	}
+
+	budget = EVENT_LOG_TELEMETRY_SAMPLE_BUDGET;
+	while (budget != 0u && s_dumping != 0u) {
+		ActiveDeviceInfo *m;
+
+		if (s_mcu_i >= g_active_devices_count) {
+			s_dumping = 0u;
+			break;
+		}
+
+		m = &g_active_devices[s_mcu_i];
+		if (!m->online) {
+			s_mcu_i++;
+			s_vdev_i = -1;
+			continue;
+		}
+
+		if (s_vdev_i < 0) {
+			if (m->can_status_valid != 0u) {
+				uint32_t hdr = BuildSampleCanHeader(m->dev.d_type, m->dev.h_adr,
+				                                   m->dev.l_adr, m->dev.zone);
+				EventLog_PostTelemetrySample(hdr, m->mcu_status_data, 0u);
+				budget--;
+			}
+			s_vdev_i = 0;
+			continue;
+		}
+
+		if ((uint8_t)s_vdev_i >= m->vdev_count) {
+			s_mcu_i++;
+			s_vdev_i = -1;
+			continue;
+		}
+
+		{
+			auto *v = &m->vdevs[(uint8_t)s_vdev_i];
+			s_vdev_i++;
+			if (!v->online) {
+				continue;
+			}
+			uint8_t data[8];
+			uint32_t hdr = BuildSampleCanHeader(v->v_d_type, m->dev.h_adr,
+			                                   v->v_l_adr, m->dev.zone);
+			data[0] = v->status_cmd;
+			memcpy(&data[1], v->status_params, 7u);
+			EventLog_PostTelemetrySample(hdr, data, 1u);
+			budget--;
+		}
+	}
 }
 
 /* Вызов из device_lib ConfigServiceCmd при командах конфига от хоста. */

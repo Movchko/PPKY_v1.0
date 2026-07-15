@@ -74,6 +74,7 @@ typedef struct {
 	uint8_t can_state_mask;  /* bits[1:0]=CAN0 state, bits[3:2]=CAN1 state */
 	uint8_t can_status_valid; /* 1 после первого валидного статуса МКУ cmd=0 */
 	uint8_t u24_01v;         /* измеренное U24 (1V), из статуса МКУ cmd=0 */
+	uint8_t mcu_status_data[8]; /* последний полный статус МКУ (cmd=0), MsgData[0..7] */
 
 	/* Виртуальные устройства, которые находятся "внутри" данного МКУ */
 	uint8_t vdev_count;

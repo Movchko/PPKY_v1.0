@@ -814,7 +814,7 @@
       "level": "critical",
       "debug_only": false,
       "status": "implemented",
-      "description": "Обнаружена сессия внешнего ПО: WiFi (UART2/ESP32) или RS485 (UART4). Фронт сессии; повтор не чаще 30 с простоя.",
+      "description": "Обнаружена сессия внешнего ПО: WiFi (UART2/ESP32) или RS485 (UART4). Одна запись на сессию; сброс WiFi при Esp32_SetEnabled(0).",
       "uses": {
         "can_header": "unused",
         "can_data": "unused",
@@ -915,6 +915,116 @@
             "offset": 4,
             "name": "d_type",
             "type": "uint8"
+          }
+        ]
+      }
+    },
+    {
+      "code": 18,
+      "symbol": "EVENT_LOG_SOUND_TOGGLE",
+      "name": "Звук вкл/выкл",
+      "level": "critical",
+      "debug_only": false,
+      "status": "implemented",
+      "description": "Оператор переключил звук через меню ППКУ.",
+      "uses": {
+        "can_header": "unused",
+        "can_data": "unused",
+        "additional": "required"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "enabled",
+            "type": "uint8",
+            "required": true,
+            "enum": {
+              "0": "off",
+              "1": "on"
+            }
+          },
+          {
+            "offset": 1,
+            "name": "source",
+            "type": "uint8",
+            "enum": {
+              "0": "menu"
+            },
+            "description": "Откуда переключили"
+          }
+        ]
+      }
+    },
+    {
+      "code": 19,
+      "symbol": "EVENT_LOG_FIRE_MODE_CHANGE",
+      "name": "Смена режима работы",
+      "level": "critical",
+      "debug_only": false,
+      "status": "implemented",
+      "description": "Оператор сменил режим тушения через меню ППКУ.",
+      "uses": {
+        "can_header": "unused",
+        "can_data": "unused",
+        "additional": "required"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "fire_mode",
+            "type": "uint8",
+            "required": true,
+            "enum": {
+              "0": "auto",
+              "1": "autonomous",
+              "2": "manual"
+            },
+            "description": "Установленный режим (ППКУ: 0 автоматический, 1 автономный, 2 ручной)"
+          },
+          {
+            "offset": 1,
+            "name": "source",
+            "type": "uint8",
+            "enum": {
+              "0": "menu"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "code": 20,
+      "symbol": "EVENT_LOG_TELEMETRY_SAMPLE",
+      "name": "Выборочная телеметрия",
+      "level": "general",
+      "debug_only": false,
+      "status": "implemented",
+      "description": "Периодический снимок статусных сообщений всех онлайн МКУ и вирт. устройств. Период: EVENT_LOG_TELEMETRY_SAMPLE_PERIOD_MS (по умолчанию 10 мин). Не требует debug.",
+      "uses": {
+        "can_header": "required",
+        "can_data": "required",
+        "additional": "recommended"
+      },
+      "payload": {
+        "can_header": {
+          "required": true,
+          "description": "ID МКУ или вирт. устройства (dir=1)"
+        },
+        "can_data": {
+          "required": true,
+          "description": "Последнее статусное сообщение: для МКУ cmd=0 payload; для vdev status_cmd+params"
+        },
+        "additional": [
+          {
+            "offset": 0,
+            "name": "sample_kind",
+            "type": "uint8",
+            "enum": {
+              "0": "mcu_status",
+              "1": "vdev_status"
+            }
           }
         ]
       }
