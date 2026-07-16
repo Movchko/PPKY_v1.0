@@ -42,6 +42,16 @@ ScreenMenuViewBase::ScreenMenuViewBase() :
     scrollableContainer1.add(scrollWheel1);
 
     add(scrollableContainer1);
+
+    box1_white.setPosition(0, 0, 128, 64);
+    box1_white.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
+    box1_white.setVisible(false);
+    add(box1_white);
+
+    box1_black.setPosition(0, 0, 128, 64);
+    box1_black.setColor(touchgfx::Color::getColorFromRGB(0, 0, 0));
+    box1_black.setVisible(false);
+    add(box1_black);
 }
 
 ScreenMenuViewBase::~ScreenMenuViewBase()

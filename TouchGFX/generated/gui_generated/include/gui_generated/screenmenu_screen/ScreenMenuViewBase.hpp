@@ -48,6 +48,8 @@ protected:
     touchgfx::ScrollableContainer scrollableContainer1;
     touchgfx::ScrollWheel scrollWheel1;
     touchgfx::DrawableListItems<mainmenu, 2> scrollWheel1ListItems;
+    touchgfx::Box box1_white;
+    touchgfx::Box box1_black;
 
 private:
 

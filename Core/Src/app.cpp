@@ -532,10 +532,11 @@ static uint8_t RelayAuto_IsFaultTriggerInZone(uint8_t zone)
 			if (!v->online) {
 				continue;
 			}
-
-			if (m->can_status_valid != 0u && (m->can_state_mask & 0x0Fu) != 0u) {
+			//срабатывание реле по ошибкам КАН
+			// пока убираем
+			/*if (m->can_status_valid != 0u && (m->can_state_mask & 0x0Fu) != 0u) {
 				return 1u;
-			}
+			}*/
 
 			if (v->v_d_type == DEVICE_IGNITER_TYPE) {
 				if (v->status_cmd == DeviceIgniterStatus_Error ||

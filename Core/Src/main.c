@@ -251,9 +251,6 @@ int main(void)
 	 if(is1ms) {
 		 is1ms--;
 		 AppTimer1ms();
-		 if(is1ms > 100) {
-			 is1ms = is1ms;
-		 }
 	 }
 
 	 if(is10ms) {

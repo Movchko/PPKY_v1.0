@@ -411,6 +411,25 @@
                 "OverShootPercentage": 75
               }
             ]
+          },
+          {
+            "Type": "Box",
+            "Name": "box1_white",
+            "Width": 128,
+            "Height": 64,
+            "Visible": false,
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            }
+          },
+          {
+            "Type": "Box",
+            "Name": "box1_black",
+            "Width": 128,
+            "Height": 64,
+            "Visible": false
           }
         ],
         "Interactions": [

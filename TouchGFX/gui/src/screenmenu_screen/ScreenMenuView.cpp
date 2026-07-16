@@ -4,9 +4,17 @@
 #include <touchgfx/Unicode.hpp>
 #include <cstdio>
 
-ScreenMenuView::ScreenMenuView()
-{
+#ifndef SIMULATOR
+#include "beeper.h"
+#include "led.h"
+#endif
 
+ScreenMenuView::ScreenMenuView()
+#ifndef SIMULATOR
+    : test_phase_(TEST_PHASE_IDLE),
+      test_progress_(0)
+#endif
+{
 }
 
 int16_t ScreenMenuView::getSelectedMenuIndex() const
@@ -43,6 +51,101 @@ void ScreenMenuView::initParamLineText()
     paramLineText.setWildcard(paramLineBuffer);
     paramLineBuffer[0] = 0;
     add(paramLineText);
+}
+
+void ScreenMenuView::stopIndicationTestUi()
+{
+    test_phase_ = TEST_PHASE_IDLE;
+    test_progress_ = 0;
+    box1_white.setVisible(false);
+    box1_black.setVisible(false);
+    box1_white.setPosition(0, 0, TEST_SCREEN_W, TEST_SCREEN_H);
+    box1_black.setPosition(0, 0, TEST_SCREEN_W, TEST_SCREEN_H);
+    box1_white.invalidate();
+    box1_black.invalidate();
+}
+
+void ScreenMenuView::applyWipeProgress()
+{
+    switch (test_phase_) {
+    case TEST_PHASE_WHITE_DOWN:
+        box1_black.setVisible(false);
+        box1_white.setVisible(true);
+        box1_white.setPosition(0, 0, TEST_SCREEN_W, test_progress_);
+        box1_white.invalidate();
+        break;
+    case TEST_PHASE_BLACK_DOWN:
+        box1_white.setVisible(true);
+        box1_white.setPosition(0, 0, TEST_SCREEN_W, TEST_SCREEN_H);
+        box1_black.setVisible(true);
+        box1_black.setPosition(0, 0, TEST_SCREEN_W, test_progress_);
+        box1_white.invalidate();
+        box1_black.invalidate();
+        break;
+    case TEST_PHASE_WHITE_RIGHT:
+        box1_black.setVisible(false);
+        box1_white.setVisible(true);
+        box1_white.setPosition(0, 0, test_progress_, TEST_SCREEN_H);
+        box1_white.invalidate();
+        box1_black.invalidate();
+        break;
+    case TEST_PHASE_BLACK_RIGHT:
+        box1_white.setVisible(true);
+        box1_white.setPosition(0, 0, TEST_SCREEN_W, TEST_SCREEN_H);
+        box1_black.setVisible(true);
+        box1_black.setPosition(0, 0, test_progress_, TEST_SCREEN_H);
+        box1_white.invalidate();
+        box1_black.invalidate();
+        break;
+    default:
+        break;
+    }
+}
+
+void ScreenMenuView::advanceIndicationTest()
+{
+    if (test_phase_ == TEST_PHASE_IDLE) {
+        return;
+    }
+
+    const int16_t limit = (test_phase_ == TEST_PHASE_WHITE_DOWN ||
+                           test_phase_ == TEST_PHASE_BLACK_DOWN)
+                              ? TEST_SCREEN_H
+                              : TEST_SCREEN_W;
+
+    if (test_progress_ < limit) {
+        test_progress_ = (int16_t)(test_progress_ + TEST_WIPE_STEP);
+        if (test_progress_ > limit) {
+            test_progress_ = limit;
+        }
+        applyWipeProgress();
+        return;
+    }
+
+    /* Фаза завершена — следующая. */
+    switch (test_phase_) {
+    case TEST_PHASE_WHITE_DOWN:
+        test_phase_ = TEST_PHASE_BLACK_DOWN;
+        test_progress_ = 0;
+        applyWipeProgress();
+        break;
+    case TEST_PHASE_BLACK_DOWN:
+        test_phase_ = TEST_PHASE_WHITE_RIGHT;
+        test_progress_ = 0;
+        applyWipeProgress();
+        break;
+    case TEST_PHASE_WHITE_RIGHT:
+        test_phase_ = TEST_PHASE_BLACK_RIGHT;
+        test_progress_ = 0;
+        applyWipeProgress();
+        break;
+    case TEST_PHASE_BLACK_RIGHT:
+    default:
+        stopIndicationTestUi();
+        Beeper_PlayIndicationTest();
+        Led_RunIndicationSnake();
+        break;
+    }
 }
 #endif
 
@@ -83,8 +186,12 @@ void ScreenMenuView::setupScreen()
     ScreenMenuViewBase::setupScreen();
 #ifndef SIMULATOR
     initParamLineText();
-    for (int i = 0; i < scrollWheel1ListItems.getNumberOfDrawables(); i++)
-    {
+    /* Поверх paramLineText: сначала белый, сверху чёрный (для перекрытия). */
+    remove(box1_white);
+    remove(box1_black);
+    add(box1_white);
+    add(box1_black);
+    for (int i = 0; i < scrollWheel1ListItems.getNumberOfDrawables(); i++) {
         scrollWheel1.itemChanged(i);
         scrollWheel1ListItems[i].updateText(i);
     }
@@ -93,10 +200,23 @@ void ScreenMenuView::setupScreen()
 
 void ScreenMenuView::tearDownScreen()
 {
+#ifndef SIMULATOR
+    stopIndicationTestUi();
+#endif
     ScreenMenuViewBase::tearDownScreen();
 }
+
+void ScreenMenuView::handleTickEvent()
+{
+    ScreenMenuViewBase::handleTickEvent();
 #ifndef SIMULATOR
-void ScreenMenuView::SetupMenuChangePos(uint8_t val) {
+    advanceIndicationTest();
+#endif
+}
+
+#ifndef SIMULATOR
+void ScreenMenuView::SetupMenuChangePos(uint8_t val)
+{
     (void)val;
 }
 
@@ -106,5 +226,16 @@ void ScreenMenuView::scrollWheel1UpdateItem(mainmenu& item, int16_t itemIndex)
         itemIndex = 5;
     }
     item.updateText(itemIndex);
+}
+
+void ScreenMenuView::startIndicationTest()
+{
+    if (test_phase_ != TEST_PHASE_IDLE) {
+        return;
+    }
+
+    test_phase_ = TEST_PHASE_WHITE_DOWN;
+    test_progress_ = 0;
+    applyWipeProgress();
 }
 #endif
