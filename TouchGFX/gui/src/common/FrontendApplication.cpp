@@ -15,6 +15,8 @@
 #include <gui/screenmenu_jurnal_screen/ScreenMenu_jurnalPresenter.hpp>
 #include <gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsView.hpp>
 #include <gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsPresenter.hpp>
+#include <gui/screenblockzone_screen/ScreenBlockZoneView.hpp>
+#include <gui/screenblockzone_screen/ScreenBlockZonePresenter.hpp>
 #include <touchgfx/transitions/NoTransition.hpp>
 
 #ifndef SIMULATOR
@@ -131,4 +133,15 @@ void FrontendApplication::gotoScreenMenuMcuDetailsScreenNoTransition()
 void FrontendApplication::gotoScreenMenuMcuDetailsScreenNoTransitionImpl()
 {
     makeTransition<ScreenMenu_MCU_DetailsView, ScreenMenu_MCU_DetailsPresenter, NoTransition, Model>(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
+}
+
+void FrontendApplication::gotoScreenBlockZoneScreenNoTransition()
+{
+    screenBlockZoneTransitionCallback = Callback<FrontendApplication>(this, &FrontendApplication::gotoScreenBlockZoneScreenNoTransitionImpl);
+    pendingScreenTransitionCallback = &screenBlockZoneTransitionCallback;
+}
+
+void FrontendApplication::gotoScreenBlockZoneScreenNoTransitionImpl()
+{
+    makeTransition<ScreenBlockZoneView, ScreenBlockZonePresenter, NoTransition, Model>(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
 }

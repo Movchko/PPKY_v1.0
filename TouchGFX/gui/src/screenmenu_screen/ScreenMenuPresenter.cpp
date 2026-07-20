@@ -105,6 +105,10 @@ void ScreenMenuPresenter::handleButton(uint8_t but, uint8_t state)
             return;
         }
         if (currentIndex == 5) {
+            app->gotoScreenBlockZoneScreenNoTransition();
+            return;
+        }
+        if (currentIndex == 6) {
             /* Экранный wipe по тикам; звук + змейка — после него в View. */
             view.startIndicationTest();
             return;

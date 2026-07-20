@@ -2,7 +2,10 @@
 #include <gui/screenmenu_jurnal_screen/ScreenMenu_jurnalPresenter.hpp>
 #include <gui/common/FrontendApplication.hpp>
 #include <touchgfx/Application.hpp>
+
+#ifndef SIMULATOR
 #include "button.h"
+#endif
 
 ScreenMenu_jurnalPresenter::ScreenMenu_jurnalPresenter(ScreenMenu_jurnalView& v)
     : view(v)
@@ -11,6 +14,9 @@ ScreenMenu_jurnalPresenter::ScreenMenu_jurnalPresenter(ScreenMenu_jurnalView& v)
 
 void ScreenMenu_jurnalPresenter::activate()
 {
+#ifndef SIMULATOR
+    view.refreshJournalUi();
+#endif
 }
 
 void ScreenMenu_jurnalPresenter::deactivate()
@@ -24,9 +30,25 @@ void ScreenMenu_jurnalPresenter::handleButton(uint8_t but, uint8_t state)
         return;
     }
 
+    FrontendApplication* app = static_cast<FrontendApplication*>(touchgfx::Application::getInstance());
+
     if (but == BUT_ESC) {
-        FrontendApplication* app = static_cast<FrontendApplication*>(touchgfx::Application::getInstance());
         app->gotoScreenMenuScreenNoTransition();
+        return;
+    }
+    if (but == BUT_UP) {
+        /* Старее */
+        view.prevRecord();
+        return;
+    }
+    if (but == BUT_DOWN) {
+        /* Новее */
+        view.nextRecord();
+        return;
+    }
+    if (but == BUT_ENTER) {
+        view.jumpToNewest();
+        return;
     }
 }
 #endif

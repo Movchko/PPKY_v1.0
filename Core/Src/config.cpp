@@ -4,6 +4,7 @@
 #include "device_cfg_common.h"
 #include "backend.h"
 #include "menu_ui.h"
+#include <string.h>
 
 static_assert(FLASH_CFG_STORED_BYTES <= FLASH_CFG_MAX_USABLE_BYTES,
               "PPKY config size exceeds SPI flash allocation (10% reserve required)");
@@ -239,17 +240,67 @@ void DefaultConfig() {
 	// reserv оставляем нулевым
 }
 
-void FlashWriteData(uint8_t *ConfigPtr, uint32_t ConfigSize) {
-	// Конфигурация: FLASH_CFG_START_SECTOR, заголовок PPKYConfigHeader, затем PPKYCfg.
-	// Стираем только нужное кол-во секторов (ускоряет сохранение).
-	uint32_t cfg_addr = SPIF_SectorToAddress(FLASH_CFG_START_SECTOR);
-	/*
-	for (uint32_t s = 0; s < FLASH_CFG_SECTORS_USED; s++) {
-		SPIF_EraseSector(&hFlash, FLASH_CFG_START_SECTOR + s);
-	}
-	*/
+static void FlashWriteData_Full(uint8_t *ConfigPtr, uint32_t ConfigSize,
+                                const PPKYConfigHeader *hdr)
+{
+	const uint32_t cfg_addr = SPIF_SectorToAddress(FLASH_CFG_START_SECTOR);
+
+	/* Полная перезапись: block erase быстрее, чем десятки sector erase. */
 	for (uint32_t s = 0; s < FLASH_CFG_BLOCK_USED; s++) {
 		SPIF_EraseBlock(&hFlash, FLASH_CFG_START_BLOCK + s);
+	}
+
+	SPIF_WriteAddress(&hFlash, cfg_addr, (uint8_t *)hdr, sizeof(*hdr));
+	SPIF_WriteAddress(&hFlash, cfg_addr + sizeof(PPKYConfigHeader), ConfigPtr, ConfigSize);
+}
+
+static void FlashWriteData_Sector(uint32_t sector_idx, uint8_t *ConfigPtr, uint32_t ConfigSize,
+                                  const PPKYConfigHeader *hdr)
+{
+	const uint32_t cfg_addr = SPIF_SectorToAddress(FLASH_CFG_START_SECTOR);
+	const uint32_t hdr_sz = (uint32_t)sizeof(PPKYConfigHeader);
+	const uint32_t sector_flash_off = sector_idx * SPIF_SECTOR_SIZE;
+	const uint32_t stored_total = hdr_sz + ConfigSize;
+	const uint32_t sector_flash_end =
+		((sector_flash_off + SPIF_SECTOR_SIZE) < stored_total)
+			? (sector_flash_off + SPIF_SECTOR_SIZE)
+			: stored_total;
+
+	SPIF_EraseSector(&hFlash, FLASH_CFG_START_SECTOR + sector_idx);
+
+	/* Сектор 0: заголовок + начало конфига. */
+	if (sector_idx == 0u) {
+		SPIF_WriteAddress(&hFlash, cfg_addr, (uint8_t *)hdr, hdr_sz);
+	}
+
+	/* Часть ConfigPtr, попадающая в этот сектор. */
+	if (sector_flash_end <= hdr_sz) {
+		return;
+	}
+	const uint32_t cfg_off_start =
+		(sector_flash_off > hdr_sz) ? (sector_flash_off - hdr_sz) : 0u;
+	const uint32_t cfg_off_end = sector_flash_end - hdr_sz;
+	if (cfg_off_end <= cfg_off_start || cfg_off_start >= ConfigSize) {
+		return;
+	}
+	uint32_t len = cfg_off_end - cfg_off_start;
+	if ((cfg_off_start + len) > ConfigSize) {
+		len = ConfigSize - cfg_off_start;
+	}
+	SPIF_WriteAddress(&hFlash,
+	                  cfg_addr + hdr_sz + cfg_off_start,
+	                  ConfigPtr + cfg_off_start,
+	                  len);
+}
+
+void FlashWriteData(uint8_t *ConfigPtr, uint32_t ConfigSize) {
+	/* Layout: [PPKYConfigHeader][PPKYCfg...] начиная с FLASH_CFG_START_SECTOR.
+	 * Сравниваем с SavedPPKYConfig и переписываем только изменённые сектора. */
+	if (ConfigPtr == nullptr || ConfigSize == 0u) {
+		return;
+	}
+	if (ConfigSize > sizeof(SavedPPKYConfig)) {
+		ConfigSize = (uint32_t)sizeof(SavedPPKYConfig);
 	}
 
 	PPKYConfigHeader hdr;
@@ -257,8 +308,56 @@ void FlashWriteData(uint8_t *ConfigPtr, uint32_t ConfigSize) {
 	hdr.version = 1;
 	hdr.size    = ConfigSize;
 
-	// Сначала пишем заголовок
-	SPIF_WriteAddress(&hFlash, cfg_addr, (uint8_t *)&hdr, sizeof(hdr));
-	// Затем полезные данные конфигурации сразу после заголовка
-	SPIF_WriteAddress(&hFlash, cfg_addr + sizeof(PPKYConfigHeader), ConfigPtr, ConfigSize);
+	const uint32_t hdr_sz = (uint32_t)sizeof(PPKYConfigHeader);
+	const uint32_t stored_total = hdr_sz + ConfigSize;
+	uint32_t sectors_needed = (stored_total + SPIF_SECTOR_SIZE - 1u) / SPIF_SECTOR_SIZE;
+	if (sectors_needed > FLASH_CFG_SECTORS_USED) {
+		sectors_needed = FLASH_CFG_SECTORS_USED;
+	}
+
+	const uint8_t *saved = (const uint8_t *)&SavedPPKYConfig;
+	uint32_t dirty_mask = 0u;
+	uint32_t dirty_count = 0u;
+
+	for (uint32_t s = 0u; s < sectors_needed; s++) {
+		const uint32_t sector_flash_off = s * SPIF_SECTOR_SIZE;
+		const uint32_t sector_flash_end =
+			((sector_flash_off + SPIF_SECTOR_SIZE) < stored_total)
+				? (sector_flash_off + SPIF_SECTOR_SIZE)
+				: stored_total;
+		if (sector_flash_end <= hdr_sz) {
+			continue;
+		}
+		const uint32_t cfg_off_start =
+			(sector_flash_off > hdr_sz) ? (sector_flash_off - hdr_sz) : 0u;
+		const uint32_t cfg_off_end = sector_flash_end - hdr_sz;
+		if (cfg_off_end <= cfg_off_start || cfg_off_start >= ConfigSize) {
+			continue;
+		}
+		uint32_t len = cfg_off_end - cfg_off_start;
+		if ((cfg_off_start + len) > ConfigSize) {
+			len = ConfigSize - cfg_off_start;
+		}
+		if (memcmp(ConfigPtr + cfg_off_start, saved + cfg_off_start, len) != 0) {
+			dirty_mask |= (1u << s);
+			dirty_count++;
+		}
+	}
+
+	if (dirty_count == 0u) {
+		return;
+	}
+
+	/* Все сектора с данными изменились — выгоднее block erase + полная запись. */
+	if (dirty_count == sectors_needed) {
+		FlashWriteData_Full(ConfigPtr, ConfigSize, &hdr);
+		return;
+	}
+
+	for (uint32_t s = 0u; s < sectors_needed; s++) {
+		if ((dirty_mask & (1u << s)) == 0u) {
+			continue;
+		}
+		FlashWriteData_Sector(s, ConfigPtr, ConfigSize, &hdr);
+	}
 }

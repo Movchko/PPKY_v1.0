@@ -28,6 +28,8 @@
 #include <gui/screenmenu_screen/ScreenMenuPresenter.hpp>
 #include <gui/screen_logo_screen/screen_logoView.hpp>
 #include <gui/screen_logo_screen/screen_logoPresenter.hpp>
+#include <gui/screenblockzone_screen/ScreenBlockZoneView.hpp>
+#include <gui/screenblockzone_screen/ScreenBlockZonePresenter.hpp>
 
 
 /**
@@ -58,7 +60,8 @@ public:
             touchgfx::meta::TypeList< ScreenMenu_ConnectionView,
             touchgfx::meta::TypeList< ScreenMenuView,
             touchgfx::meta::TypeList< screen_logoView,
-            touchgfx::meta::Nil > > > > > > >
+            touchgfx::meta::TypeList< ScreenBlockZoneView,
+            touchgfx::meta::Nil > > > > > > > >
             > GeneratedViewTypes;
 
     /**
@@ -78,7 +81,8 @@ public:
             touchgfx::meta::TypeList< ScreenMenu_ConnectionPresenter,
             touchgfx::meta::TypeList< ScreenMenuPresenter,
             touchgfx::meta::TypeList< screen_logoPresenter,
-            touchgfx::meta::Nil > > > > > > >
+            touchgfx::meta::TypeList< ScreenBlockZonePresenter,
+            touchgfx::meta::Nil > > > > > > > >
             > GeneratedPresenterTypes;
 
     /**

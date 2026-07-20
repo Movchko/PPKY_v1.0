@@ -189,7 +189,7 @@ void mainscreenView::fireShowCurrentZone()
 		if (s_fire_mode == 1u || s_fire_mode == 5u) {
 			ui_set_warning_header_visible(this, true);
 			uiSetTopHeaderText((s_fire_mode == 5u) ? "ПАУЗА" : "ДО ПУСКА");
-		} else if (s_fire_mode == 6u) {
+		} else if (s_fire_mode == 6u || s_fire_mode == 8u) {
 			ui_set_warning_header_visible(this, true);
 			uiSetTopHeaderText("");
 		} else {
@@ -340,7 +340,7 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 		if (mode == 1u || mode == 5u) {
 			ui_set_warning_header_visible(this, true);
 			uiSetTopHeaderText((mode == 5u) ? "ПАУЗА" : "ДО ПУСКА");
-		} else if (mode == 6u) {
+		} else if (mode == 6u || mode == 8u) {
 			ui_set_warning_header_visible(this, true);
 			uiSetTopHeaderText("");
 		} else if (s_banner_mode != BANNER_WARNING) {
@@ -406,6 +406,8 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 			snprintf(buf, sizeof(buf), "%uС", (unsigned)remaining_s);
 		} else if (mode == 6u) {
 			snprintf(buf, sizeof(buf), "ПОЖАР1");
+		} else if (mode == 8u) {
+			snprintf(buf, sizeof(buf), "ПУСК ЗАБЛ.");
 		} else if (mode == 2u) {
 			snprintf(buf, sizeof(buf), "ТУШЕНИЕ");
 									//  1234567890

@@ -218,17 +218,38 @@
             "Height": 64
           },
           {
-            "Type": "TextArea",
-            "Name": "textAreatime_2",
+            "Type": "CustomContainerInstance",
+            "Name": "CustomContainerSrollText",
+            "Y": 46,
             "Width": 128,
-            "Height": 64,
-            "TextId": "__SingleUse_1SPW",
+            "Height": 18,
+            "CustomContainerDefinitionName": "CustomContainerSollText"
+          },
+          {
+            "Type": "TextArea",
+            "Name": "textArea1",
+            "Y": 18,
+            "Width": 128,
+            "Height": 28,
+            "TextId": "__SingleUse_8AZN",
             "TextRotation": "0",
             "Color": {
               "Red": 255,
               "Green": 255,
               "Blue": 255
+            },
+            "Wildcard1": {
+              "TextId": "__SingleUse_CMDH",
+              "UseBuffer": true,
+              "BufferSize": 14
             }
+          },
+          {
+            "Type": "CustomContainerInstance",
+            "Name": "CustomContainerSrollText_1",
+            "Width": 128,
+            "Height": 18,
+            "CustomContainerDefinitionName": "CustomContainerSollText"
           }
         ],
         "Interactions": [
@@ -490,6 +511,62 @@
             }
           }
         ]
+      },
+      {
+        "Name": "ScreenBlockZone",
+        "Components": [
+          {
+            "Type": "Box",
+            "Name": "box1",
+            "Width": 128,
+            "Height": 64
+          },
+          {
+            "Type": "TextArea",
+            "Name": "textAreatime_on_off",
+            "Y": 41,
+            "Width": 128,
+            "Height": 23,
+            "TextId": "__SingleUse_K73U",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            },
+            "Wildcard1": {
+              "TextId": "__SingleUse_7EI5",
+              "UseBuffer": true,
+              "BufferSize": 15
+            },
+            "Draggable": true,
+            "Moveable": true
+          },
+          {
+            "Type": "CustomContainerInstance",
+            "Name": "CustomContainerSrollText",
+            "Y": 23,
+            "Width": 128,
+            "Height": 18,
+            "CustomContainerDefinitionName": "CustomContainerSollText"
+          },
+          {
+            "Type": "TextArea",
+            "Name": "textAreatime_top_bar",
+            "Width": 128,
+            "Height": 23,
+            "TextId": "Zone",
+            "TextRotation": "0",
+            "Color": {
+              "Red": 255,
+              "Green": 255,
+              "Blue": 255
+            },
+            "Draggable": true,
+            "Moveable": true
+          }
+        ],
+        "Interactions": []
       }
     ],
     "CustomContainerDefinitions": [

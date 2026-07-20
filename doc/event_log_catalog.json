@@ -290,8 +290,8 @@
       "name": "Отсутствует устройство",
       "level": "general",
       "debug_only": false,
-      "status": "specified",
-      "description": "Ожидаемое по конфигу устройство не отвечает на шине или пропало из активного списка.",
+      "status": "implemented",
+      "description": "Ожидаемое по конфигу устройство (МКУ или вирт. канал) не online. additional[0]=phase (0=появилась, 1=устранена), [1]=slot CfgDevices, [2]=l_adr канала (0=МКУ).",
       "uses": {
         "can_header": "recommended",
         "can_data": "optional",
@@ -309,23 +309,21 @@
         "additional": [
           {
             "offset": 0,
-            "name": "encoding",
+            "name": "phase",
             "type": "uint8",
-            "required": true,
-            "default": 0,
-            "enum": {
-              "0": "h_adr_list",
-              "1": "h_adr_bitmask"
-            },
-            "description": "Способ упаковки списка устройств в additional[1..7]"
+            "enum": { "0": "appeared", "1": "cleared" }
           },
           {
             "offset": 1,
-            "name": "device_list",
-            "type": "bytes",
-            "size": 7,
-            "required": false,
-            "description": "encoding=0: до 7 байт h_adr (0 = конец списка). encoding=1: битовая маска h_adr 1..56 в 7 байтах (младшие биты = меньшие адреса)"
+            "name": "cfg_slot",
+            "type": "uint8",
+            "description": "Индекс слота CfgDevices[32]"
+          },
+          {
+            "offset": 2,
+            "name": "l_adr",
+            "type": "uint8",
+            "description": "l_adr вирт. канала; 0 если отсутствует МКУ целиком"
           }
         ]
       }
@@ -336,8 +334,8 @@
       "name": "Найдено новое устройство",
       "level": "general",
       "debug_only": false,
-      "status": "specified",
-      "description": "На шине появилось устройство, отсутствующее в сохранённом конфиге ППКУ.",
+      "status": "implemented",
+      "description": "На шине online устройство/канал, не совпадающее с PPKYConfig. additional[0]=phase. can_header=фактический ID.",
       "uses": {
         "can_header": "recommended",
         "can_data": "optional",
@@ -351,17 +349,9 @@
         "additional": [
           {
             "offset": 0,
-            "name": "encoding",
+            "name": "phase",
             "type": "uint8",
-            "enum": { "0": "h_adr_list", "1": "h_adr_bitmask" },
-            "default": 0
-          },
-          {
-            "offset": 1,
-            "name": "device_list",
-            "type": "bytes",
-            "size": 7,
-            "description": "Аналогично событию 4"
+            "enum": { "0": "appeared", "1": "cleared" }
           }
         ]
       }
@@ -372,8 +362,8 @@
       "name": "Конфигурация не совпала",
       "level": "general",
       "debug_only": false,
-      "status": "specified",
-      "description": "Конфиг МКУ на шине не совпадает с образом в PPKYConfig.CfgDevices (CRC, тип, серийник, позиция).",
+      "status": "implemented",
+      "description": "CRC MKUCfg на online МКУ не совпал с PPKYConfig.CfgDevices[slot]. Периодическая проверка раз в 5 с (round-robin). additional[0]=phase, [1]=slot, [2]=0 (crc).",
       "uses": {
         "can_header": "recommended",
         "can_data": "optional",
@@ -391,29 +381,21 @@
         "additional": [
           {
             "offset": 0,
-            "name": "mismatch_type",
+            "name": "phase",
             "type": "uint8",
-            "enum": {
-              "0": "crc",
-              "1": "device_type",
-              "2": "serial",
-              "3": "position",
-              "4": "presence"
-            },
-            "description": "Тип несовпадения"
+            "enum": { "0": "appeared", "1": "cleared" }
           },
           {
             "offset": 1,
-            "name": "slot_index",
+            "name": "cfg_slot",
             "type": "uint8",
-            "description": "Индекс слота в CfgDevices[32] (0..31), 0xFF если неизвестен"
+            "description": "Индекс слота CfgDevices[32]"
           },
           {
             "offset": 2,
-            "name": "device_list",
-            "type": "bytes",
-            "size": 6,
-            "description": "Доп. список h_adr при множественном расхождении"
+            "name": "mismatch_type",
+            "type": "uint8",
+            "enum": { "0": "crc" }
           }
         ]
       }

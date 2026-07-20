@@ -15,11 +15,19 @@ ScreenMenu_jurnalViewBase::ScreenMenu_jurnalViewBase()
     box1.setColor(touchgfx::Color::getColorFromRGB(0, 0, 0));
     add(box1);
 
-    textAreatime_2.setPosition(0, 0, 128, 64);
-    textAreatime_2.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
-    textAreatime_2.setLinespacing(0);
-    textAreatime_2.setTypedText(touchgfx::TypedText(T___SINGLEUSE_1SPW));
-    add(textAreatime_2);
+    CustomContainerSrollText.setXY(0, 46);
+    add(CustomContainerSrollText);
+
+    textArea1.setPosition(0, 18, 128, 28);
+    textArea1.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
+    textArea1.setLinespacing(0);
+    Unicode::snprintf(textArea1Buffer, TEXTAREA1_SIZE, "%s", touchgfx::TypedText(T___SINGLEUSE_CMDH).getText());
+    textArea1.setWildcard(textArea1Buffer);
+    textArea1.setTypedText(touchgfx::TypedText(T___SINGLEUSE_8AZN));
+    add(textArea1);
+
+    CustomContainerSrollText_1.setXY(0, 0);
+    add(CustomContainerSrollText_1);
 }
 
 ScreenMenu_jurnalViewBase::~ScreenMenu_jurnalViewBase()
@@ -29,5 +37,6 @@ ScreenMenu_jurnalViewBase::~ScreenMenu_jurnalViewBase()
 
 void ScreenMenu_jurnalViewBase::setupScreen()
 {
-
+    CustomContainerSrollText.initialize();
+    CustomContainerSrollText_1.initialize();
 }

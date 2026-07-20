@@ -1,5 +1,8 @@
 #include "config_sync.hpp"
 
+#include "config_monitor.h"
+#include "config_zone_block.h"
+
 #include <string.h>
 
 extern "C" {
@@ -12,8 +15,17 @@ typedef enum {
 	CFGSYNC_OP_NONE = 0,
 	CFGSYNC_OP_READ_ALL,
 	CFGSYNC_OP_VERIFY_CRC,
-	CFGSYNC_OP_APPLY_ALL
+	CFGSYNC_OP_APPLY_ALL,
+	CFGSYNC_OP_PERIODIC_VERIFY,
+	CFGSYNC_OP_READ_MCU_UID,
+	CFGSYNC_OP_SYNC_IGN_BLOCK
 } CfgSyncOp;
+
+typedef enum {
+	IGB_SUB_READ = 0,
+	IGB_SUB_APPLY = 1,
+	IGB_SUB_READBACK = 2
+} IgnBlockSubphase;
 
 typedef enum {
 	CFGSYNC_STEP_IDLE = 0,
@@ -51,6 +63,8 @@ typedef struct {
 	uint8_t req_params[7];
 	uint8_t retries;
 	uint32_t deadline_ms;
+	uint8_t ign_block_subphase;
+	uint8_t ign_block_any_apply;
 } CfgSyncCtx;
 
 static CfgSyncCtx g_cfg_sync = {};
@@ -64,6 +78,9 @@ static uint8_t *g_crc_mismatch_flag = nullptr;
 
 #define CFGSYNC_REQ_TIMEOUT_MS   150u
 #define CFGSYNC_REQ_MAX_RETRIES  5u
+
+static void ResolveRuntimeDevForSlot(uint8_t slot, Device *out_dev);
+static void CfgSync_SendReq(const Device *dev, uint8_t cmd, const uint8_t *params, uint32_t now_ms);
 
 static uint8_t IsMcuType(uint8_t d_type) {
 	return (d_type == DEVICE_MCU_IGN_TYPE ||
@@ -79,6 +96,117 @@ static uint8_t IsValidCfgSlot(uint8_t slot) {
 		return 0u;
 	}
 	return IsMcuType(g_cfg->CfgDevices[slot].UId.devId.d_type);
+}
+
+static uint8_t CfgSync_SlotHasIgniterInCfg(uint8_t slot) {
+	if (g_cfg == nullptr || slot >= 32u) {
+		return 0u;
+	}
+	const MKUCfg *mcu = &g_cfg->CfgDevices[slot];
+	for (uint8_t vi = 0u; vi < NUM_DEV_IN_MCU; vi++) {
+		if ((uint8_t)(mcu->VDtype[vi] & 0xFFu) == DEVICE_IGNITER_TYPE) {
+			return 1u;
+		}
+	}
+	return 0u;
+}
+
+static uint8_t CfgSync_DevMatchesActive(const Device *a, const Device *b) {
+	if (a == nullptr || b == nullptr) {
+		return 0u;
+	}
+	return (a->d_type == b->d_type &&
+	        a->h_adr == b->h_adr &&
+	        (a->l_adr & 0x3Fu) == (b->l_adr & 0x3Fu) &&
+	        (a->zone & 0x7Fu) == (b->zone & 0x7Fu)) ? 1u : 0u;
+}
+
+static uint8_t CfgSync_ActiveDevHasIgniterVdev(const Device *dev) {
+	if (dev == nullptr || g_active_devices == nullptr || g_active_devices_count == nullptr) {
+		return 0u;
+	}
+	for (uint8_t i = 0u; i < *g_active_devices_count; i++) {
+		const ActiveDeviceInfo *ad = &g_active_devices[i];
+		if (ad->online == 0u) {
+			continue;
+		}
+		if (!CfgSync_DevMatchesActive(&ad->dev, dev)) {
+			continue;
+		}
+		for (uint8_t vi = 0u; vi < ad->vdev_count; vi++) {
+			if (ad->vdevs[vi].online != 0u &&
+			    ad->vdevs[vi].v_d_type == DEVICE_IGNITER_TYPE) {
+				return 1u;
+			}
+		}
+		return 0u;
+	}
+	return 0u;
+}
+
+static uint8_t CfgSync_SlotEligibleForIgnBlock(uint8_t slot) {
+	Device dev;
+	if (!IsValidCfgSlot(slot)) {
+		return 0u;
+	}
+	ResolveRuntimeDevForSlot(slot, &dev);
+	if ((dev.zone & 0x7Fu) == 0u) {
+		return 0u;
+	}
+	if (!CfgSync_ActiveDevHasIgniterVdev(&dev)) {
+		return 0u;
+	}
+	if (!CfgSync_SlotHasIgniterInCfg(slot)) {
+		return 0u;
+	}
+	return 1u;
+}
+
+static uint8_t CfgSync_PatchIgniterBlocks(uint8_t slot, uint8_t zone_can) {
+	if (g_cfg == nullptr || slot >= 32u || zone_can == 0u) {
+		return 0u;
+	}
+	const uint8_t expected = PPKY_ZoneLaunchBlockedByCanZone(zone_can);
+	MKUCfg *mcu = &g_cfg->CfgDevices[slot];
+	uint8_t dirty = 0u;
+	for (uint8_t vi = 0u; vi < NUM_DEV_IN_MCU; vi++) {
+		if ((uint8_t)(mcu->VDtype[vi] & 0xFFu) != DEVICE_IGNITER_TYPE) {
+			continue;
+		}
+		DeviceIgniterConfig *ic = reinterpret_cast<DeviceIgniterConfig *>(mcu->Devices[vi].reserv);
+		if (ic->block != expected) {
+			ic->block = expected;
+			dirty = 1u;
+		}
+	}
+	return dirty;
+}
+
+static void CfgSync_BeginReadWords(uint32_t now_ms) {
+	g_cfg_sync.word_index = 0u;
+	uint8_t p[7] = {0u};
+	p[0] = (uint8_t)((g_cfg_sync.word_index >> 8) & 0xFFu);
+	p[1] = (uint8_t)(g_cfg_sync.word_index & 0xFFu);
+	CfgSync_SendReq(&g_cfg_sync.current_dev, ServiceCmd_GetConfigWord, p, now_ms);
+	g_cfg_sync.step = CFGSYNC_STEP_WAIT_CFG_WORD;
+}
+
+static void CfgSync_BeginApplyWords(uint32_t now_ms) {
+	const uint8_t *cfg_bytes = (const uint8_t *)&g_cfg->CfgDevices[g_cfg_sync.current_slot];
+	g_cfg_sync.word_index = 0u;
+	uint32_t word = ((uint32_t)cfg_bytes[0] << 24) |
+	                ((uint32_t)cfg_bytes[1] << 16) |
+	                ((uint32_t)cfg_bytes[2] << 8)  |
+	                ((uint32_t)cfg_bytes[3] << 0);
+	uint8_t p[7] = {0u};
+	p[0] = 0u;
+	p[1] = 0u;
+	p[2] = (uint8_t)((word >> 24) & 0xFFu);
+	p[3] = (uint8_t)((word >> 16) & 0xFFu);
+	p[4] = (uint8_t)((word >> 8) & 0xFFu);
+	p[5] = (uint8_t)(word & 0xFFu);
+	CfgSync_SendReq(&g_cfg_sync.current_dev, ServiceCmd_SetConfigWord, p, now_ms);
+	g_cfg_sync.step = CFGSYNC_STEP_WAIT_SET_CFG_WORD;
 }
 
 /* Для APPLY/VERIFY адресовать команды нужно на фактический "живой" адрес МКУ в шине,
@@ -193,10 +321,15 @@ static void CfgSync_ResendReq(uint32_t now_ms) {
 
 static void CfgSync_MarkCurrentFailed(uint8_t reason) {
 	g_cfg_sync.failed_count++;
-	if (g_crc_mismatch_flag != nullptr) {
+	if (g_cfg_sync.op == CFGSYNC_OP_PERIODIC_VERIFY) {
+		ConfigMonitor_OnPeriodicCrcResult(g_cfg_sync.current_slot, 0u, 1u);
+	} else if (g_cfg_sync.op == CFGSYNC_OP_READ_MCU_UID) {
+		ConfigMonitor_OnRemoteUidRead(&g_cfg_sync.current_dev, nullptr, 0u);
+	} else if (g_crc_mismatch_flag != nullptr) {
 		*g_crc_mismatch_flag = 1u;
 	}
-	if (g_cfg_sync.op == CFGSYNC_OP_APPLY_ALL) {
+	if (g_cfg_sync.op == CFGSYNC_OP_APPLY_ALL ||
+	    (g_cfg_sync.op == CFGSYNC_OP_SYNC_IGN_BLOCK && g_cfg_sync.ign_block_subphase == IGB_SUB_APPLY)) {
 		EventLog_LogConfigApplyFail(g_cfg_sync.current_dev.d_type,
 		                            g_cfg_sync.current_dev.h_adr,
 		                            g_cfg_sync.current_dev.l_adr,
@@ -210,10 +343,12 @@ static void CfgSync_Finish(uint8_t success, uint8_t save_ppky_cfg) {
 	CfgSyncOp finished_op = g_cfg_sync.op;
 	uint8_t failed_count = g_cfg_sync.failed_count;
 	uint8_t target_count = g_cfg_sync.target_count;
+	uint8_t ign_block_any_apply = g_cfg_sync.ign_block_any_apply;
 	g_cfg_sync.busy = 0u;
 	g_cfg_sync.waiting_reply = 0u;
 	g_cfg_sync.success = success ? 1u : 0u;
-	if (success && g_crc_mismatch_flag != nullptr) {
+	if (success && g_crc_mismatch_flag != nullptr &&
+	    finished_op != CFGSYNC_OP_PERIODIC_VERIFY && finished_op != CFGSYNC_OP_READ_MCU_UID) {
 		*g_crc_mismatch_flag = 0u;
 	}
 	if (save_ppky_cfg && g_save_config_cb != nullptr) {
@@ -229,14 +364,38 @@ static void CfgSync_Finish(uint8_t success, uint8_t save_ppky_cfg) {
 			}
 		}
 	}
+	if (finished_op == CFGSYNC_OP_SYNC_IGN_BLOCK && success && ign_block_any_apply != 0u) {
+		if (g_apply_success_cb != nullptr) {
+			g_apply_success_cb();
+		}
+	}
 }
 
 static uint8_t CfgSync_StartTargetByPos(uint32_t now_ms) {
+	if (g_cfg_sync.op == CFGSYNC_OP_READ_MCU_UID) {
+		if (g_cfg_sync.target_pos >= g_cfg_sync.target_count) {
+			return 0u;
+		}
+		g_cfg_sync.target_pos++;
+		memset(g_cfg_sync.rx_buf, 0, sizeof(g_cfg_sync.rx_buf));
+		g_cfg_sync.total_words = (uint16_t)(sizeof(UniqId) / 4u);
+		g_cfg_sync.word_index = 0u;
+		uint8_t p[7] = {0u};
+		CfgSync_SendReq(&g_cfg_sync.current_dev, ServiceCmd_GetConfigWord, p, now_ms);
+		g_cfg_sync.step = CFGSYNC_STEP_WAIT_CFG_WORD;
+		return 1u;
+	}
+
 	while (g_cfg_sync.target_pos < g_cfg_sync.target_count) {
 		uint8_t slot = g_cfg_sync.target_slots[g_cfg_sync.target_pos];
 		g_cfg_sync.current_slot = slot;
-		if (g_cfg_sync.op == CFGSYNC_OP_APPLY_ALL || g_cfg_sync.op == CFGSYNC_OP_VERIFY_CRC) {
+		if (g_cfg_sync.op == CFGSYNC_OP_APPLY_ALL ||
+		    g_cfg_sync.op == CFGSYNC_OP_VERIFY_CRC ||
+		    g_cfg_sync.op == CFGSYNC_OP_PERIODIC_VERIFY ||
+		    g_cfg_sync.op == CFGSYNC_OP_SYNC_IGN_BLOCK) {
 			ResolveRuntimeDevForSlot(slot, &g_cfg_sync.current_dev);
+		} else if (g_cfg_sync.op == CFGSYNC_OP_READ_MCU_UID) {
+			/* current_dev уже задан вызывающим кодом */
 		} else {
 			g_cfg_sync.current_dev = g_cfg->CfgDevices[slot].UId.devId;
 		}
@@ -244,6 +403,13 @@ static uint8_t CfgSync_StartTargetByPos(uint32_t now_ms) {
 		if (!IsMcuType(g_cfg_sync.current_dev.d_type)) {
 			g_cfg_sync.target_pos++;
 			continue;
+		}
+		if (g_cfg_sync.op == CFGSYNC_OP_SYNC_IGN_BLOCK) {
+			if ((g_cfg_sync.current_dev.zone & 0x7Fu) == 0u) {
+				g_cfg_sync.target_pos++;
+				continue;
+			}
+			g_cfg_sync.ign_block_subphase = IGB_SUB_READ;
 		}
 
 		memset(g_cfg_sync.rx_buf, 0, sizeof(g_cfg_sync.rx_buf));
@@ -261,7 +427,8 @@ static uint8_t CfgSync_StartTargetByPos(uint32_t now_ms) {
 	return 0u;
 }
 
-static void CfgSync_StartCommon(CfgSyncOp op, uint8_t rebuild_from_active) {
+static void CfgSync_StartCommon(CfgSyncOp op, uint8_t rebuild_from_active, int8_t single_slot)
+{
 	if (g_cfg_sync.busy || g_cfg == nullptr) {
 		return;
 	}
@@ -275,9 +442,15 @@ static void CfgSync_StartCommon(CfgSyncOp op, uint8_t rebuild_from_active) {
 	g_cfg_sync.op = op;
 	g_cfg_sync.step = CFGSYNC_STEP_IDLE;
 
-	for (uint8_t i = 0u; i < 32u; i++) {
-		if (IsValidCfgSlot(i)) {
-			g_cfg_sync.target_slots[g_cfg_sync.target_count++] = i;
+	if (single_slot >= 0) {
+		if (IsValidCfgSlot((uint8_t)single_slot)) {
+			g_cfg_sync.target_slots[g_cfg_sync.target_count++] = (uint8_t)single_slot;
+		}
+	} else {
+		for (uint8_t i = 0u; i < 32u; i++) {
+			if (IsValidCfgSlot(i)) {
+				g_cfg_sync.target_slots[g_cfg_sync.target_count++] = i;
+			}
 		}
 	}
 	if (g_cfg_sync.target_count == 0u) {
@@ -310,16 +483,12 @@ static void CfgSync_HandleCfgSizeReply(const uint8_t *MsgData, uint32_t now_ms) 
 	g_cfg_sync.total_words = (uint16_t)(g_cfg_sync.remote_cfg_size / 4u);
 	g_cfg_sync.word_index = 0u;
 
-	if (g_cfg_sync.op == CFGSYNC_OP_READ_ALL) {
-		uint8_t p[7] = {0u};
-		p[0] = (uint8_t)((g_cfg_sync.word_index >> 8) & 0xFFu);
-		p[1] = (uint8_t)(g_cfg_sync.word_index & 0xFFu);
-		CfgSync_SendReq(&g_cfg_sync.current_dev, ServiceCmd_GetConfigWord, p, now_ms);
-		g_cfg_sync.step = CFGSYNC_STEP_WAIT_CFG_WORD;
+	if (g_cfg_sync.op == CFGSYNC_OP_READ_ALL || g_cfg_sync.op == CFGSYNC_OP_SYNC_IGN_BLOCK) {
+		CfgSync_BeginReadWords(now_ms);
 		return;
 	}
 
-	if (g_cfg_sync.op == CFGSYNC_OP_VERIFY_CRC) {
+	if (g_cfg_sync.op == CFGSYNC_OP_VERIFY_CRC || g_cfg_sync.op == CFGSYNC_OP_PERIODIC_VERIFY) {
 		g_cfg_sync.expected_crc = crc32(POLYNOM, &g_cfg->CfgDevices[g_cfg_sync.current_slot], sizeof(MKUCfg));
 		uint8_t p[7] = {0u}; /* saved config crc */
 		CfgSync_SendReq(&g_cfg_sync.current_dev, ServiceCmd_GetConfigCRC, p, now_ms);
@@ -334,20 +503,7 @@ static void CfgSync_HandleCfgSizeReply(const uint8_t *MsgData, uint32_t now_ms) 
 		return;
 	}
 
-	const uint8_t *cfg_bytes = (const uint8_t *)&g_cfg->CfgDevices[g_cfg_sync.current_slot];
-	uint32_t word = ((uint32_t)cfg_bytes[0] << 24) |
-	               ((uint32_t)cfg_bytes[1] << 16) |
-	               ((uint32_t)cfg_bytes[2] << 8)  |
-	               ((uint32_t)cfg_bytes[3] << 0);
-	uint8_t p[7] = {0u};
-	p[0] = 0u;
-	p[1] = 0u;
-	p[2] = (uint8_t)((word >> 24) & 0xFFu);
-	p[3] = (uint8_t)((word >> 16) & 0xFFu);
-	p[4] = (uint8_t)((word >> 8) & 0xFFu);
-	p[5] = (uint8_t)(word & 0xFFu);
-	CfgSync_SendReq(&g_cfg_sync.current_dev, ServiceCmd_SetConfigWord, p, now_ms);
-	g_cfg_sync.step = CFGSYNC_STEP_WAIT_SET_CFG_WORD;
+	CfgSync_BeginApplyWords(now_ms);
 }
 
 static void CfgSync_HandleCfgWordReply(const uint8_t *MsgData, uint32_t now_ms) {
@@ -378,6 +534,31 @@ static void CfgSync_HandleCfgWordReply(const uint8_t *MsgData, uint32_t now_ms) 
 		return;
 	}
 
+	if (g_cfg_sync.op == CFGSYNC_OP_READ_MCU_UID) {
+		ConfigMonitor_OnRemoteUidRead(&g_cfg_sync.current_dev, g_cfg_sync.rx_buf,
+					      (g_cfg_sync.failed_count == 0u) ? 1u : 0u);
+		CfgSync_NextTargetOrFinish(now_ms);
+		return;
+	}
+
+	if (g_cfg_sync.op == CFGSYNC_OP_SYNC_IGN_BLOCK) {
+		memcpy(&g_cfg->CfgDevices[g_cfg_sync.current_slot], g_cfg_sync.rx_buf, sizeof(MKUCfg));
+		if (g_cfg_sync.ign_block_subphase == IGB_SUB_READBACK) {
+			CfgSync_NextTargetOrFinish(now_ms);
+			return;
+		}
+		const uint8_t dirty = CfgSync_PatchIgniterBlocks(g_cfg_sync.current_slot,
+		                                                 g_cfg_sync.current_dev.zone & 0x7Fu);
+		if (dirty == 0u) {
+			CfgSync_NextTargetOrFinish(now_ms);
+			return;
+		}
+		g_cfg_sync.ign_block_subphase = IGB_SUB_APPLY;
+		g_cfg_sync.ign_block_any_apply = 1u;
+		CfgSync_BeginApplyWords(now_ms);
+		return;
+	}
+
 	memcpy(&g_cfg->CfgDevices[g_cfg_sync.current_slot], g_cfg_sync.rx_buf, sizeof(MKUCfg));
 	CfgSync_NextTargetOrFinish(now_ms);
 }
@@ -390,8 +571,28 @@ static void CfgSync_HandleCfgCrcReply(const uint8_t *MsgData, uint32_t now_ms) {
 	                        ((uint32_t)MsgData[4] << 0);
 
 	if (g_cfg_sync.remote_crc != g_cfg_sync.expected_crc) {
-		CfgSync_MarkCurrentFailed(3u); /* crc_mismatch */
+		if (g_cfg_sync.op == CFGSYNC_OP_PERIODIC_VERIFY) {
+			ConfigMonitor_OnPeriodicCrcResult(g_cfg_sync.current_slot, 0u, 0u);
+		} else if (!(g_cfg_sync.op == CFGSYNC_OP_SYNC_IGN_BLOCK &&
+		             g_cfg_sync.step == CFGSYNC_STEP_WAIT_SAVE_AND_READBACK_CRC)) {
+			CfgSync_MarkCurrentFailed(3u); /* crc_mismatch */
+		}
+	} else if (g_cfg_sync.op == CFGSYNC_OP_PERIODIC_VERIFY) {
+		ConfigMonitor_OnPeriodicCrcResult(g_cfg_sync.current_slot, 1u, 0u);
 	}
+
+	if (g_cfg_sync.step == CFGSYNC_STEP_WAIT_SAVE_AND_READBACK_CRC &&
+	    g_cfg_sync.op == CFGSYNC_OP_SYNC_IGN_BLOCK) {
+		if (g_cfg_sync.remote_crc == g_cfg_sync.expected_crc) {
+			g_cfg_sync.ign_block_subphase = IGB_SUB_READBACK;
+			CfgSync_BeginReadWords(now_ms);
+		} else {
+			CfgSync_MarkCurrentFailed(3u);
+			CfgSync_NextTargetOrFinish(now_ms);
+		}
+		return;
+	}
+
 	CfgSync_NextTargetOrFinish(now_ms);
 }
 
@@ -542,15 +743,56 @@ extern "C" void ConfigSync_OnListenerMessage(uint32_t msg_id, const uint8_t *msg
 }
 
 extern "C" void ConfigSync_StartReadAllAndSave(void) {
-	CfgSync_StartCommon(CFGSYNC_OP_READ_ALL, 1u);
+	CfgSync_StartCommon(CFGSYNC_OP_READ_ALL, 1u, -1);
 }
 
 extern "C" void ConfigSync_StartVerify(void) {
-	CfgSync_StartCommon(CFGSYNC_OP_VERIFY_CRC, 0u);
+	CfgSync_StartCommon(CFGSYNC_OP_VERIFY_CRC, 0u, -1);
 }
 
 extern "C" void ConfigSync_StartApply(void) {
-	CfgSync_StartCommon(CFGSYNC_OP_APPLY_ALL, 0u);
+	CfgSync_StartCommon(CFGSYNC_OP_APPLY_ALL, 0u, -1);
+}
+
+extern "C" void ConfigSync_StartPeriodicVerifySlot(uint8_t slot) {
+	CfgSync_StartCommon(CFGSYNC_OP_PERIODIC_VERIFY, 0u, (int8_t)slot);
+}
+
+extern "C" void ConfigSync_StartReadMcuUid(const Device *dev) {
+	if (g_cfg_sync.busy || g_cfg == nullptr || dev == nullptr) {
+		return;
+	}
+
+	memset(&g_cfg_sync, 0, sizeof(g_cfg_sync));
+	g_cfg_sync.busy = 1u;
+	g_cfg_sync.op = CFGSYNC_OP_READ_MCU_UID;
+	g_cfg_sync.current_dev = *dev;
+	g_cfg_sync.target_count = 1u;
+	g_cfg_sync.total_words = (uint16_t)(sizeof(UniqId) / 4u);
+}
+
+extern "C" void ConfigSync_StartIgnBlockSync(void) {
+	if (g_cfg_sync.busy || g_cfg == nullptr) {
+		return;
+	}
+
+	memset(&g_cfg_sync, 0, sizeof(g_cfg_sync));
+	g_cfg_sync.busy = 1u;
+	g_cfg_sync.op = CFGSYNC_OP_SYNC_IGN_BLOCK;
+	g_cfg_sync.step = CFGSYNC_STEP_IDLE;
+
+	for (uint8_t i = 0u; i < 32u; i++) {
+		if (!CfgSync_SlotEligibleForIgnBlock(i)) {
+			continue;
+		}
+		if (g_cfg_sync.target_count < 32u) {
+			g_cfg_sync.target_slots[g_cfg_sync.target_count++] = i;
+		}
+	}
+
+	if (g_cfg_sync.target_count == 0u) {
+		CfgSync_Finish(1u, 0u);
+	}
 }
 
 extern "C" uint8_t ConfigSync_IsBusy(void) {

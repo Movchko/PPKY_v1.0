@@ -27,7 +27,7 @@ private:
     ScreenMenuView& view;
 
 #ifndef SIMULATOR
-    static const int MENU_ITEMS = 6;
+    static const int MENU_ITEMS = 7;
     bool soundOn;
     int16_t currentIndex;
     void refreshLine();

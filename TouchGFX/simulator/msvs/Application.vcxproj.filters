@@ -280,6 +280,18 @@
     <Filter Include="Source Files\generated\gui_generated\screenmenu_config_screen">
       <UniqueIdentifier>803B45BD-5348-D390-5D8A-5AE64E96AA48</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\gui\screenblockzone_screen">
+      <UniqueIdentifier>75E3AA6A-87D6-DDB4-F84B-59F03D583EE9</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\gui\screenblockzone_screen">
+      <UniqueIdentifier>3B5811A0-D3FA-79CA-6DF7-E94E90F74500</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\generated\gui_generated\screenblockzone_screen">
+      <UniqueIdentifier>951139B7-A370-38BC-BBB4-648D02B25A97</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\generated\gui_generated\screenblockzone_screen">
+      <UniqueIdentifier>22376D06-EB48-BE3D-2606-D5423D4D4FF4</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(TouchGFXReleasePath)\framework\source\platform\driver\touch\SDL2TouchController.cpp">
@@ -419,6 +431,15 @@
     </ClCompile>
     <ClCompile Include="..\..\generated\gui_generated\src\screenmenu_mcu_details_screen\ScreenMenu_MCU_DetailsViewBase.cpp">
       <Filter>Source Files\generated\gui_generated\screenmenu_mcu_details_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\screenblockzone_screen\ScreenBlockZonePresenter.cpp">
+      <Filter>Source Files\gui\screenblockzone_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\gui\src\screenblockzone_screen\ScreenBlockZoneView.cpp">
+      <Filter>Source Files\gui\screenblockzone_screen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\generated\gui_generated\src\screenblockzone_screen\ScreenBlockZoneViewBase.cpp">
+      <Filter>Source Files\generated\gui_generated\screenblockzone_screen</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -969,6 +990,15 @@
     </ClInclude>
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screenmenu_mcu_details_screen\ScreenMenu_MCU_DetailsViewBase.hpp">
       <Filter>Header Files\generated\gui_generated\screenmenu_mcu_details_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\screenblockzone_screen\ScreenBlockZonePresenter.hpp">
+      <Filter>Header Files\gui\screenblockzone_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\gui\include\gui\screenblockzone_screen\ScreenBlockZoneView.hpp">
+      <Filter>Header Files\gui\screenblockzone_screen</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screenblockzone_screen\ScreenBlockZoneViewBase.hpp">
+      <Filter>Header Files\generated\gui_generated\screenblockzone_screen</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

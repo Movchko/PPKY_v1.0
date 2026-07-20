@@ -8,7 +8,8 @@
 #include <mvp/View.hpp>
 #include <gui/screenmenu_jurnal_screen/ScreenMenu_jurnalPresenter.hpp>
 #include <touchgfx/widgets/Box.hpp>
-#include <touchgfx/widgets/TextArea.hpp>
+#include <gui/containers/CustomContainerSollText.hpp>
+#include <touchgfx/widgets/TextAreaWithWildcard.hpp>
 
 class ScreenMenu_jurnalViewBase : public touchgfx::View<ScreenMenu_jurnalPresenter>
 {
@@ -36,7 +37,15 @@ protected:
      */
     touchgfx::Box __background;
     touchgfx::Box box1;
-    touchgfx::TextArea textAreatime_2;
+    CustomContainerSollText CustomContainerSrollText;
+    touchgfx::TextAreaWithOneWildcard textArea1;
+    CustomContainerSollText CustomContainerSrollText_1;
+
+    /*
+     * Wildcard Buffers
+     */
+    static const uint16_t TEXTAREA1_SIZE = 14;
+    touchgfx::Unicode::UnicodeChar textArea1Buffer[TEXTAREA1_SIZE];
 
 private:
 

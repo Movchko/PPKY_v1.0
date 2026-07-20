@@ -6,11 +6,23 @@
   <Texts>
     <TextGroup Id="Group1" />
     <TextGroup Id="Unsorted">
-      <Text Id="__SingleUse_SR9N" Alignment="Center" TypographyId="Small">
+      <Text Id="__SingleUse_CMDH" Alignment="Left" TypographyId="Large">
+        <Translation Language="GB"></Translation>
+      </Text>
+      <Text Id="__SingleUse_8AZN" Alignment="Center" TypographyId="Large">
         <Translation Language="GB">&lt;value&gt;</Translation>
       </Text>
-      <Text Id="__SingleUse_1SPW" Alignment="Left" TypographyId="Small">
-        <Translation Language="GB">В разработке</Translation>
+      <Text Id="__SingleUse_7EI5" Alignment="Left" TypographyId="Default">
+        <Translation Language="GB">НЕ ЗАБЛОК.</Translation>
+      </Text>
+      <Text Id="__SingleUse_K73U" Alignment="Left" TypographyId="Small">
+        <Translation Language="GB">&lt;value&gt;</Translation>
+      </Text>
+      <Text Id="Zone" Alignment="Left" TypographyId="Default">
+        <Translation Language="GB" Alignment="Center">ЗОНА</Translation>
+      </Text>
+      <Text Id="__SingleUse_SR9N" Alignment="Center" TypographyId="Small">
+        <Translation Language="GB">&lt;value&gt;</Translation>
       </Text>
       <Text Id="__SingleUse_750Q" Alignment="Left" TypographyId="Small">
         <Translation Language="GB">ПОДКЛЮЧЕНИЕ</Translation>
@@ -60,6 +72,9 @@
       <Text Id="turnoff" Alignment="Left" TypographyId="Small">
         <Translation Language="GB">Откл</Translation>
       </Text>
+      <Text Id="ResourceId4" Alignment="Left" TypographyId="Default">
+        <Translation Language="GB">New Text</Translation>
+      </Text>
       <Text Id="ru" Alignment="Left" TypographyId="Small">
         <Translation Language="GB">йцукенгшщзхъфывапролджэячсмитьбю ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ-/|\</Translation>
       </Text>
@@ -86,6 +101,9 @@
       </Text>
       <Text Id="Jurnal" Alignment="Center" TypographyId="Large">
         <Translation Language="GB">ЖУРНАЛ</Translation>
+      </Text>
+      <Text Id="IGN_block" Alignment="Center" TypographyId="Large">
+        <Translation Language="GB">БЛОК. ЗОН</Translation>
       </Text>
       <Text Id="Settings" Alignment="Center" TypographyId="Large">
         <Translation Language="GB">НАСТРОЙКИ</Translation>

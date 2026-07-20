@@ -64,6 +64,12 @@ void mainmenu::updateText(int16_t value)
 
 		case 5: {
 
+			Unicode::snprintf(textAreaMainMenuBuffer, TEXTAREAMAINMENU_SIZE, "%s", touchgfx::TypedText(TEXTS(T_IGN_BLOCK)).getText());
+
+		}break;
+
+		case 6: {
+
 			Unicode::snprintf(textAreaMainMenuBuffer, TEXTAREAMAINMENU_SIZE, "%s", touchgfx::TypedText(TEXTS(T_TEST)).getText());
 
 		}break;

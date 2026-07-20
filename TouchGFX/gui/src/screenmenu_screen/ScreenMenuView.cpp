@@ -23,8 +23,8 @@ int16_t ScreenMenuView::getSelectedMenuIndex() const
     if (idx < 0) {
         return 0;
     }
-    if (idx > 5) {
-        return 5;
+    if (idx > 6) {
+        return 6;
     }
     return idx;
 }
@@ -34,8 +34,8 @@ void ScreenMenuView::setMenuIndex(int16_t index)
     if (index < 0) {
         index = 0;
     }
-    if (index > 5) {
-        index = 5;
+    if (index > 6) {
+        index = 6;
     }
     scrollWheel1.animateToItem(index, 10);
 }
@@ -185,6 +185,7 @@ void ScreenMenuView::setupScreen()
 {
     ScreenMenuViewBase::setupScreen();
 #ifndef SIMULATOR
+    scrollWheel1.setNumberOfItems(7);
     initParamLineText();
     /* Поверх paramLineText: сначала белый, сверху чёрный (для перекрытия). */
     remove(box1_white);
@@ -222,8 +223,8 @@ void ScreenMenuView::SetupMenuChangePos(uint8_t val)
 
 void ScreenMenuView::scrollWheel1UpdateItem(mainmenu& item, int16_t itemIndex)
 {
-    if (itemIndex > 5) {
-        itemIndex = 5;
+    if (itemIndex > 6) {
+        itemIndex = 6;
     }
     item.updateText(itemIndex);
 }

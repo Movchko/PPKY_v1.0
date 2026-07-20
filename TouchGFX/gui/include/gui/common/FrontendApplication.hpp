@@ -21,6 +21,7 @@ public:
     void gotoScreenMenuConfigScreenNoTransition();
     void gotoScreenMenuJurnalScreenNoTransition();
     void gotoScreenMenuMcuDetailsScreenNoTransition();
+    void gotoScreenBlockZoneScreenNoTransition();
 
     Model& getModel() { return model; }
 
@@ -31,6 +32,7 @@ private:
     void gotoScreenMenuConfigScreenNoTransitionImpl();
     void gotoScreenMenuJurnalScreenNoTransitionImpl();
     void gotoScreenMenuMcuDetailsScreenNoTransitionImpl();
+    void gotoScreenBlockZoneScreenNoTransitionImpl();
 
     touchgfx::Callback<FrontendApplication> screenMenuTransitionCallback;
     touchgfx::Callback<FrontendApplication> screenDevicesTransitionCallback;
@@ -38,6 +40,7 @@ private:
     touchgfx::Callback<FrontendApplication> screenMenuConfigTransitionCallback;
     touchgfx::Callback<FrontendApplication> screenMenuJurnalTransitionCallback;
     touchgfx::Callback<FrontendApplication> screenMenuMcuDetailsTransitionCallback;
+    touchgfx::Callback<FrontendApplication> screenBlockZoneTransitionCallback;
 
 #ifndef SIMULATOR
     static const int NUM_BUTTONS = 7;

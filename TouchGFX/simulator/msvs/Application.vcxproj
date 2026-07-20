@@ -57,6 +57,9 @@
     <ClCompile Include="..\..\gui\src\screenmenu_mcu_details_screen\ScreenMenu_MCU_DetailsPresenter.cpp"/>
     <ClCompile Include="..\..\gui\src\screenmenu_mcu_details_screen\ScreenMenu_MCU_DetailsView.cpp"/>
     <ClCompile Include="..\..\generated\gui_generated\src\screenmenu_mcu_details_screen\ScreenMenu_MCU_DetailsViewBase.cpp"/>
+    <ClCompile Include="..\..\gui\src\screenblockzone_screen\ScreenBlockZonePresenter.cpp"/>
+    <ClCompile Include="..\..\gui\src\screenblockzone_screen\ScreenBlockZoneView.cpp"/>
+    <ClCompile Include="..\..\generated\gui_generated\src\screenblockzone_screen\ScreenBlockZoneViewBase.cpp"/>
   </ItemGroup>
   <ItemGroup>
     <None Include="$(ApplicationRoot)\assets\texts\texts.xml"/>
@@ -243,6 +246,9 @@
     <ClInclude Include="..\..\gui\include\gui\screenmenu_mcu_details_screen\ScreenMenu_MCU_DetailsPresenter.hpp"/>
     <ClInclude Include="..\..\gui\include\gui\screenmenu_mcu_details_screen\ScreenMenu_MCU_DetailsView.hpp"/>
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screenmenu_mcu_details_screen\ScreenMenu_MCU_DetailsViewBase.hpp"/>
+    <ClInclude Include="..\..\gui\include\gui\screenblockzone_screen\ScreenBlockZonePresenter.hpp"/>
+    <ClInclude Include="..\..\gui\include\gui\screenblockzone_screen\ScreenBlockZoneView.hpp"/>
+    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\screenblockzone_screen\ScreenBlockZoneViewBase.hpp"/>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="$(ApplicationRoot)\generated\simulator\touchgfx.rc"/>

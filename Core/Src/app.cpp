@@ -6,7 +6,9 @@
 #include "led.h"
 #include "backend.h"
 #include "service.h"
+#include "config_monitor.h"
 #include "config_sync.hpp"
+#include "config_ign_block_sync.h"
 #include "can_bus.h"
 #include "device_dpt.hpp"
 #include "device_igniter.hpp"
@@ -1119,36 +1121,6 @@ static void UpdateActiveVirtualDevices(uint32_t MsgID, uint8_t *MsgData, uint32_
 	}
 }
 
-static void CheckMkuConfigMismatch(void) {
-	// Сравнить активные онлайн-устройства с конфигом PPKYConfig.CfgDevices
-	uint8_t presence_mismatch = 0u;
-
-	for (uint8_t i = 0; i < g_active_devices_count; i++) {
-		if (!g_active_devices[i].online)
-			continue;
-
-		uint8_t found = 0;
-		for (uint8_t j = 0; j < 32u; j++) {
-			const MKUCfg *m = &PPKYConfig.CfgDevices[j];
-			const Device *dv = &m->UId.devId;
-			if (dv->d_type == 0)
-				continue;
-			if (dv->zone  == g_active_devices[i].dev.zone &&
-			    dv->h_adr == g_active_devices[i].dev.h_adr &&
-			    dv->l_adr == g_active_devices[i].dev.l_adr &&
-			    dv->d_type == g_active_devices[i].dev.d_type) {
-				found = 1;
-				break;
-			}
-		}
-		if (!found) {
-			presence_mismatch = 1u;
-			break;
-		}
-	}
-	g_mku_mismatch_flag = (presence_mismatch || g_cfg_crc_mismatch_flag) ? 1u : 0u;
-}
-
 
 void SetHAdr(uint8_t h_adr) {
 	extern Device BoardDevicesList[];
@@ -1206,6 +1178,8 @@ void AppInit() {
 	// Передаём указатели в backend (для сервисных команд работы с конфигурацией)
 	SetConfigPtr((uint8_t *)&SavedPPKYConfig, (uint8_t *)&PPKYConfig);
 	ConfigSync_Init(&PPKYConfig, g_active_devices, &g_active_devices_count, SaveConfig, App_OnConfigApplySuccess, &g_cfg_crc_mismatch_flag);
+	ConfigMonitor_Init(HAL_GetTick());
+	ConfigIgnBlockSync_Init();
 
 	// Список устройств по аналогии с МКУ: 0-й элемент — сама плата ППКУ
 	extern Device BoardDevicesList[];
@@ -1323,9 +1297,10 @@ static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 void AppTimer1ms() {
 	uint32_t now = HAL_GetTick();
 	ConfigSync_Process1ms(now);
+	ConfigIgnBlockSync_Process1ms(now);
+	ConfigMonitor_Process1ms(now);
 	AppProcess(now);
 	RefreshActiveDevices(now);
-	CheckMkuConfigMismatch();
 	Position_EvaluateMismatch(now);
 	Warning_SetMkuPositionFaultMask(g_position_fault_mask);
 	App_UpdatePowerFaultIndication(now);
@@ -1338,7 +1313,7 @@ void AppTimer1ms() {
 	if(warning_process_delay)
 		warning_process_delay--;
 	else {
-		WarningProcess1ms();
+		//WarningProcess1ms();
 		RelayAuto_Process();
 		LogTransport_Process();
 	}
@@ -1362,6 +1337,10 @@ void AppTimer10ms() {
 		button_acc = 0;
 		Button_Process();
 	}
+
+	if(warning_process_delay == 0)
+		WarningProcess1ms();
+
 	Fire_Timer10ms();
 	Beeper_Process();
 	Led_Process();

@@ -24,6 +24,8 @@
 #include <gui/screenmenu_screen/ScreenMenuPresenter.hpp>
 #include <gui/screen_logo_screen/screen_logoView.hpp>
 #include <gui/screen_logo_screen/screen_logoPresenter.hpp>
+#include <gui/screenblockzone_screen/ScreenBlockZoneView.hpp>
+#include <gui/screenblockzone_screen/ScreenBlockZonePresenter.hpp>
 
 using namespace touchgfx;
 

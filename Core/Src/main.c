@@ -1264,7 +1264,7 @@ uint8_t SetUpdateWord(uint32_t num, uint32_t word)
 
 const char *GetAppVersion(void)
 {
-    static char ver_buf[48];
+    static char ver_buf[64];
     /* fw: версия прошивки (пока константа) */
     (void)snprintf(ver_buf, sizeof(ver_buf), "БСУ 4 версия аппаратной части %u", (unsigned)APP_VERSION_U32);
     return ver_buf;
@@ -1318,6 +1318,8 @@ void MPU_Config(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
+	//TODO DELETE
+	return;
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
   while (1)

@@ -11,7 +11,23 @@ public:
     virtual ~ScreenMenu_jurnalView() {}
     virtual void setupScreen();
     virtual void tearDownScreen();
+
+#ifndef SIMULATOR
+    void refreshJournalUi();
+    void nextRecord();     /* DOWN: новее */
+    void prevRecord();     /* UP:   старее */
+    void jumpToNewest();   /* ENTER */
+#endif
 protected:
+#ifndef SIMULATOR
+    void renderCurrent();
+    bool loadLogical(uint32_t logical_index);
+    bool stepValid(int direction); /* -1 older, +1 newer */
+
+    uint32_t recordCount = 0u;
+    uint32_t logicalIndex = 0u; /* 0 = oldest among count */
+    uint8_t hasValid = 0u;
+#endif
 };
 
 #endif // SCREENMENU_JURNALVIEW_HPP
