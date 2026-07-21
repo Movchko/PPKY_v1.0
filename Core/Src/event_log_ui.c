@@ -1,10 +1,17 @@
 /*
- * event_log_ui.c — короткие русские строки для экрана журнала.
+ * event_log_ui.c — строки экрана «Журнал» (критический tier).
+ *
+ * Согласовано с warning.cpp BuildUiPayload() / главным экраном:
+ *   центр  — big_titles (ОБРЫВ СП1, КЗ CAN2, ПОЖАР …)
+ *   низ    — details (имя зоны, MKU K1, h_adr, S/N)
+ *
+ * Справочник title/detail — см. EventLogUi_FormatRecord() и таблицу ниже.
  */
 
 #include "event_log_ui.h"
 
 #include "backend.h"
+#include "config_monitor.h"
 #include "device_config.h"
 #include "event_log_catalog.h"
 
@@ -13,90 +20,206 @@
 
 extern PPKYCfg PPKYConfig;
 
+/* fault_class в additional[0] для EVENT_LOG_DEVICE_FAULT (warning.cpp). */
+enum {
+	ELUI_FC_LINE_BREAK = 0u,
+	ELUI_FC_LINE_SHORT = 1u,
+	ELUI_FC_PROTOCOL   = 2u,
+	ELUI_FC_CAN        = 3u,
+	ELUI_FC_POWER      = 4u,
+	ELUI_FC_OTHER      = 5u,
+	ELUI_FC_POSITION   = 6u
+};
+
 static uint8_t BcdToBin(uint8_t bcd)
 {
 	return (uint8_t)(((bcd >> 4) & 0x0Fu) * 10u + (bcd & 0x0Fu));
 }
 
-static const char *McuTypeShort(uint8_t d_type)
+static uint8_t IsMcuDType(uint8_t d_type)
+{
+	return (d_type == DEVICE_MCU_IGN_TYPE ||
+	        d_type == DEVICE_MCU_TC_TYPE ||
+	        d_type == DEVICE_MCU_K1 ||
+	        d_type == DEVICE_MCU_K2 ||
+	        d_type == DEVICE_MCU_K3 ||
+	        d_type == DEVICE_MCU_KR) ? 1u : 0u;
+}
+
+static uint8_t IsVdevDType(uint8_t d_type)
+{
+	return (d_type == DEVICE_DPT_TYPE ||
+	        d_type == DEVICE_IGNITER_TYPE ||
+	        d_type == DEVICE_BUTTON_TYPE ||
+	        d_type == DEVICE_LSWITCH_TYPE) ? 1u : 0u;
+}
+
+/* Как Warning_ChannelTypeShort(). */
+static const char *ChannelTypeShort(uint8_t v_d_type)
+{
+	switch (v_d_type) {
+	case DEVICE_DPT_TYPE:     return "ДПТ";
+	case DEVICE_IGNITER_TYPE: return "СП";
+	case DEVICE_BUTTON_TYPE:  return "КН";
+	case DEVICE_LSWITCH_TYPE: return "КОН";
+	default:                  return "???";
+	}
+}
+
+/* Как McuTypeName() на главном экране. */
+static const char *McuTypeName(uint8_t d_type)
 {
 	switch (d_type) {
-	case DEVICE_MCU_TC_TYPE:  return "ТС";
-	case DEVICE_MCU_IGN_TYPE: return "ИГН";
-	case DEVICE_MCU_K1:       return "K1";
-	case DEVICE_MCU_K2:       return "K2";
-	case DEVICE_MCU_K3:       return "K3";
-	case DEVICE_MCU_KR:       return "KR";
-	case DEVICE_PPKY_TYPE:    return "ППКУ";
-	case DEVICE_IGNITER_TYPE: return "СП";
-	case DEVICE_DPT_TYPE:     return "ДПТ";
-	case DEVICE_BUTTON_TYPE:  return "КН";
-	case DEVICE_LSWITCH_TYPE: return "КЦ";
-	case DEVICE_RELAY_TYPE:   return "РЛ";
-	default:                  return "?";
+	case DEVICE_MCU_IGN_TYPE: return "MKU IGN";
+	case DEVICE_MCU_TC_TYPE:  return "MKU TC";
+	case DEVICE_MCU_K1:       return "MKU K1";
+	case DEVICE_MCU_K2:       return "MKU K2";
+	case DEVICE_MCU_K3:       return "MKU K3";
+	case DEVICE_MCU_KR:       return "MKU KR";
+	default:                  return "MKU";
 	}
 }
 
-static void AppendZoneName(char *dst, size_t dst_sz, uint8_t zone)
+static void GetZoneName(uint8_t zone, char *out, size_t out_sz)
 {
-	size_t len = strlen(dst);
-	if (len + 1u >= dst_sz || zone == 0u) {
+	if (out_sz == 0u) {
 		return;
 	}
-	uint8_t zi = (uint8_t)(zone - 1u);
-	if (zi >= ZONE_NUMBER) {
-		(void)snprintf(dst + len, dst_sz - len, " з.%u", (unsigned)zone);
-		return;
+	out[0] = '\0';
+	if (zone > 0u && zone <= ZONE_NUMBER) {
+		strncpy(out, (const char *)PPKYConfig.zone_name[zone - 1u], ZONE_NAME_SIZE);
+		out[ZONE_NAME_SIZE] = '\0';
 	}
-	char zname[ZONE_NAME_SIZE + 1];
-	size_t n = 0u;
-	for (; n < ZONE_NAME_SIZE; n++) {
-		char c = (char)PPKYConfig.zone_name[zi][n];
-		if (c == '\0') {
-			break;
+	if (out[0] == '\0') {
+		snprintf(out, out_sz, "ЗОНА %u", (unsigned)zone);
+	}
+}
+
+static void GetMkuSerial(uint8_t zone, uint8_t h_adr, uint8_t mcu_d_type,
+			 char *out, size_t out_sz)
+{
+	for (uint8_t i = 0u; i < 32u; i++) {
+		const Device *dv = &PPKYConfig.CfgDevices[i].UId.devId;
+		if (dv->h_adr == h_adr && dv->d_type == mcu_d_type) {
+			snprintf(out, out_sz, "S/N:%08lX:%08lX:%08lX",
+				 (unsigned long)PPKYConfig.CfgDevices[i].UId.UId0,
+				 (unsigned long)PPKYConfig.CfgDevices[i].UId.UId1,
+				 (unsigned long)PPKYConfig.CfgDevices[i].UId.UId2);
+			return;
 		}
-		zname[n] = c;
 	}
-	while (n > 0u && (zname[n - 1u] == ' ' || zname[n - 1u] == '\0')) {
-		n--;
+
+	Device dev = {};
+	dev.zone = zone;
+	dev.h_adr = h_adr;
+	dev.l_adr = 0u;
+	dev.d_type = mcu_d_type;
+	uint8_t remote_valid = 0u;
+	const uint8_t *remote = ConfigMonitor_GetRemoteSerial(&dev, &remote_valid);
+	if (remote_valid != 0u && remote != NULL) {
+		const uint32_t *uid = (const uint32_t *)remote;
+		snprintf(out, out_sz, "S/N:%08lX:%08lX:%08lX",
+			 (unsigned long)uid[0], (unsigned long)uid[1], (unsigned long)uid[2]);
+		return;
 	}
-	zname[n] = '\0';
-	if (n == 0u) {
-		(void)snprintf(dst + len, dst_sz - len, " з.%u", (unsigned)zone);
-	} else {
-		(void)snprintf(dst + len, dst_sz - len, " %s", zname);
-	}
+
+	snprintf(out, out_sz, "S/N:---");
 }
 
-static void FormatCanDevice(char *dst, size_t dst_sz, uint32_t can_header)
+static void FormatPpkySerial(char *out, size_t out_sz)
 {
-	if (dst_sz == 0u) {
+	snprintf(out, out_sz, "S/N:%08lX:%08lX:%08lX",
+		 (unsigned long)PPKYConfig.UId.UId0,
+		 (unsigned long)PPKYConfig.UId.UId1,
+		 (unsigned long)PPKYConfig.UId.UId2);
+}
+
+/* Как Warning_FormatMkuAndSerial(). */
+static void ParseCanHeader(uint32_t can_header,
+			   uint8_t *zone, uint8_t *h_adr, uint8_t *l_adr, uint8_t *d_type);
+
+static void FormatMkuDetail(char *out, size_t out_sz,
+			    uint8_t zone, uint8_t h_adr, uint8_t mcu_d_type)
+{
+	char serial[32];
+	char zone_name[ZONE_NAME_SIZE + 1];
+	GetMkuSerial(zone, h_adr, mcu_d_type, serial, sizeof(serial));
+	GetZoneName(zone, zone_name, sizeof(zone_name));
+	snprintf(out, out_sz, "%s %s %u %s",
+		 zone_name, McuTypeName(mcu_d_type), (unsigned)h_adr, serial);
+}
+
+static void FormatSerialFromRecord(const EventLogRecord_t *rec, char *out, size_t out_sz)
+{
+	uint32_t uid0;
+	uint32_t uid1;
+	uint32_t uid2;
+
+	memcpy(&uid0, rec->can_data, 4u);
+	memcpy(&uid1, rec->can_data + 4u, 4u);
+	memcpy(&uid2, rec->additional, 4u);
+	snprintf(out, out_sz, "S/N:%08lX:%08lX:%08lX",
+		 (unsigned long)uid0, (unsigned long)uid1, (unsigned long)uid2);
+}
+
+static void FormatMkuDetailFromRecord(const EventLogRecord_t *rec,
+				      char *out, size_t out_sz)
+{
+	uint8_t zone = 0u;
+	uint8_t h_adr = 0u;
+	uint8_t l_adr = 0u;
+	uint8_t d_type = 0u;
+	char serial[32];
+	char zone_name[ZONE_NAME_SIZE + 1];
+
+	ParseCanHeader(rec->can_header, &zone, &h_adr, &l_adr, &d_type);
+	FormatSerialFromRecord(rec, serial, sizeof(serial));
+	GetZoneName(zone, zone_name, sizeof(zone_name));
+	snprintf(out, out_sz, "%s %s %u %s",
+		 zone_name, McuTypeName(d_type), (unsigned)h_adr, serial);
+}
+
+static void FormatPpkyDetail(char *out, size_t out_sz)
+{
+	char serial[32];
+	FormatPpkySerial(serial, sizeof(serial));
+	snprintf(out, out_sz, "ППКУ %s", serial);
+}
+
+static void FormatZoneOnlyDetail(char *out, size_t out_sz, uint8_t zone)
+{
+	if (zone == 0u) {
+		snprintf(out, out_sz, "все зоны");
 		return;
 	}
-	dst[0] = '\0';
-	if (can_header == 0u) {
-		return;
+	char zone_name[ZONE_NAME_SIZE + 1];
+	GetZoneName(zone, zone_name, sizeof(zone_name));
+	snprintf(out, out_sz, "%s", zone_name);
+}
+
+static uint8_t LookupMcuDType(uint8_t zone, uint8_t h_adr, uint8_t fallback)
+{
+	for (uint8_t i = 0u; i < 32u; i++) {
+		const Device *dv = &PPKYConfig.CfgDevices[i].UId.devId;
+		if (!IsMcuDType(dv->d_type)) {
+			continue;
+		}
+		if (dv->h_adr == h_adr && (zone == 0u || dv->zone == zone)) {
+			return dv->d_type;
+		}
 	}
+	return fallback;
+}
+
+static void ParseCanHeader(uint32_t can_header,
+			   uint8_t *zone, uint8_t *h_adr, uint8_t *l_adr, uint8_t *d_type)
+{
 	can_ext_id_t id;
 	id.ID = can_header;
-	uint8_t d_type = (uint8_t)(id.field.d_type & 0x7Fu);
-	uint8_t h_adr = (uint8_t)id.field.h_adr;
-	uint8_t l_adr = (uint8_t)(id.field.l_adr & 0x3Fu);
-	uint8_t zone = (uint8_t)(id.field.zone & 0x7Fu);
-
-	if (d_type == DEVICE_MCU_IGN_TYPE || d_type == DEVICE_MCU_TC_TYPE ||
-	    d_type == DEVICE_MCU_K1 || d_type == DEVICE_MCU_K2 ||
-	    d_type == DEVICE_MCU_K3 || d_type == DEVICE_MCU_KR) {
-		(void)snprintf(dst, dst_sz, "МКУ %s:%u", McuTypeShort(d_type), (unsigned)h_adr);
-	} else if (d_type == DEVICE_PPKY_TYPE) {
-		(void)snprintf(dst, dst_sz, "ППКУ");
-	} else {
-		(void)snprintf(dst, dst_sz, "%s%u", McuTypeShort(d_type),
-			       (unsigned)(l_adr != 0u ? l_adr : h_adr));
-	}
-	if (zone != 0u) {
-		AppendZoneName(dst, dst_sz, zone);
-	}
+	*zone = (uint8_t)(id.field.zone & 0x7Fu);
+	*h_adr = (uint8_t)id.field.h_adr;
+	*l_adr = (uint8_t)(id.field.l_adr & 0x3Fu);
+	*d_type = (uint8_t)(id.field.d_type & 0x7Fu);
 }
 
 static void FormatHeaderPos(char *dst, size_t dst_sz, uint32_t index_1based, uint32_t count)
@@ -106,206 +229,327 @@ static void FormatHeaderPos(char *dst, size_t dst_sz, uint32_t index_1based, uin
 		return;
 	}
 	if (count >= 10000u) {
-		(void)snprintf(dst, dst_sz, "%lu/%luk",
-			       (unsigned long)index_1based,
-			       (unsigned long)((count + 999u) / 1000u));
+		snprintf(dst, dst_sz, "%lu/%luk",
+			 (unsigned long)index_1based,
+			 (unsigned long)((count + 999u) / 1000u));
 	} else {
-		(void)snprintf(dst, dst_sz, "%lu/%lu",
-			       (unsigned long)index_1based,
-			       (unsigned long)count);
+		snprintf(dst, dst_sz, "%lu/%lu",
+			 (unsigned long)index_1based,
+			 (unsigned long)count);
 	}
 }
 
-static const char *EventTitle(uint16_t code)
+/*
+ * EVENT_LOG_DEVICE_FAULT (8) — title как BuildUiPayload:
+ *   vdev:     ОБРЫВ|КЗ|НЕИСП + ChannelTypeShort + l_adr
+ *   MCU CAN:  ОБРЫВ|КЗ + CANn
+ *   PPKU CAN: ОБРЫВ CANn
+ *   power:    ВЫХОД n | ПИТАНИЕ n
+ *   position: ПОЗИЦИЯ
+ */
+static void FormatDeviceFaultTitle(const EventLogRecord_t *rec, char *title, size_t title_sz)
 {
-	switch (code) {
-	case EVENT_LOG_MASTER_START:          return "СТАРТ М.";
-	case EVENT_LOG_MASTER_STOP:           return "СТОП М.";
-	case EVENT_LOG_SYSTEM_START_OK:       return "СТАРТ ОК";
-	case EVENT_LOG_DEVICE_FAULT:          return "НЕИСПР.";
-	case EVENT_LOG_FIRE_DETECTED:         return "ПОЖАР";
-	case EVENT_LOG_EXTINGUISH_START:      return "ТУШЕНИЕ";
-	case EVENT_LOG_EXTINGUISH_FORCE_STOP: return "ОСТ.ПУСК";
-	case EVENT_LOG_EXTINGUISH_COMPLETE:   return "ТУШ.ОК";
-	case EVENT_LOG_EXTINGUISH_INCOMPLETE: return "ТУШ.ОШ";
-	case EVENT_LOG_PANEL_BUTTON:          return "КНОПКА";
-	case EVENT_LOG_HOST_LINK:             return "СВЯЗЬ";
-	case EVENT_LOG_CONFIG_APPLY_OK:       return "КОНФ.ОК";
-	case EVENT_LOG_CONFIG_APPLY_FAIL:     return "КОНФ.ОШ";
-	case EVENT_LOG_SOUND_TOGGLE:          return "ЗВУК";
-	case EVENT_LOG_FIRE_MODE_CHANGE:      return "РЕЖИМ";
-	case EVENT_LOG_FIRE_RESET:            return "СБРОС";
-	default:                              return NULL;
-	}
-}
-
-static void FormatDetail(const EventLogRecord_t *rec, char *dst, size_t dst_sz)
-{
-	dst[0] = '\0';
 	const uint8_t *a = rec->additional;
-	char dev[64];
-	FormatCanDevice(dev, sizeof(dev), rec->can_header);
+	uint8_t fc = a[0];
+	uint8_t ch = a[1];
+	uint8_t zone = 0u;
+	uint8_t h_adr = 0u;
+	uint8_t l_adr = 0u;
+	uint8_t d_type = 0u;
+
+	ParseCanHeader(rec->can_header, &zone, &h_adr, &l_adr, &d_type);
+
+	if (fc == ELUI_FC_POSITION) {
+		snprintf(title, title_sz, "ПОЗИЦИЯ");
+		return;
+	}
+
+	if (fc == ELUI_FC_POWER) {
+		if (rec->can_data[0] != 0u) {
+			snprintf(title, title_sz, "ПИТАНИЕ %u", (unsigned)(ch != 0u ? ch : 1u));
+		} else {
+			snprintf(title, title_sz, "ВЫХОД %u", (unsigned)(ch != 0u ? ch : 1u));
+		}
+		return;
+	}
+
+	if (fc == ELUI_FC_CAN) {
+		uint8_t line_state = rec->can_data[0];
+		const char *fault = (line_state == 2u) ? "КЗ" : "ОБРЫВ";
+		uint8_t can_idx = (ch != 0u) ? ch : rec->can_data[1];
+		if (can_idx == 0u) {
+			can_idx = 1u;
+		}
+		if (IsMcuDType(d_type)) {
+			snprintf(title, title_sz, "%s CAN%u", fault, (unsigned)can_idx);
+		} else {
+			snprintf(title, title_sz, "%s CAN%u", fault, (unsigned)can_idx);
+		}
+		return;
+	}
+
+	if (IsVdevDType(d_type)) {
+		const char *fault = "ОБРЫВ";
+		if (fc == ELUI_FC_LINE_SHORT) {
+			fault = "КЗ";
+		} else if (fc == ELUI_FC_PROTOCOL || fc == ELUI_FC_OTHER) {
+			fault = "НЕИСП";
+		}
+		uint8_t v_l = (l_adr != 0u) ? l_adr : ch;
+		snprintf(title, title_sz, "%s %s%u", fault, ChannelTypeShort(d_type), (unsigned)v_l);
+		return;
+	}
+
+	snprintf(title, title_sz, "НЕИСПР.");
+}
+
+static void FormatDeviceFaultDetail(const EventLogRecord_t *rec, char *detail, size_t detail_sz)
+{
+	const uint8_t *a = rec->additional;
+	uint8_t fc = a[0];
+	uint8_t ch = a[1];
+	uint8_t zone = 0u;
+	uint8_t h_adr = 0u;
+	uint8_t l_adr = 0u;
+	uint8_t d_type = 0u;
+
+	ParseCanHeader(rec->can_header, &zone, &h_adr, &l_adr, &d_type);
+
+	if (fc == ELUI_FC_POSITION) {
+		snprintf(detail, detail_sz, "МКУ %u", (unsigned)(ch != 0u ? ch : rec->can_data[0]));
+		return;
+	}
+
+	if (fc == ELUI_FC_POWER || (fc == ELUI_FC_CAN && d_type == DEVICE_PPKY_TYPE)) {
+		FormatPpkyDetail(detail, detail_sz);
+		return;
+	}
+
+	if (IsMcuDType(d_type)) {
+		FormatMkuDetail(detail, detail_sz, zone, h_adr, d_type);
+		return;
+	}
+
+	if (IsVdevDType(d_type)) {
+		uint8_t mcu_d_type = LookupMcuDType(zone, h_adr, DEVICE_MCU_K1);
+		FormatMkuDetail(detail, detail_sz, zone, h_adr, mcu_d_type);
+		return;
+	}
+
+	if (rec->can_header != 0u) {
+		uint8_t mcu_d_type = LookupMcuDType(zone, h_adr, d_type);
+		if (IsMcuDType(mcu_d_type)) {
+			FormatMkuDetail(detail, detail_sz, zone, h_adr, mcu_d_type);
+			return;
+		}
+	}
+
+	FormatPpkyDetail(detail, detail_sz);
+}
+
+static void FormatTitle(const EventLogRecord_t *rec, char *title, size_t title_sz)
+{
+	const uint8_t *a = rec->additional;
 
 	switch (rec->event_code) {
-	case EVENT_LOG_MASTER_START:
-	case EVENT_LOG_MASTER_STOP:
-	case EVENT_LOG_SYSTEM_START_OK:
-		(void)snprintf(dst, dst_sz, "ППКУ");
+	case EVENT_LOG_DEVICE_FAULT:
+		FormatDeviceFaultTitle(rec, title, title_sz);
 		break;
 
-	case EVENT_LOG_DEVICE_FAULT: {
-		uint8_t fc = a[0];
-		uint8_t ch = a[1];
-		uint8_t phase = a[2];
-		const char *ph = (phase != 0u) ? "-" : "+";
-		if (fc == 6u) { /* position */
-			(void)snprintf(dst, dst_sz, "%s ПОЗИЦИЯ МКУ %u", ph, (unsigned)ch);
-		} else if (fc == 3u) { /* can */
-			(void)snprintf(dst, dst_sz, "%s ОБРЫВ CAN%u", ph, (unsigned)(ch != 0u ? ch : 1u));
-			if (dev[0] != '\0') {
-				size_t n = strlen(dst);
-				(void)snprintf(dst + n, dst_sz - n, " %s", dev);
-			}
-		} else if (fc == 4u) { /* power */
-			const char *kind = (rec->can_data[0] != 0u) ? "ВВОД" : "ВЫХОД";
-			(void)snprintf(dst, dst_sz, "%s %s %u", ph, kind, (unsigned)ch);
-		} else if (fc == 1u) {
-			(void)snprintf(dst, dst_sz, "%s КЗ", ph);
-			if (dev[0] != '\0') {
-				size_t n = strlen(dst);
-				(void)snprintf(dst + n, dst_sz - n, " %s", dev);
-			}
-		} else if (fc == 0u) {
-			(void)snprintf(dst, dst_sz, "%s ОБРЫВ", ph);
-			if (dev[0] != '\0') {
-				size_t n = strlen(dst);
-				(void)snprintf(dst + n, dst_sz - n, " %s", dev);
-			}
-		} else {
-			(void)snprintf(dst, dst_sz, "%s НЕИСП", ph);
-			if (dev[0] != '\0') {
-				size_t n = strlen(dst);
-				(void)snprintf(dst + n, dst_sz - n, " %s", dev);
-			}
-		}
+	case EVENT_LOG_FIRE_DETECTED:
+		snprintf(title, title_sz, "ПОЖАР");
 		break;
-	}
 
-	case EVENT_LOG_FIRE_DETECTED: {
-		uint8_t zone = a[0];
-		(void)snprintf(dst, dst_sz, "з.%u", (unsigned)zone);
-		AppendZoneName(dst, dst_sz, zone);
-		if (dev[0] != '\0') {
-			size_t n = strlen(dst);
-			(void)snprintf(dst + n, dst_sz - n, " %s", dev);
-		}
+	case EVENT_LOG_EXTINGUISH_START:
+		snprintf(title, title_sz, "ТУШЕНИЕ");
 		break;
-	}
-
-	case EVENT_LOG_EXTINGUISH_START: {
-		const char *mode = "АВТО";
-		if (a[0] == 0u) {
-			mode = "РУЧН";
-		} else if (a[0] == 2u) {
-			mode = "АВТН";
-		}
-		if (a[1] != 0u) {
-			(void)snprintf(dst, dst_sz, "%s з.%u", mode, (unsigned)a[1]);
-			AppendZoneName(dst, dst_sz, a[1]);
-		} else {
-			(void)snprintf(dst, dst_sz, "%s все зоны", mode);
-		}
-		break;
-	}
 
 	case EVENT_LOG_EXTINGUISH_FORCE_STOP:
+		snprintf(title, title_sz, "ПОЖАР/ОСТ.");
+		break;
+
 	case EVENT_LOG_EXTINGUISH_COMPLETE:
+		snprintf(title, title_sz, "ТУШ.ВЫП.");
+		break;
+
 	case EVENT_LOG_EXTINGUISH_INCOMPLETE:
-		if (a[1] != 0u || a[2] != 0u) {
-			uint8_t zone = (rec->event_code == EVENT_LOG_EXTINGUISH_FORCE_STOP) ? a[1] :
-				       (rec->event_code == EVENT_LOG_EXTINGUISH_COMPLETE) ? a[3] : a[2];
-			if (zone != 0u) {
-				(void)snprintf(dst, dst_sz, "з.%u", (unsigned)zone);
-				AppendZoneName(dst, dst_sz, zone);
-			} else {
-				(void)snprintf(dst, dst_sz, "все зоны");
-			}
+		snprintf(title, title_sz, "ТУШ.ОШ.");
+		break;
+
+	case EVENT_LOG_PANEL_BUTTON:
+		if (a[0] == 0u) {
+			snprintf(title, title_sz, "ПУСК ОБЩИЙ");
+		} else if (a[0] == 1u) {
+			snprintf(title, title_sz, "ПУСК СП");
+		} else if (a[0] == 2u) {
+			snprintf(title, title_sz, "ОСТАНОВ");
 		} else {
-			(void)snprintf(dst, dst_sz, "все зоны");
+			snprintf(title, title_sz, "КНОПКА");
 		}
 		break;
 
-	case EVENT_LOG_PANEL_BUTTON: {
-		const char *btn = "КНОПКА";
-		if (a[0] == 0u) {
-			btn = "ПУСК ОБЩИЙ";
-		} else if (a[0] == 1u) {
-			btn = "ПУСК СП";
-		} else if (a[0] == 2u) {
-			btn = "ОСТАНОВ";
-		}
-		if (a[1] != 0u) {
-			(void)snprintf(dst, dst_sz, "%s з.%u", btn, (unsigned)a[1]);
-		} else {
-			(void)snprintf(dst, dst_sz, "%s", btn);
-		}
+	case EVENT_LOG_MASTER_START:
+		snprintf(title, title_sz, "СТАРТ");
 		break;
-	}
+
+	case EVENT_LOG_MASTER_STOP:
+		snprintf(title, title_sz, "СТОП");
+		break;
+
+	case EVENT_LOG_SYSTEM_START_OK:
+		snprintf(title, title_sz, "СТАРТ ОК");
+		break;
 
 	case EVENT_LOG_HOST_LINK:
-		(void)snprintf(dst, dst_sz, "%s", (a[0] == 1u) ? "RS-485" : "WiFi");
+		snprintf(title, title_sz, "СВЯЗЬ");
 		break;
 
 	case EVENT_LOG_CONFIG_APPLY_OK:
-		(void)snprintf(dst, dst_sz, "OK %u/%u", (unsigned)a[0], (unsigned)a[1]);
+		snprintf(title, title_sz, "КОНФ.ОК");
 		break;
 
-	case EVENT_LOG_CONFIG_APPLY_FAIL: {
-		const char *reason = "ошибка";
-		if (a[0] == 0u) {
-			reason = "таймаут";
-		} else if (a[0] == 1u) {
-			reason = "размер";
-		} else if (a[0] == 2u) {
-			reason = "эхо";
-		} else if (a[0] == 3u) {
-			reason = "CRC";
-		}
-		if (dev[0] != '\0') {
-			(void)snprintf(dst, dst_sz, "%s %s", reason, dev);
-		} else {
-			(void)snprintf(dst, dst_sz, "%s", reason);
-		}
+	case EVENT_LOG_CONFIG_APPLY_FAIL:
+		snprintf(title, title_sz, "КОНФ.ОШ");
 		break;
-	}
 
 	case EVENT_LOG_SOUND_TOGGLE:
-		(void)snprintf(dst, dst_sz, "%s", (a[0] != 0u) ? "ВКЛ" : "ВЫКЛ");
+		snprintf(title, title_sz, "ЗВУК");
 		break;
 
-	case EVENT_LOG_FIRE_MODE_CHANGE: {
-		const char *mode = "АВТО";
-		if (a[0] == 1u) {
-			mode = "АВТОНОМ";
-		} else if (a[0] == 2u) {
-			mode = "РУЧНОЙ";
+	case EVENT_LOG_FIRE_MODE_CHANGE:
+		snprintf(title, title_sz, "РЕЖИМ");
+		break;
+
+	case EVENT_LOG_FIRE_RESET:
+		snprintf(title, title_sz, "СБРОС");
+		break;
+
+	case EVENT_LOG_MCU_SAVED:
+		snprintf(title, title_sz, "СОХР.МКУ");
+		break;
+
+	default:
+		snprintf(title, title_sz, "СОБ.%u", (unsigned)rec->event_code);
+		break;
+	}
+}
+
+/*
+ * Фаза неисправности (DEVICE_FAULT additional[2]):
+ *   0 — появилось  → «-ОБРЫВ СП1»
+ *   1 — устранено  → «+ОБРЫВ СП1»
+ */
+static void PrependPhasePrefix(const EventLogRecord_t *rec, char *title, size_t title_sz)
+{
+	if (title_sz == 0u || title[0] == '\0') {
+		return;
+	}
+	if (rec->event_code != EVENT_LOG_DEVICE_FAULT) {
+		return;
+	}
+	char prefix = (rec->additional[2] != 0u) ? '+' : '-';
+	char tmp[EVENT_LOG_UI_TITLE_LEN];
+	snprintf(tmp, sizeof(tmp), "%c%s", prefix, title);
+	strncpy(title, tmp, title_sz);
+	title[title_sz - 1u] = '\0';
+}
+
+static void FormatDetail(const EventLogRecord_t *rec, char *detail, size_t detail_sz)
+{
+	const uint8_t *a = rec->additional;
+	uint8_t zone = 0u;
+	uint8_t h_adr = 0u;
+	uint8_t l_adr = 0u;
+	uint8_t d_type = 0u;
+
+	detail[0] = '\0';
+	ParseCanHeader(rec->can_header, &zone, &h_adr, &l_adr, &d_type);
+
+	switch (rec->event_code) {
+	case EVENT_LOG_DEVICE_FAULT:
+		FormatDeviceFaultDetail(rec, detail, detail_sz);
+		break;
+
+	case EVENT_LOG_FIRE_DETECTED:
+		FormatZoneOnlyDetail(detail, detail_sz, a[0]);
+		if (rec->can_header != 0u && IsMcuDType(d_type)) {
+			char mku[96];
+			FormatMkuDetail(mku, sizeof(mku), zone, h_adr, d_type);
+			snprintf(detail, detail_sz, "%s", mku);
+		} else if (rec->can_header != 0u && IsVdevDType(d_type)) {
+			uint8_t mcu_d_type = LookupMcuDType(zone, h_adr, DEVICE_MCU_K1);
+			FormatMkuDetail(detail, detail_sz, zone, h_adr, mcu_d_type);
 		}
-		(void)snprintf(dst, dst_sz, "%s", mode);
+		break;
+
+	case EVENT_LOG_EXTINGUISH_START:
+	case EVENT_LOG_EXTINGUISH_FORCE_STOP:
+	case EVENT_LOG_EXTINGUISH_COMPLETE:
+	case EVENT_LOG_EXTINGUISH_INCOMPLETE:
+	case EVENT_LOG_FIRE_RESET: {
+		uint8_t z = 0u;
+		if (rec->event_code == EVENT_LOG_EXTINGUISH_START) {
+			z = a[1];
+		} else if (rec->event_code == EVENT_LOG_EXTINGUISH_FORCE_STOP) {
+			z = a[1];
+		} else if (rec->event_code == EVENT_LOG_EXTINGUISH_COMPLETE) {
+			z = a[3];
+		} else if (rec->event_code == EVENT_LOG_EXTINGUISH_INCOMPLETE) {
+			z = a[2];
+		} else {
+			z = a[0];
+		}
+		FormatZoneOnlyDetail(detail, detail_sz, z);
 		break;
 	}
 
-	case EVENT_LOG_FIRE_RESET:
-		if (a[0] != 0u) {
-			(void)snprintf(dst, dst_sz, "з.%u", (unsigned)a[0]);
-			AppendZoneName(dst, dst_sz, a[0]);
+	case EVENT_LOG_PANEL_BUTTON:
+		if (a[1] != 0u) {
+			FormatZoneOnlyDetail(detail, detail_sz, a[1]);
 		} else {
-			(void)snprintf(dst, dst_sz, "все зоны");
+			FormatPpkyDetail(detail, detail_sz);
+		}
+		break;
+
+	case EVENT_LOG_MASTER_START:
+	case EVENT_LOG_MASTER_STOP:
+	case EVENT_LOG_SYSTEM_START_OK:
+	case EVENT_LOG_HOST_LINK:
+	case EVENT_LOG_SOUND_TOGGLE:
+	case EVENT_LOG_FIRE_MODE_CHANGE:
+		FormatPpkyDetail(detail, detail_sz);
+		break;
+
+	case EVENT_LOG_CONFIG_APPLY_OK:
+		snprintf(detail, detail_sz, "ППКУ OK %u/%u", (unsigned)a[0], (unsigned)a[1]);
+		break;
+
+	case EVENT_LOG_CONFIG_APPLY_FAIL:
+		if (IsMcuDType(d_type)) {
+			FormatMkuDetail(detail, detail_sz, zone, h_adr, d_type);
+		} else {
+			FormatPpkyDetail(detail, detail_sz);
+		}
+		break;
+
+	case EVENT_LOG_MCU_SAVED:
+		if (IsMcuDType(d_type)) {
+			FormatMkuDetailFromRecord(rec, detail, detail_sz);
 		}
 		break;
 
 	default:
-		if (dev[0] != '\0') {
-			(void)snprintf(dst, dst_sz, "%s", dev);
+		if (IsMcuDType(d_type)) {
+			FormatMkuDetail(detail, detail_sz, zone, h_adr, d_type);
+		} else if (rec->can_header != 0u) {
+			uint8_t mcu_d_type = LookupMcuDType(zone, h_adr, d_type);
+			if (IsMcuDType(mcu_d_type)) {
+				FormatMkuDetail(detail, detail_sz, zone, h_adr, mcu_d_type);
+			} else {
+				FormatPpkyDetail(detail, detail_sz);
+			}
+		} else {
+			FormatPpkyDetail(detail, detail_sz);
 		}
 		break;
 	}
@@ -316,9 +560,9 @@ void EventLogUi_FormatEmpty(EventLogUiLines_t *out)
 	if (out == NULL) {
 		return;
 	}
-	(void)snprintf(out->header, sizeof(out->header), "ЖУРНАЛ");
-	(void)snprintf(out->title, sizeof(out->title), "ПУСТО");
-	(void)snprintf(out->detail, sizeof(out->detail), "Нет записей");
+	snprintf(out->header, sizeof(out->header), "ЖУРНАЛ");
+	snprintf(out->title, sizeof(out->title), "ПУСТО");
+	snprintf(out->detail, sizeof(out->detail), "Нет записей");
 }
 
 void EventLogUi_FormatRecord(const EventLogRecord_t *rec,
@@ -343,19 +587,12 @@ void EventLogUi_FormatRecord(const EventLogRecord_t *rec,
 
 	char pos[16];
 	FormatHeaderPos(pos, sizeof(pos), display_index_1based, count);
-	/* Шапка TouchGFX = 32: «DD.MM.YY HH:MM n/N» */
-	(void)snprintf(out->header, sizeof(out->header),
-		       "%02u.%02u.%02u %02u:%02u %s",
-		       (unsigned)dd, (unsigned)mo, (unsigned)yy,
-		       (unsigned)hh, (unsigned)mi, pos);
+	snprintf(out->header, sizeof(out->header),
+		 "%s %02u.%02u.%02u %02u:%02u",
+		 pos, (unsigned)dd, (unsigned)mo, (unsigned)yy,
+		 (unsigned)hh, (unsigned)mi);
 
-	const char *title = EventTitle(rec->event_code);
-	if (title != NULL) {
-		(void)snprintf(out->title, sizeof(out->title), "%s", title);
-	} else {
-		(void)snprintf(out->title, sizeof(out->title), "СОБ.%u",
-			       (unsigned)rec->event_code);
-	}
-
+	FormatTitle(rec, out->title, sizeof(out->title));
+	PrependPhasePrefix(rec, out->title, sizeof(out->title));
 	FormatDetail(rec, out->detail, sizeof(out->detail));
 }

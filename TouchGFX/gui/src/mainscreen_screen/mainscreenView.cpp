@@ -129,6 +129,7 @@ void mainscreenView::setupScreen()
     s_fire_nav_last_press_ms = 0u;
     s_warning_nav_last_press_ms = 0u;
     Fire_UiSetManualSelection(0u, 0u);
+    uiShowNormalStatus();
     /* База скрывает NO_BEEP; итоговую видимость выставит presenter::activate. */
 #endif
 }
@@ -327,6 +328,20 @@ void mainscreenView::uiSetTopHeaderText(const char* text)
 	textAreatime_top_bar.invalidate();
 }
 
+void mainscreenView::uiShowNormalStatus()
+{
+	for (uint16_t i = 0; i < TEXTAREA1_SIZE; i++) {
+		textArea1Buffer[i] = 0;
+	}
+	Unicode::fromUTF8(reinterpret_cast<const uint8_t*>("НОРМА"),
+			  textArea1Buffer, TEXTAREA1_SIZE);
+	textArea1Buffer[TEXTAREA1_SIZE - 1] = 0;
+	textArea1.setWildcard(textArea1Buffer);
+	textArea1.invalidate();
+	CustomContainerSrollText.setText("");
+	s_banner_mode = BANNER_NONE;
+}
+
 void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
 				      char (*zoneNames)[ZONE_NAME_SIZE + 1])
 {
@@ -365,17 +380,7 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 		/* Если сейчас отображается предупреждение, не затираем поля:
 		 * warning-логика использует те же widgets и сама их контролирует. */
 		if (s_banner_mode != BANNER_WARNING) {
-			for (uint16_t i = 0; i < TEXTAREA1_SIZE; i++) {
-				textArea1Buffer[i] = 0;
-			}
-			Unicode::snprintf(textArea1Buffer, TEXTAREA1_SIZE, "%s", "");
-			textArea1.setWildcard(textArea1Buffer);
-			textArea1.invalidate();
-			CustomContainerSrollText.setText("");
-			s_banner_mode = BANNER_NONE;
-		}
-		/* Не возвращаем время/top bar, если сейчас активны предупреждения. */
-		if (s_banner_mode != BANNER_WARNING) {
+			uiShowNormalStatus();
 			ui_set_warning_header_visible(this, false);
 			s_top_header_text[0] = '\0';
 		}
@@ -470,15 +475,8 @@ void mainscreenView::updateWarningStatus(bool active, uint8_t nItems, char (*big
 		memset(s_wn_is_attention, 0, sizeof(s_wn_is_attention));
 		s_wn_ph = PH_IDLE;
 		s_wn_hold_from = 0u;
-		if (s_banner_mode == BANNER_WARNING) {
-			for (uint16_t i = 0; i < TEXTAREA1_SIZE; i++) {
-				textArea1Buffer[i] = 0;
-			}
-			Unicode::snprintf(textArea1Buffer, TEXTAREA1_SIZE, "%s", "");
-			textArea1.setWildcard(textArea1Buffer);
-			textArea1.invalidate();
-			CustomContainerSrollText.setText("");
-			s_banner_mode = BANNER_NONE;
+		if (s_banner_mode == BANNER_WARNING || s_banner_mode == BANNER_NONE) {
+			uiShowNormalStatus();
 		}
 		ui_set_warning_header_visible(this, false);
 		s_top_header_text[0] = '\0';

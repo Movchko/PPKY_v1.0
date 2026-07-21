@@ -363,6 +363,69 @@ void EventLog_LogConfigApplyFail(uint8_t d_type, uint8_t h_adr, uint8_t l_adr, u
 	(void)EventLog_Post(EVENT_LOG_CONFIG_APPLY_FAIL, &payload);
 }
 
+static uint8_t EventLog_IsMcuType(uint8_t d_type)
+{
+	return (d_type == DEVICE_MCU_IGN_TYPE ||
+	        d_type == DEVICE_MCU_TC_TYPE ||
+	        d_type == DEVICE_MCU_K1 ||
+	        d_type == DEVICE_MCU_K2 ||
+	        d_type == DEVICE_MCU_K3 ||
+	        d_type == DEVICE_MCU_KR) ? 1u : 0u;
+}
+
+static void EventLog_PackMcuSerial(const UniqId *uid, uint8_t can_data[8], uint8_t additional[8])
+{
+	if (uid == nullptr) {
+		return;
+	}
+	memcpy(can_data, &uid->UId0, 4u);
+	memcpy(can_data + 4u, &uid->UId1, 4u);
+	memcpy(additional, &uid->UId2, 4u);
+}
+
+void EventLog_LogMcuSaved(const Device *dev, const UniqId *uid)
+{
+	EventLogPayload_t payload;
+	can_ext_id_t id;
+
+	if (!g_initialized || dev == nullptr || uid == nullptr) {
+		return;
+	}
+	if (EventLog_IsMcuType(dev->d_type) == 0u) {
+		return;
+	}
+
+	memset(&payload, 0, sizeof(payload));
+	payload.master_wagon_num = PPKYConfig.UId.devId.h_adr;
+
+	id.ID = 0u;
+	id.field.zone = dev->zone & 0x7Fu;
+	id.field.l_adr = dev->l_adr & 0x3Fu;
+	id.field.h_adr = dev->h_adr;
+	id.field.d_type = dev->d_type & 0x7Fu;
+	id.field.dir = 1u;
+	payload.can_header = id.ID & 0x1FFFFFFFu;
+
+	EventLog_PackMcuSerial(uid, payload.can_data, payload.additional);
+	(void)EventLog_Post(EVENT_LOG_MCU_SAVED, &payload);
+}
+
+void EventLog_LogAllCfgMcusSaved(void)
+{
+	if (!g_initialized) {
+		return;
+	}
+
+	for (uint8_t i = 0u; i < MAX_MCU_IN_BUS; i++) {
+		const MKUCfg *mcu = &PPKYConfig.CfgDevices[i];
+		const Device *dev = &mcu->UId.devId;
+		if (EventLog_IsMcuType(dev->d_type) == 0u) {
+			continue;
+		}
+		EventLog_LogMcuSaved(dev, &mcu->UId);
+	}
+}
+
 void EventLog_LogSoundToggle(uint8_t enabled, uint8_t source)
 {
 	EventLogPayload_t payload;

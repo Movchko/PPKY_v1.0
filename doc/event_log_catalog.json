@@ -1051,6 +1051,38 @@
           }
         ]
       }
+    },
+    {
+      "code": 22,
+      "symbol": "EVENT_LOG_MCU_SAVED",
+      "name": "Сохранено новое МКУ",
+      "level": "critical",
+      "debug_only": false,
+      "status": "implemented",
+      "description": "Карта МКУ: после успешного APPLY конфигурации с ПО или команды «Сохранить МКУ» (READ_ALL). По одной записи на каждый слот PPKYConfig.CfgDevices[] с типом МКУ.",
+      "uses": {
+        "can_header": "required",
+        "can_data": "required",
+        "additional": "required"
+      },
+      "payload": {
+        "can_header": {
+          "required": true,
+          "description": "CAN ID МКУ (dir=1): zone, l_adr, h_adr, d_type"
+        },
+        "can_data": {
+          "required": true,
+          "description": "Первые 8 байт серийника: UId0 (LE), UId1 (LE)"
+        },
+        "additional": [
+          {
+            "offset": 0,
+            "name": "uid2",
+            "type": "uint32",
+            "description": "UId2 (LE) — остаток 12-байтного серийника"
+          }
+        ]
+      }
     }
   ]
 }

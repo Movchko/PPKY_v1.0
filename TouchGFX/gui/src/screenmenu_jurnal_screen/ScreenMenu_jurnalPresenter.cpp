@@ -36,12 +36,12 @@ void ScreenMenu_jurnalPresenter::handleButton(uint8_t but, uint8_t state)
         app->gotoScreenMenuScreenNoTransition();
         return;
     }
-    if (but == BUT_UP) {
+    if (but == BUT_DOWN) {
         /* Старее */
         view.prevRecord();
         return;
     }
-    if (but == BUT_DOWN) {
+    if (but == BUT_UP) {
         /* Новее */
         view.nextRecord();
         return;

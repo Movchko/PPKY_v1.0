@@ -44,6 +44,8 @@ public:
     void uiSetWarningHeaderVisible(bool visible);
     void uiUpdateWarningHeader(uint8_t cur_idx, uint8_t total);
     void uiSetTopHeaderText(const char* text);
+    /** Дежурный режим: по центру большого поля — «НОРМА». */
+    void uiShowNormalStatus();
     /** NO_BEEP: показать при выключенном звуке; invalidate только при смене. */
     void applyMuteIcon(bool soundOn);
 #endif

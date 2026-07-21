@@ -647,9 +647,14 @@ static void RelayAuto_Process(void)
 				trigger = RelayAuto_IsFireTriggerInZone(zone);
 			} else if (mode == 2u) {
 				trigger = RelayAuto_IsFaultTriggerInZone(zone);
-				if (trigger == 0u) {
-					trigger = RelayAuto_IsFireTriggerInZone(zone);
-				}
+
+				/*
+				 * ниже логика срабатывания по пожару в режиме неисправности. пока убрали.
+				 */
+				//if (trigger == 0u) {
+				//	trigger = RelayAuto_IsFireTriggerInZone(zone);
+				//}
+
 			} else {
 				trigger = RelayAuto_IsLswitchOpenTriggerInZone(zone);
 			}

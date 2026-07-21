@@ -14,7 +14,7 @@ extern "C" {
 #include "event_logger.h"
 
 #define EVENT_LOG_UI_HEADER_LEN  32u
-#define EVENT_LOG_UI_TITLE_LEN   16u
+#define EVENT_LOG_UI_TITLE_LEN   24u
 #define EVENT_LOG_UI_DETAIL_LEN  128u
 
 typedef struct {

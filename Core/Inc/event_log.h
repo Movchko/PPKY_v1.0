@@ -17,6 +17,7 @@ extern "C" {
 #include "event_logger.h"
 #include "event_log_catalog.h"
 #include "spif.h"
+#include "backend.h"
 
 typedef struct {
 	uint32_t log_start_sector;
@@ -88,6 +89,15 @@ void EventLog_HostLinkSessionReset(uint8_t media);
 
 /** Успешная заливка конфига во все целевые МКУ (APPLY). */
 void EventLog_LogConfigApplyOk(uint8_t mcu_ok_count, uint8_t mcu_total);
+
+/**
+ * Сохранено МКУ: can_header = ID МКУ (dir=1), can_data/additional = серийник (UId0..UId2).
+ * Критический tier.
+ */
+void EventLog_LogMcuSaved(const Device *dev, const UniqId *uid);
+
+/** По одному MCU_SAVED на каждый слот PPKYConfig.CfgDevices[] с типом МКУ. */
+void EventLog_LogAllCfgMcusSaved(void);
 
 /**
  * Не удалось залить конфиг в конкретный МКУ.

@@ -359,10 +359,14 @@ static void CfgSync_Finish(uint8_t success, uint8_t save_ppky_cfg) {
 			uint8_t ok_count = (target_count >= failed_count) ?
 			                   (uint8_t)(target_count - failed_count) : 0u;
 			EventLog_LogConfigApplyOk(ok_count, target_count);
+			EventLog_LogAllCfgMcusSaved();
 			if (g_apply_success_cb != nullptr) {
 				g_apply_success_cb();
 			}
 		}
+	}
+	if (finished_op == CFGSYNC_OP_READ_ALL && success) {
+		EventLog_LogAllCfgMcusSaved();
 	}
 	if (finished_op == CFGSYNC_OP_SYNC_IGN_BLOCK && success && ign_block_any_apply != 0u) {
 		if (g_apply_success_cb != nullptr) {

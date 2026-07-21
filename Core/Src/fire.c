@@ -2170,7 +2170,7 @@ static void Fire_UpdateUiText(uint8_t active, uint8_t mode, uint8_t remaining_s,
 	Fire_UiUpdate(active, mode, remaining_s, n_zones, zone_names);
 }
 
-/* Обобщённый индикатор ПОЖАР по ГОСТ: ВНИМАНИЕ / ПОЖАР1 мигают, ПОЖАР2 непрерывно.
+/* Обобщённый индикатор ПОЖАР: ПОЖАР1 непрерывно, ПОЖАР2 и ВНИМАНИЕ мигают.
  * Приоритет: ПОЖАР2 > ПОЖАР1 > ВНИМАНИЕ. */
 static void Fire_UpdateLedFire(uint32_t now_ms)
 {
@@ -2194,7 +2194,7 @@ static void Fire_UpdateLedFire(uint32_t now_ms)
 		return;
 	}
 
-	if (mode == FIRE_LED_MODE_FIRE2) {
+	if (mode == FIRE_LED_MODE_FIRE1) {
 		Led_Set(LED_FIRE, 1u);
 		g_fire.led_fire_on = 1u;
 		if (g_fire.beeper_alert_active) {
@@ -2204,7 +2204,7 @@ static void Fire_UpdateLedFire(uint32_t now_ms)
 	}
 
 	{
-		uint32_t half_ms = (mode == FIRE_LED_MODE_FIRE1) ?
+		uint32_t half_ms = (mode == FIRE_LED_MODE_FIRE2) ?
 				   FIRE_LED_FIRE1_HALF_MS : FIRE_LED_ATTENTION_HALF_MS;
 		if ((now_ms - g_fire.led_toggle_ms) >= half_ms) {
 			g_fire.led_toggle_ms = now_ms;
