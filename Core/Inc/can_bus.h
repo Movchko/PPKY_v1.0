@@ -63,6 +63,9 @@ void CANSendData(uint8_t *Buf);
 /** Остановить UART-мост ESP32 (при выключении модуля). */
 void UartBridge_Stop(void);
 
+/** Отправить BSU-кадр на ESP32 (type 3 — команды ESP и др.). */
+uint8_t UartBridge_SendBsuPacket(uint16_t pkt_type, uint16_t seq, const uint8_t *payload, uint16_t payload_len);
+
 /** UART2 свободен для передачи лога (очередь CAN-моста пуста и TX не занят). */
 uint8_t UartBridge_IsTxIdle(void);
 

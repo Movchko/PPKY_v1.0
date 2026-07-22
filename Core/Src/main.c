@@ -179,7 +179,7 @@ int main(void)
    *
    */
   //HAL_ICACHE_Disable();
-
+  Esp32_SetEnabled(0);
   uint8_t isFlash = 0;
   isFlash = SPIF_Init(&hFlash, &hspi1, FLASH_CS_GPIO_Port, FLASH_CS_Pin);
   //TODO:: вывести ошибку FLASH на экран, критичная неисправность

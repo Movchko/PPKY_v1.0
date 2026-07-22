@@ -7,6 +7,7 @@
 #include "button.h"
 #include "fire.h"
 #include "menu_ui.h"
+#include "esp_manager.h"
 #endif
 
 mainscreenPresenter::mainscreenPresenter(mainscreenView& v)
@@ -22,6 +23,7 @@ void mainscreenPresenter::activate()
     /* Один раз при входе на экран — без последующего опроса в tick. */
     if (model) {
         view.applyMuteIcon(model->getSoundOn());
+        view.applyWifiIcon(EspManager_IsLinkActive() != 0u);
     }
 #endif
 }
@@ -79,5 +81,10 @@ void mainscreenPresenter::onWarningStatusChanged(bool active, uint8_t nItems, ch
 void mainscreenPresenter::onSoundOnChanged(bool soundOn)
 {
 	view.applyMuteIcon(soundOn);
+}
+
+void mainscreenPresenter::onWifiLinkChanged(bool active)
+{
+	view.applyWifiIcon(active);
 }
 #endif

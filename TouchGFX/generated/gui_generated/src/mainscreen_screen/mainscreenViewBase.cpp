@@ -4,7 +4,6 @@
 #include <gui_generated/mainscreen_screen/mainscreenViewBase.hpp>
 #include <touchgfx/Color.hpp>
 #include <texts/TextKeysAndLanguages.hpp>
-#include <images/BitmapDatabase.hpp>
 
 mainscreenViewBase::mainscreenViewBase()
 {
@@ -25,7 +24,7 @@ mainscreenViewBase::mainscreenViewBase()
     CustomContainerSrollText.setXY(0, 46);
     add(CustomContainerSrollText);
 
-    textAreatime_top_bar.setPosition(0, 0, 128, 15);
+    textAreatime_top_bar.setPosition(0, 0, 107, 15);
     textAreatime_top_bar.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
     textAreatime_top_bar.setLinespacing(0);
     Unicode::snprintf(textAreatime_top_barBuffer, TEXTAREATIME_TOP_BAR_SIZE, "%s", touchgfx::TypedText(T___SINGLEUSE_MO05).getText());
@@ -41,11 +40,6 @@ mainscreenViewBase::mainscreenViewBase()
     textArea1.setWildcard(textArea1Buffer);
     textArea1.setTypedText(touchgfx::TypedText(T___SINGLEUSE_MF0S));
     add(textArea1);
-
-    NO_BEEP.setXY(115, 0);
-    NO_BEEP.setBitmap(touchgfx::Bitmap(BITMAP_NO_BEEP_ID));
-    NO_BEEP.setVisible(false);
-    add(NO_BEEP);
 }
 
 mainscreenViewBase::~mainscreenViewBase()

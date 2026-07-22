@@ -25,7 +25,6 @@ protected:
      * Member Declarations
      */
     touchgfx::TextArea textAreatime_1;
-    touchgfx::Image imageMute_2;
     touchgfx::Image imageMute;
     touchgfx::Image imageWifi;
 

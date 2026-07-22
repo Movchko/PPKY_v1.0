@@ -8,6 +8,7 @@
 #include "button.h"
 #include "fire.h"
 #include "led.h"
+#include "gost_mode.h"
 
 namespace {
 
@@ -48,6 +49,41 @@ uint8_t s_warning_manual_select = 0u;
 uint8_t s_fire_mode = 0u;
 uint32_t s_fire_nav_last_press_ms = 0u;
 uint32_t s_warning_nav_last_press_ms = 0u;
+
+/* ГОСТ: без авторотации — на экране всегда индекс 0 («актуальный»). */
+static uint8_t ui_auto_rotate_lists(void)
+{
+#if GOST_MODE
+	return 0u;
+#else
+	return 1u;
+#endif
+}
+
+static void ui_fire_return_to_actual(mainscreenView* view)
+{
+	s_fire_manual_select = 0u;
+	Fire_UiSetManualSelection(0u, 0u);
+	s_fn_cur = 0u;
+	s_fn_ph = PH_IDLE;
+	s_fn_hold_from = 0u;
+	s_fire_nav_last_press_ms = 0u;
+	if (view != nullptr && s_fn_n > 0u) {
+		view->fireShowCurrentZone();
+	}
+}
+
+static void ui_warning_return_to_actual(mainscreenView* view)
+{
+	s_warning_manual_select = 0u;
+	s_wn_cur = 0u;
+	s_wn_ph = PH_IDLE;
+	s_wn_hold_from = 0u;
+	s_warning_nav_last_press_ms = 0u;
+	if (view != nullptr && s_wn_n > 0u) {
+		view->warningShowCurrent();
+	}
+}
 
 static void fire_copy_list(uint8_t n, char (*src)[ZONE_NAME_SIZE + 1])
 {
@@ -130,21 +166,26 @@ void mainscreenView::setupScreen()
     s_warning_nav_last_press_ms = 0u;
     Fire_UiSetManualSelection(0u, 0u);
     uiShowNormalStatus();
-    /* База скрывает NO_BEEP; итоговую видимость выставит presenter::activate. */
+    /* Видимость imageMute/imageWifi в top_bar выставит presenter::activate. */
 #endif
 }
 
 void mainscreenView::applyMuteIcon(bool soundOn)
 {
 #ifndef SIMULATOR
-    const bool show = !soundOn; /* звук откл. → показать NO_BEEP */
-    if (NO_BEEP.isVisible() == show) {
-        return;
-    }
-    NO_BEEP.setVisible(show);
-    NO_BEEP.invalidate();
+    /* звук откл. → показать imageMute */
+    customContainerTopBar1.setMuteVisible(!soundOn);
 #else
     (void)soundOn;
+#endif
+}
+
+void mainscreenView::applyWifiIcon(bool active)
+{
+#ifndef SIMULATOR
+    customContainerTopBar1.setWifiVisible(active);
+#else
+    (void)active;
 #endif
 }
 
@@ -213,9 +254,11 @@ void mainscreenView::warningOnMarqueeOnePassDone()
 	if (s_wn_ph != PH_WAIT_LONG_SCROLL || s_wn_n == 0u) {
 		return;
 	}
-	/* Для длинных строк переключаемся сразу на следующую неисправность:
-	 * пауза перед новым стартом обеспечивается самим контейнером (2с). */
-	s_wn_cur = (uint8_t)((s_wn_cur + 1u) % s_wn_n);
+	if (ui_auto_rotate_lists() != 0u && !s_warning_manual_select) {
+		/* Обычный режим: после длинной строки — следующая неисправность. */
+		s_wn_cur = (uint8_t)((s_wn_cur + 1u) % s_wn_n);
+	}
+	/* ГОСТ / ручной выбор: остаёмся на текущем элементе, перезапуск бегущей строки. */
 	s_wn_ph = PH_IDLE;
 	s_wn_hold_from = 0u;
 	ui_update_warning_header(this);
@@ -264,21 +307,29 @@ void mainscreenView::handleTickEvent()
 	if (s_fire_manual_select &&
 	    s_fire_nav_last_press_ms != 0u &&
 	    (now - s_fire_nav_last_press_ms) >= MAIN_NAV_AUTO_RETURN_MS) {
-		s_fire_manual_select = 0u;
-		Fire_UiSetManualSelection(0u, 0u);
-		s_fn_ph = PH_IDLE;
-		s_fn_hold_from = 0u;
-		s_fire_nav_last_press_ms = 0u;
-		fireShowCurrentZone();
+		if (ui_auto_rotate_lists() == 0u) {
+			ui_fire_return_to_actual(this);
+		} else {
+			s_fire_manual_select = 0u;
+			Fire_UiSetManualSelection(0u, 0u);
+			s_fn_ph = PH_IDLE;
+			s_fn_hold_from = 0u;
+			s_fire_nav_last_press_ms = 0u;
+			fireShowCurrentZone();
+		}
 	}
 	if (s_warning_manual_select &&
 	    s_warning_nav_last_press_ms != 0u &&
 	    (now - s_warning_nav_last_press_ms) >= MAIN_NAV_AUTO_RETURN_MS) {
-		s_warning_manual_select = 0u;
-		s_wn_ph = PH_IDLE;
-		s_wn_hold_from = 0u;
-		s_warning_nav_last_press_ms = 0u;
-		warningShowCurrent();
+		if (ui_auto_rotate_lists() == 0u) {
+			ui_warning_return_to_actual(this);
+		} else {
+			s_warning_manual_select = 0u;
+			s_wn_ph = PH_IDLE;
+			s_wn_hold_from = 0u;
+			s_warning_nav_last_press_ms = 0u;
+			warningShowCurrent();
+		}
 	}
 #endif
 }
@@ -289,7 +340,8 @@ void mainscreenView::uiSetWarningHeaderVisible(bool visible)
 	if (cur == visible) {
 		return;
 	}
-	customContainerTopBar1.setVisible(!visible);
+	/* top_bar оставляем видимым: в нём imageMute/imageWifi. */
+	customContainerTopBar1.setVisible(true);
 	customContainerTopBar1.invalidate();
 	customContainerScrollTime1.setVisible(!visible);
 	customContainerScrollTime1.invalidate();
@@ -448,12 +500,21 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 	if (!s_fire_manual_select &&
 	    s_fn_ph == PH_HOLD_3S && s_fn_hold_from != 0u &&
 	    (now - s_fn_hold_from) >= FIRE_NAME_HOLD_MS) {
-		s_fn_cur = (uint8_t)((s_fn_cur + 1u) % s_fn_n);
-		s_fn_ph = PH_IDLE;
-		s_fn_hold_from = 0u;
+		if (ui_auto_rotate_lists() != 0u) {
+			s_fn_cur = (uint8_t)((s_fn_cur + 1u) % s_fn_n);
+			s_fn_ph = PH_IDLE;
+			s_fn_hold_from = 0u;
+		} else {
+			/* ГОСТ: не листаем, не мигаем перезапуском — держим актуальный. */
+			s_fn_cur = 0u;
+			s_fn_hold_from = now;
+		}
 	}
 
 	if (!s_fire_manual_select && s_fn_ph == PH_IDLE) {
+		if (ui_auto_rotate_lists() == 0u) {
+			s_fn_cur = 0u;
+		}
 		fireShowCurrentZone();
 	}
 }
@@ -533,7 +594,14 @@ void mainscreenView::updateWarningStatus(bool active, uint8_t nItems, char (*big
 			std::strncpy(s_wn_details[i], details[i], ZONE_NAME_SIZE);
 			s_wn_details[i][ZONE_NAME_SIZE] = '\0';
 		}
-		s_wn_cur = keep_found ? keep_idx : 0u;
+		if (s_warning_manual_select && keep_found) {
+			s_wn_cur = keep_idx;
+		} else if (ui_auto_rotate_lists() == 0u) {
+			/* ГОСТ: вне ручного листания — всегда актуальный (первый). */
+			s_wn_cur = 0u;
+		} else {
+			s_wn_cur = keep_found ? keep_idx : 0u;
+		}
 		s_wn_ph = PH_IDLE;
 		s_wn_hold_from = 0u;
 		warningShowCurrent();
@@ -546,13 +614,21 @@ void mainscreenView::updateWarningStatus(bool active, uint8_t nItems, char (*big
 	if (!s_warning_manual_select &&
 	    s_wn_ph == PH_HOLD_3S && s_wn_hold_from != 0u &&
 	    (now - s_wn_hold_from) >= FIRE_NAME_HOLD_MS) {
-		s_wn_cur = (uint8_t)((s_wn_cur + 1u) % s_wn_n);
-		s_wn_ph = PH_IDLE;
-		s_wn_hold_from = 0u;
-		ui_update_warning_header(this);
+		if (ui_auto_rotate_lists() != 0u) {
+			s_wn_cur = (uint8_t)((s_wn_cur + 1u) % s_wn_n);
+			s_wn_ph = PH_IDLE;
+			s_wn_hold_from = 0u;
+			ui_update_warning_header(this);
+		} else {
+			s_wn_cur = 0u;
+			s_wn_hold_from = now;
+		}
 	}
 
 	if (!s_warning_manual_select && s_wn_ph == PH_IDLE) {
+		if (ui_auto_rotate_lists() == 0u) {
+			s_wn_cur = 0u;
+		}
 		warningShowCurrent();
 	}
 }
@@ -561,20 +637,28 @@ void mainscreenView::handleMainNavButton(uint8_t but)
 {
 	if (but == BUT_ESC) {
 		if (s_fire_manual_select) {
-			s_fire_manual_select = 0u;
-			Fire_UiSetManualSelection(0u, 0u);
-			s_fn_ph = PH_IDLE;
-			s_fn_hold_from = 0u;
-			s_fire_nav_last_press_ms = 0u;
-			fireShowCurrentZone();
+			if (ui_auto_rotate_lists() == 0u) {
+				ui_fire_return_to_actual(this);
+			} else {
+				s_fire_manual_select = 0u;
+				Fire_UiSetManualSelection(0u, 0u);
+				s_fn_ph = PH_IDLE;
+				s_fn_hold_from = 0u;
+				s_fire_nav_last_press_ms = 0u;
+				fireShowCurrentZone();
+			}
 			return;
 		}
 		if (s_warning_manual_select) {
-			s_warning_manual_select = 0u;
-			s_wn_ph = PH_IDLE;
-			s_wn_hold_from = 0u;
-			s_warning_nav_last_press_ms = 0u;
-			warningShowCurrent();
+			if (ui_auto_rotate_lists() == 0u) {
+				ui_warning_return_to_actual(this);
+			} else {
+				s_warning_manual_select = 0u;
+				s_wn_ph = PH_IDLE;
+				s_wn_hold_from = 0u;
+				s_warning_nav_last_press_ms = 0u;
+				warningShowCurrent();
+			}
 			return;
 		}
 		return;

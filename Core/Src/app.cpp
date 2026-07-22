@@ -19,6 +19,7 @@
 #include "rtc_cache.h"
 #include "event_log.h"
 #include "log_transport.h"
+#include "esp_manager.h"
 
 
 
@@ -91,6 +92,7 @@ static uint8_t g_mku_reset_prev_enable[2] = {0u, 0u};
 static uint8_t g_mku_reset_prev_valid = 0u;
 static constexpr uint8_t RELAY_AUTO_MAX_TRACK = 64u;
 static uint8_t g_relay_fire_zone_active[ZONE_NUMBER];
+static uint8_t g_relay_start_zone_active[ZONE_NUMBER];
 
 typedef struct {
 	uint8_t valid;
@@ -128,6 +130,7 @@ static void AddrAuto_ClearActiveDevices(void) {
 	memset(g_active_devices, 0, sizeof(g_active_devices));
 	memset(g_relay_auto_track, 0, sizeof(g_relay_auto_track));
 	memset(g_relay_fire_zone_active, 0, sizeof(g_relay_fire_zone_active));
+	memset(g_relay_start_zone_active, 0, sizeof(g_relay_start_zone_active));
 	memset(g_position_rx, 0, sizeof(g_position_rx));
 	memset(g_position_debounce, 0, sizeof(g_position_debounce));
 	g_active_devices_count = 0;
@@ -504,6 +507,55 @@ static uint8_t RelayAuto_IsFireTriggerInZone(uint8_t zone)
 	return 0u;
 }
 
+static uint8_t RelayAuto_IsFireTriggerAnyZone(void)
+{
+	for (uint8_t zi = 0u; zi < ZONE_NUMBER; zi++) {
+		if (g_relay_fire_zone_active[zi] != 0u) {
+			return 1u;
+		}
+	}
+	return 0u;
+}
+
+static uint8_t RelayAuto_IsStartTriggerInZone(uint8_t zone)
+{
+	uint8_t z_can = (uint8_t)(zone & 0x7Fu);
+	if (z_can >= 1u && z_can <= ZONE_NUMBER) {
+		uint8_t zi = (uint8_t)(z_can - 1u);
+		if (g_relay_start_zone_active[zi] != 0u) {
+			return 1u;
+		}
+	}
+	return 0u;
+}
+
+static uint8_t RelayAuto_IsStartTriggerAnyZone(void)
+{
+	for (uint8_t zi = 0u; zi < ZONE_NUMBER; zi++) {
+		if (g_relay_start_zone_active[zi] != 0u) {
+			return 1u;
+		}
+	}
+	return 0u;
+}
+
+static uint8_t RelayAuto_IsLatchMode(uint8_t mode)
+{
+	return (mode == 1u || mode == 4u || mode == 5u || mode == 6u) ? 1u : 0u;
+}
+
+extern "C" void RelayAuto_NotifyStartExtinguish(uint8_t zone_can)
+{
+	uint8_t z = (uint8_t)(zone_can & 0x7Fu);
+	if (z == 0u) {
+		memset(g_relay_start_zone_active, 1, sizeof(g_relay_start_zone_active));
+		return;
+	}
+	if (z >= 1u && z <= ZONE_NUMBER) {
+		g_relay_start_zone_active[z - 1u] = 1u;
+	}
+}
+
 static void RelayAuto_OnFireServiceCmd(uint32_t MsgID, uint8_t command)
 {
 	can_ext_id_t id;
@@ -638,7 +690,7 @@ static void RelayAuto_Process(void)
 			}
 			const DeviceRelayConfig *cfg = (const DeviceRelayConfig*)m->Devices[slot].reserv;
 			const uint8_t mode = cfg->mode;
-			if (mode == 0u || mode > 3u) {
+			if (mode == 0u || mode > 6u) {
 				continue;
 			}
 
@@ -647,16 +699,20 @@ static void RelayAuto_Process(void)
 				trigger = RelayAuto_IsFireTriggerInZone(zone);
 			} else if (mode == 2u) {
 				trigger = RelayAuto_IsFaultTriggerInZone(zone);
-
 				/*
 				 * ниже логика срабатывания по пожару в режиме неисправности. пока убрали.
 				 */
 				//if (trigger == 0u) {
 				//	trigger = RelayAuto_IsFireTriggerInZone(zone);
 				//}
-
-			} else {
+			} else if (mode == 3u) {
 				trigger = RelayAuto_IsLswitchOpenTriggerInZone(zone);
+			} else if (mode == 4u) {
+				trigger = RelayAuto_IsFireTriggerAnyZone();
+			} else if (mode == 5u) {
+				trigger = RelayAuto_IsStartTriggerInZone(zone);
+			} else if (mode == 6u) {
+				trigger = RelayAuto_IsStartTriggerAnyZone();
 			}
 
 			uint8_t target_state = (cfg->initial_state != 0u) ? 1u : 0u;
@@ -681,7 +737,8 @@ static void RelayAuto_Process(void)
 			if (track_idx >= 0) {
 				RelayAutoTrack *tr = &g_relay_auto_track[(uint8_t)track_idx];
 				if (tr->target_state != target_state) {
-					if (mode == 1u && trigger != 0u && tr->fire_latched != 0u) {
+					if (RelayAuto_IsLatchMode(mode) != 0u &&
+					    trigger != 0u && tr->fire_latched != 0u) {
 						continue;
 					}
 					RelayAuto_SendTarget(zone, h_adr, l_adr, target_state);
@@ -692,7 +749,7 @@ static void RelayAuto_Process(void)
 						continue;
 					}
 					tr->target_state = target_state;
-					if (mode == 1u && trigger != 0u) {
+					if (RelayAuto_IsLatchMode(mode) != 0u && trigger != 0u) {
 						tr->fire_latched = 1u;
 					}
 				}
@@ -1229,6 +1286,7 @@ void AppInit() {
 	(void)EventLog_Init(&hFlash);
 	EventLog_LogMasterBoot();
 	LogTransport_Init();
+	EspManager_Init();
 
 	/* TEMP: WiFi/ESP32 при старте (для отладки). Обычно включается только из меню связи. */
 	Esp32_SetEnabled(1u);
@@ -1259,6 +1317,10 @@ uint32_t counter1s = 0;
 
 uint32_t warning_process_delay = 10000;
 
+
+uint32_t led_power_toogle_cnt = 0;
+uint8_t led_power_is_toogle = 0;
+
 static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 {
 	uint8_t power_fault_mask = 0u;       /* Ошибки выходов power-модуля (внешнее питание МКУ). */
@@ -1271,10 +1333,10 @@ static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 	uint32_t reserve_mv = (CHANNEL_VAL[0] > 0) ? (uint32_t)CHANNEL_VAL[0] : 0u; /* Резервный ввод */
 	uint8_t reserve_required = (PPKYConfig.power_input == 0u) ? 1u : 0u; /* 0 = используем оба ввода */
 
-	if (main_mv < present_threshold_mv) {
+	if (main_mv < (nominal_mv - present_threshold_mv) || main_mv > (nominal_mv + present_threshold_mv)) {
 		ppku_input_fault_mask |= 0x01u; /* ПИТАНИЕ 1 */
 	}
-	if (reserve_required && reserve_mv < present_threshold_mv) {
+	if (reserve_required && (reserve_mv < (nominal_mv - present_threshold_mv) || reserve_mv > (nominal_mv + present_threshold_mv))) {
 		ppku_input_fault_mask |= 0x02u; /* ПИТАНИЕ 2 */
 	}
 
@@ -1286,8 +1348,33 @@ static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 	Warning_SetPowerFaultMask(power_fault_mask);
 	Warning_SetPpkuInputFaultMask(ppku_input_fault_mask);
 
+	if(ppku_input_fault_mask || ppku_input_fault_mask) {
+		led_power_is_toogle = 1;
+	} else {
+		Led_Set(LED_POWER, 1);
+		led_power_toogle_cnt = LED_POWER_TOOGLE_PERIOD_MS;
+		led_power_is_toogle = 0;
+	}
+
+	if(led_power_is_toogle) {
+		if(led_power_toogle_cnt) {
+			if(led_power_toogle_cnt == (LED_POWER_TOOGLE_PERIOD_MS / 2))
+				Led_Set(LED_POWER, 1);
+			led_power_toogle_cnt--;
+		} else {
+			Led_Set(LED_POWER, 0);
+			led_power_toogle_cnt = LED_POWER_TOOGLE_PERIOD_MS;
+		}
+	}
+
+
+
 	/* При отсутствии основного ввода индикатор питания должен гаснуть. */
-	Led_Set(LED_POWER, ((ppku_input_fault_mask & 0x01u) != 0u) ? 0u : 1u);
+	//Led_Set(LED_POWER, ((ppku_input_fault_mask & 0x01u) != 0u) ? 0u : 1u);
+
+
+
+
 
 	/* LED_ERR — только неисправность (WarningProcess1ms). ВНИМАНИЕ — на LED_FIRE. */
 	uint8_t has_fault = (power_fault_mask != 0u || ppku_input_fault_mask != 0u) ? 1u :
@@ -1315,6 +1402,7 @@ void AppTimer1ms() {
 
 
 	BackendProcess();
+	EspManager_Process(now);
 	if(warning_process_delay)
 		warning_process_delay--;
 	else {

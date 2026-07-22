@@ -5,6 +5,7 @@
 #include "button.h"
 #include "device_config.h"
 #include "menu_ui.h"
+#include "esp_manager.h"
 
 extern PPKYCfg PPKYConfig;
 
@@ -20,6 +21,8 @@ void ScreenMenu_ConnectionPresenter::activate()
 {
 #ifndef SIMULATOR
     currentIndex = view.getSelectedIndex();
+    Esp32_SetEnabled(1u);
+    EspManager_RequestWifiEnable();
     refreshLine();
 #endif
 }

@@ -58,6 +58,16 @@
 void FillConfigTemplate(void);
 void ReadSavedConfig(void);
 
+/* Реле mode 5/6: отметить зону, где реально ушёл пуск спички/тушения.
+ * zone_can=0 — все зоны. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void RelayAuto_NotifyStartExtinguish(uint8_t zone_can);
+#ifdef __cplusplus
+}
+#endif
+
 /* Чтение содержимого BKP-регистра RTC с моментом последнего сохранения
  * (месяц/день/часы/минуты). Поля возвращаются в формате RTC (BCD),
  * как в HAL_RTC_GetDate / HAL_RTC_GetTime.

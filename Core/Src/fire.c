@@ -44,6 +44,9 @@ extern uint8_t g_active_devices_count;
 #define FIRE_MAX_SOURCES_PER_ZONE            8u
 #if GOST_MODE
 #define FIRE_GOST_STOP_RESET_HOLD_MS         5000u
+/* После квитирования hold ОСТАНОВ: игнор повторных SetStatusFire тех же источников
+ * (МКУ ретраит, пока датчик в Fire / was_fire). Новый source_key снова поднимает пожар. */
+#define FIRE_RESET_SUPPRESS_MAX              (FIRE_MAX_SLOTS * FIRE_MAX_SOURCES_PER_ZONE)
 #endif
 /* ГОСТ 53325 п.7.6.1.4 прим.2 / Тр. 3.5: частоты мигания обобщённого LED_FIRE */
 #define FIRE_LED_ATTENTION_HALF_MS           1250u /* 0,4 Гц (диапазон 0,2–0,5 Гц) */
@@ -125,6 +128,7 @@ typedef struct {
 	uint32_t phase2_deadline_ms;
 	uint32_t ext_retry_next_ms;
 	uint32_t paused_remaining_ms;
+	uint32_t appeared_ms; /* момент появления слота (новое сверху в UI) */
 	uint32_t source_keys[FIRE_MAX_SOURCES_PER_ZONE];
 } FireZoneSlot;
 
@@ -204,6 +208,14 @@ static uint8_t g_fire_bus_cmd_zone = 0u;
 static uint8_t g_fire_bus_cmd_launch_type = 0u;
 /* 1 = Transition вызван с физической панели (не с CAN-кнопки). */
 static uint8_t g_fire_panel_btn_source = 0u;
+#if GOST_MODE
+typedef struct {
+	uint8_t used;
+	uint8_t zone;
+	uint32_t source_key;
+} FireResetSuppressEntry;
+static FireResetSuppressEntry g_fire_reset_suppress[FIRE_RESET_SUPPRESS_MAX];
+#endif
 
 /* Управляет яркостью кнопки/подписи ПУСК ОБЩИЙ (обычная/активная). */
 static void Fire_SetStartAllBrightness(uint8_t bright);
@@ -224,7 +236,12 @@ static void Fire_ClearAllSlots(void);
 #if GOST_MODE
 /* GOST: удержание ОСТАНОВ ≥5 с — сброс активного пожара (слоты, таймеры, UI). */
 static void Fire_GostResetFire(uint32_t now_ms);
+static void Fire_ResetSuppressClear(void);
+static void Fire_ResetSuppressAddFromSlot(const FireZoneSlot *slot);
+static uint8_t Fire_ResetSuppressHas(uint8_t zone, uint32_t source_key);
+static void Fire_ClearSlotIndex(uint8_t idx);
 #endif
+static void Fire_Transition(FireEvent ev, uint32_t now_ms);
 /* Синхронизирует состояние FSM исходя из состояния слотов/фаз. */
 static void Fire_SyncStateFromSlots(void);
 /* Переводит номер зоны CAN (1..N) в индекс массива имён (0..N-1). */
@@ -734,6 +751,7 @@ static void Fire_SendStartToIgniterAddr(const FireIgniterAddr *addr, uint8_t zd_
 	data[2] = zd_sec;
 	data[3] = md_sec;
 	SendMessageFull(can_id, data, 0, BUS_CAN12);
+	RelayAuto_NotifyStartExtinguish(addr->zone & 0x7Fu);
 }
 
 static void Fire_SendStopToIgniterAddr(const FireIgniterAddr *addr)
@@ -1424,6 +1442,12 @@ static uint8_t Fire_TryAddNewFireZone(uint8_t zone, uint32_t source_key, uint8_t
 	 * 0 - без изменений (дубль источника),
 	 * 1 - новая зона,
 	 * 2 - переход зоны из ПОЖАР1 в ПОЖАР2. */
+#if GOST_MODE
+	/* Квитированный источник: МКУ может ретраить SetStatusFire — не поднимаем пожар снова. */
+	if (Fire_ResetSuppressHas(zone, source_key)) {
+		return 0u;
+	}
+#endif
 	int8_t si = Fire_FindSlotZone(zone);
 	if (si >= 0) {
 		FireZoneSlot *existing = &g_fire.slots[(uint8_t)si];
@@ -1432,6 +1456,7 @@ static uint8_t Fire_TryAddNewFireZone(uint8_t zone, uint32_t source_key, uint8_t
 		}
 		if (existing->extinguish_locked) {
 			existing->fire_redisplay = 1u;
+			existing->appeared_ms = now_ms; /* новый цикл пожара — сверху в UI */
 			return 3u;
 		}
 		if (Fire_ZoneLaunchBlocked(zone)) {
@@ -1458,6 +1483,7 @@ static uint8_t Fire_TryAddNewFireZone(uint8_t zone, uint32_t source_key, uint8_t
 	memset(s, 0, sizeof(*s));
 	s->active = 1u;
 	s->zone = zone;
+	s->appeared_ms = now_ms;
 	(void)Fire_AddSourceToSlot(s, source_key);
 	if (Fire_ZoneLaunchBlocked(zone)) {
 		s->fire1_waiting = 0u;
@@ -1488,6 +1514,77 @@ static void Fire_ClearAllSlots(void)
 	g_fire.zone_countdown_paused = 0u;
 	g_fire.log_complete_posted = 0u;
 }
+
+#if GOST_MODE
+static void Fire_ClearSlotIndex(uint8_t idx)
+{
+	if (idx >= FIRE_MAX_SLOTS) {
+		return;
+	}
+	memset(&g_fire.slots[idx], 0, sizeof(g_fire.slots[idx]));
+}
+
+static void Fire_ResetSuppressClear(void)
+{
+	memset(g_fire_reset_suppress, 0, sizeof(g_fire_reset_suppress));
+}
+
+static void Fire_ResetSuppressAdd(uint8_t zone, uint32_t source_key)
+{
+	for (uint8_t i = 0u; i < FIRE_RESET_SUPPRESS_MAX; i++) {
+		if (g_fire_reset_suppress[i].used != 0u &&
+		    g_fire_reset_suppress[i].zone == (zone & 0x7Fu) &&
+		    g_fire_reset_suppress[i].source_key == source_key) {
+			return;
+		}
+	}
+	for (uint8_t i = 0u; i < FIRE_RESET_SUPPRESS_MAX; i++) {
+		if (g_fire_reset_suppress[i].used == 0u) {
+			g_fire_reset_suppress[i].used = 1u;
+			g_fire_reset_suppress[i].zone = zone & 0x7Fu;
+			g_fire_reset_suppress[i].source_key = source_key;
+			return;
+		}
+	}
+}
+
+static void Fire_ResetSuppressAddFromSlot(const FireZoneSlot *slot)
+{
+	if (slot == NULL || slot->active == 0u) {
+		return;
+	}
+	uint8_t n = slot->source_count;
+	if (n > FIRE_MAX_SOURCES_PER_ZONE) {
+		n = FIRE_MAX_SOURCES_PER_ZONE;
+	}
+	if (n == 0u) {
+		/* Зона без ключей (редко): блокируем зону целиком по ключу 0. */
+		Fire_ResetSuppressAdd(slot->zone, 0u);
+		return;
+	}
+	for (uint8_t i = 0u; i < n; i++) {
+		Fire_ResetSuppressAdd(slot->zone, slot->source_keys[i]);
+	}
+}
+
+static uint8_t Fire_ResetSuppressHas(uint8_t zone, uint32_t source_key)
+{
+	uint8_t z = zone & 0x7Fu;
+	for (uint8_t i = 0u; i < FIRE_RESET_SUPPRESS_MAX; i++) {
+		if (g_fire_reset_suppress[i].used == 0u) {
+			continue;
+		}
+		if (g_fire_reset_suppress[i].zone != z) {
+			continue;
+		}
+		if (g_fire_reset_suppress[i].source_key == source_key ||
+		    g_fire_reset_suppress[i].source_key == 0u) {
+			return 1u;
+		}
+	}
+	return 0u;
+}
+#endif
 
 static uint8_t Fire_AnyActiveSlot(void)
 {
@@ -1546,6 +1643,7 @@ static uint8_t Fire_MarkExternalExtinguishZone(uint8_t zone, uint32_t now_ms)
 		return 0u;
 	}
 	Fire_MarkSlotPhase2Sent(s, now_ms, FIRE_LOG_START_MANUAL);
+	RelayAuto_NotifyStartExtinguish(zone & 0x7Fu);
 	return 1u;
 }
 
@@ -2088,14 +2186,32 @@ static uint8_t Fire_BuildUiZoneList(uint8_t *zones, uint8_t max_out)
 			zones[nz++] = z;
 		}
 	}
+	/* Новее сверху: первая зона в UI = последний пожар. */
 	for (uint8_t a = 1u; a < nz; a++) {
-		uint8_t key = zones[a];
+		uint8_t key_z = zones[a];
+		uint32_t key_ms = 0u;
+		for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
+			if (g_fire.slots[i].active && g_fire.slots[i].zone == key_z) {
+				key_ms = g_fire.slots[i].appeared_ms;
+				break;
+			}
+		}
 		uint8_t b = a;
-		while (b > 0u && zones[b - 1u] > key) {
+		while (b > 0u) {
+			uint32_t prev_ms = 0u;
+			for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
+				if (g_fire.slots[i].active && g_fire.slots[i].zone == zones[b - 1u]) {
+					prev_ms = g_fire.slots[i].appeared_ms;
+					break;
+				}
+			}
+			if (prev_ms >= key_ms) {
+				break;
+			}
 			zones[b] = zones[b - 1u];
 			b--;
 		}
-		zones[b] = key;
+		zones[b] = key_z;
 	}
 	return nz;
 }
@@ -2246,39 +2362,56 @@ static void Fire_SetIdleIndication(void)
 #if GOST_MODE
 static void Fire_GostResetFire(uint32_t now_ms)
 {
-	/* Сброс пожара с панели (удержание ОСТАНОВ ≥5 с): UI без «ПОЖАР», слоты пустые,
-	 * таймеры/дотушивание остановлены. extinguish_locked снимается вместе со слотами —
-	 * новый датчик той же зоны снова может открыть слот. */
+	/* Сброс пожара с панели (удержание ОСТАНОВ ≥5 с).
+	 * При выборе зоны на UI — квитирование только этой зоны; иначе все слоты.
+	 * Источники заносятся в suppress, чтобы ретраи SetStatusFire с МКУ
+	 * не поднимали пожар снова (датчик/МКУ часто остаются в Fire до reboot). */
 	uint8_t log_zone = 0u;
-	uint8_t logged_any = 0u;
+	uint8_t zone_only = 0u;
+	uint8_t sel_zone = 0u;
 
-	if (g_fire_ui_manual_select_enabled) {
+	if (g_fire_ui_manual_select_enabled && Fire_GetSelectedZoneFromUi(&sel_zone)) {
+		zone_only = 1u;
+		log_zone = sel_zone;
+	} else if (g_fire_ui_manual_select_enabled) {
 		(void)Fire_GetSelectedZoneFromUi(&log_zone);
 	}
 	if (g_fire_panel_btn_source != 0u) {
 		Fire_LogPanelButton(FIRE_LOG_BTN_STOP, log_zone, 5u);
 	}
 
-	/* По записи на каждую активную зону до очистки слотов. */
-	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
-		if (!g_fire.slots[i].active) {
-			continue;
+	if (zone_only != 0u) {
+		int8_t si = Fire_FindSlotZone(sel_zone);
+		if (si >= 0) {
+			Fire_ResetSuppressAddFromSlot(&g_fire.slots[(uint8_t)si]);
+			Fire_LogFireReset(sel_zone, 0u);
+			Fire_SendStopZone(sel_zone);
+			Fire_AbortExtinguishRetriesForZone(sel_zone);
+			Fire_ClearSlotIndex((uint8_t)si);
+		} else {
+			Fire_LogFireReset(sel_zone, 0u);
+			Fire_SendStopZone(sel_zone);
 		}
-		Fire_LogFireReset(g_fire.slots[i].zone, 0u);
-		logged_any = 1u;
-	}
-	if (logged_any == 0u) {
-		Fire_LogFireReset(log_zone, 0u);
+	} else {
+		uint8_t logged_any = 0u;
+		for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
+			if (!g_fire.slots[i].active) {
+				continue;
+			}
+			Fire_ResetSuppressAddFromSlot(&g_fire.slots[i]);
+			Fire_LogFireReset(g_fire.slots[i].zone, 0u);
+			logged_any = 1u;
+		}
+		if (logged_any == 0u) {
+			Fire_LogFireReset(log_zone, 0u);
+		}
+
+		Fire_SendStopAllMcus();
+		Fire_AbortExtinguishRetriesAll();
+		Fire_RetryCancelAll();
+		Fire_ClearAllSlots();
 	}
 
-	Fire_SendStopAllMcus();
-	Fire_AbortExtinguishRetriesAll();
-	Fire_RetryCancelAll();
-	Fire_ClearAllSlots();
-
-	g_fire.state = FIRE_STATE_IDLE;
-	g_fire.state_start_ms = now_ms;
-	g_fire.reply_received = 0u;
 	g_fire.start_launch_pressed_latched = 0u;
 	g_fire.stop_launch_pressed_latched = 0u;
 	g_fire.start_led_hold_until_ms = 0u;
@@ -2289,13 +2422,24 @@ static void Fire_GostResetFire(uint32_t now_ms)
 	g_fire.btn_start_all_hold_latched = 0u;
 	Fire_StartAllHoldSoundOff();
 
-	Fire_SetIdleIndication();
-	Fire_UpdateLedFire(now_ms);
-	{
-		char z0[FIRE_UI_MAX_ZONES][FIRE_UI_NAME_LEN];
-		/* Сброс кэша UI, иначе active=0 мог не отправиться. */
-		g_fire.last_ui_active = 0xFFu;
-		Fire_UpdateUiText(0u, 0u, 0u, 0u, z0);
+	Fire_SyncStateFromSlots();
+	g_fire.state_start_ms = now_ms;
+	g_fire.reply_received = 0u;
+
+	if (!Fire_AnyActiveSlot()) {
+		g_fire.state = FIRE_STATE_IDLE;
+		g_fire.zone_countdown_stopped = 0u;
+		g_fire.zone_countdown_paused = 0u;
+		Fire_SetIdleIndication();
+		Fire_UpdateLedFire(now_ms);
+		{
+			char z0[FIRE_UI_MAX_ZONES][FIRE_UI_NAME_LEN];
+			g_fire.last_ui_active = 0xFFu;
+			Fire_UpdateUiText(0u, 0u, 0u, 0u, z0);
+		}
+	} else {
+		/* Остались другие зоны — обновить UI/звук через обычный тик FSM. */
+		Fire_Transition(FIRE_EVENT_TICK_1MS, now_ms);
 	}
 }
 #endif
@@ -2787,6 +2931,9 @@ void Fire_Init(void)
 	Fire_RetryCancelAll();
 	/* Полный сброс слотов только при перезапуске ППКУ */
 	Fire_ClearAllSlots();
+#if GOST_MODE
+	Fire_ResetSuppressClear();
+#endif
 	g_fire.state = FIRE_STATE_IDLE;
 	g_fire.start_all_is_bright = 0xFFu;
 	Fire_SetStartAllBrightness(0u);

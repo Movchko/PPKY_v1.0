@@ -35,7 +35,7 @@
           {
             "Type": "TextArea",
             "Name": "textAreatime_top_bar",
-            "Width": 128,
+            "Width": 107,
             "Height": 15,
             "Visible": false,
             "TextId": "__SingleUse_4WPO",
@@ -71,15 +71,6 @@
               "UseBuffer": true,
               "BufferSize": 14
             }
-          },
-          {
-            "Type": "Image",
-            "Name": "NO_BEEP",
-            "X": 115,
-            "Width": 14,
-            "Height": 14,
-            "Visible": false,
-            "RelativeFilename": "no_beep.png"
           }
         ],
         "Interactions": []
@@ -730,8 +721,8 @@
             "Type": "TextArea",
             "Name": "textAreatime_1",
             "Y": -3,
-            "Width": 72,
-            "Height": 15,
+            "Width": 99,
+            "Height": 18,
             "Visible": false,
             "TextId": "Data",
             "TextRotation": "0",
@@ -743,17 +734,8 @@
           },
           {
             "Type": "Image",
-            "Name": "imageMute_2",
-            "X": 95,
-            "Width": 14,
-            "Height": 14,
-            "Visible": false,
-            "RelativeFilename": "no_beep.png"
-          },
-          {
-            "Type": "Image",
             "Name": "imageMute",
-            "X": 79,
+            "X": 114,
             "Width": 14,
             "Height": 14,
             "Visible": false,
@@ -762,7 +744,7 @@
           {
             "Type": "Image",
             "Name": "imageWifi",
-            "X": 111,
+            "X": 99,
             "Y": 2,
             "Width": 15,
             "Height": 11,

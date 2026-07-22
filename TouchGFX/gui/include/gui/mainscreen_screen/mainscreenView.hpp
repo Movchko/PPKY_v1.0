@@ -46,8 +46,10 @@ public:
     void uiSetTopHeaderText(const char* text);
     /** Дежурный режим: по центру большого поля — «НОРМА». */
     void uiShowNormalStatus();
-    /** NO_BEEP: показать при выключенном звуке; invalidate только при смене. */
+    /** imageMute в top_bar: показать при выключенном звуке. */
     void applyMuteIcon(bool soundOn);
+    /** imageWifi в top_bar: показать при активном TCP-подключении хоста. */
+    void applyWifiIcon(bool active);
 #endif
 
 protected:

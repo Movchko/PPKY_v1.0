@@ -10,6 +10,8 @@
 #include "can_bus.h"
 #include "main.h"
 #include "backend.h"
+#include "esp_manager.h"
+#include "esp_protocol.h"
 #include "event_log.h"
 #include "menu_ui.h"
 #include "app.hpp"
@@ -25,6 +27,7 @@
 #define CAN_TX_STALL_RECOVERY_MS    3000u
 #define LOG_PKT_TYPE_REQ            16u
 #define LOG_UART_BODY_MAX           246u
+#define UART_TX_PKT_MAX             256u
 #define CAN_RING_SETTLE_MS    5000
 
 typedef struct {
@@ -61,7 +64,7 @@ typedef struct {
 } UartRxFrame;
 
 typedef struct {
-	uint8_t  pkt[BSU_PKT_CAN_SIZE];
+	uint8_t  pkt[UART_TX_PKT_MAX];
 	uint16_t len;
 } UartTxPacket;
 
@@ -215,6 +218,37 @@ static void uart_tx_packet_push(uint8_t can_bus, uint32_t id, const uint8_t *dat
 	uart_tx_head = next;
 }
 
+static void uart_tx_bsu_push(uint16_t pkt_type, uint16_t seq, const uint8_t *payload, uint16_t payload_len)
+{
+	uint8_t next = ring_next_u8(uart_tx_head, UART_BRIDGE_QUEUE_SIZE);
+	if (next == uart_tx_tail) {
+		uart_tx_tail = ring_next_u8(uart_tx_tail, UART_BRIDGE_QUEUE_SIZE);
+	}
+
+	{
+		UartTxPacket *p = &uart_tx_ring[uart_tx_head];
+		uint16_t len = BSU_PacketBuild(p->pkt, UART_TX_PKT_MAX, pkt_type, seq, payload, payload_len);
+		if (len == 0u) {
+			return;
+		}
+		p->len = len;
+	}
+
+	uart_tx_head = next;
+}
+
+uint8_t UartBridge_SendBsuPacket(uint16_t pkt_type, uint16_t seq, const uint8_t *payload, uint16_t payload_len)
+{
+	if (!Esp32_IsEnabled() || payload_len > LOG_UART_BODY_MAX) {
+		return 0u;
+	}
+	if (payload_len > 0u && payload == NULL) {
+		return 0u;
+	}
+	uart_tx_bsu_push(pkt_type, seq, payload, payload_len);
+	return 1u;
+}
+
 static void uart_bridge_on_rx_byte(uint8_t b)
 {
 	switch (uart_rx_state) {
@@ -275,6 +309,21 @@ static void uart_bridge_on_rx_byte(uint8_t b)
 				uart_rx_reset();
 				break;
 			}
+		} else if (uart_pkt_type == BSU_PKT_TYPE_ESP_ACTIVITY) {
+			if (uart_body_total != ESP_ACTIVITY_PAYLOAD_SIZE) {
+				uart_rx_reset();
+				break;
+			}
+		} else if (uart_pkt_type == BSU_PKT_TYPE_ESP_CAN) {
+			if (uart_body_total != BSU_PKT_CAN_PAYLOAD) {
+				uart_rx_reset();
+				break;
+			}
+		} else if (uart_pkt_type == BSU_PKT_TYPE_ESP_UART) {
+			if (uart_body_total == 0u || uart_body_total > ESP_UART_BODY_MAX) {
+				uart_rx_reset();
+				break;
+			}
 		} else {
 			uart_rx_reset();
 			break;
@@ -307,6 +356,12 @@ static void uart_bridge_on_rx_byte(uint8_t b)
 				LogTransport_OnUart2LogRequest(uart_pkt_seq,
 				                               uart_body_buf,
 				                               uart_body_total);
+			} else if (uart_pkt_type == BSU_PKT_TYPE_ESP_ACTIVITY) {
+				EspManager_OnActivity(uart_body_buf, uart_body_total);
+			} else if (uart_pkt_type == BSU_PKT_TYPE_ESP_CAN) {
+				/* Заготовка: внешний CAN ESP — обработка позже. */
+			} else if (uart_pkt_type == BSU_PKT_TYPE_ESP_UART) {
+				/* Заготовка: внешний UART ESP — обработка позже. */
 			}
 		}
 		uart_rx_reset();

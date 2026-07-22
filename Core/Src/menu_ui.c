@@ -4,6 +4,7 @@
 #include "backend.h"
 #include "can_bus.h"
 #include "event_log.h"
+#include "esp_manager.h"
 
 static uint8_t g_config_session_active = 0u;
 static uint8_t g_main_screen_active = 0u;
@@ -49,10 +50,10 @@ void Esp32_SetEnabled(uint8_t enabled)
 		HAL_GPIO_WritePin(ESP32_EN_GPIO_Port, ESP32_EN_Pin, GPIO_PIN_SET);
 		HAL_Delay(100);
 		g_esp32_enabled = 1u;
+		EspManager_OnEspPoweredOn();
 	} else {
-		if (g_esp32_enabled == 0u) {
-			return;
-		}
+
+		EspManager_OnEspPoweredOff();
 		UartBridge_Stop();
 		HAL_GPIO_WritePin(ESP32_EN_GPIO_Port, ESP32_EN_Pin, GPIO_PIN_RESET);
 		HAL_GPIO_WritePin(ESP32_BOOT_GPIO_Port, ESP32_BOOT_Pin, GPIO_PIN_RESET);

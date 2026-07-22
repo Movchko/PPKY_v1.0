@@ -4,6 +4,7 @@
 
 #ifndef SIMULATOR
 #include "rtc_cache.h"
+#include "esp_manager.h"
 #endif
 
 Model::Model() : modelListener(0), soundOn(true)
@@ -62,6 +63,16 @@ void Model::tick()
 		modelListener->onFireStatusChanged(fireActive, fireMode, fireZone, fireRemaining,
 						     fireZoneNameCount, fireZoneNames);
 		modelListener->onWarningStatusChanged(warningActive, warningCount, warningBigTitles, warningDetails);
+#ifndef SIMULATOR
+		{
+			static uint8_t lastWifiLink = 0xFFu;
+			uint8_t wifiLink = EspManager_IsLinkActive();
+			if (wifiLink != lastWifiLink) {
+				lastWifiLink = wifiLink;
+				modelListener->onWifiLinkChanged(wifiLink != 0u);
+			}
+		}
+#endif
 		modelListener->onAppTick();
 	}
 

@@ -73,6 +73,7 @@ struct WarningItem {
 	int16_t extra; /* произвольный параметр (например температура DPT) */
 	uint8_t fault_now;
 	uint32_t show_until_ms;
+	uint32_t appeared_ms; /* момент появления (новое сверху в UI) */
 };
 
 static WarningItem g_items[WARN_MAX_ITEMS];
@@ -419,6 +420,9 @@ static uint8_t UpsertItem(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l
 		g_items[(uint8_t)idx].extra = extra;
 		g_items[(uint8_t)idx].fault_now = 1u;
 		g_items[(uint8_t)idx].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
+		if (became_active) {
+			g_items[(uint8_t)idx].appeared_ms = now_ms;
+		}
 		if (became_active && IsFaultKind(kind)) {
 			EventLog_PostDeviceFaultItem(g_items[(uint8_t)idx], 0u);
 		}
@@ -440,6 +444,7 @@ static uint8_t UpsertItem(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l
 		g_items[i].extra = extra;
 		g_items[i].fault_now = 1u;
 		g_items[i].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
+		g_items[i].appeared_ms = now_ms;
 		if (IsFaultKind(kind)) {
 			EventLog_PostDeviceFaultItem(g_items[i], 0u);
 		}
@@ -593,9 +598,11 @@ static void PruneInactiveItems(uint32_t now_ms)
 		}
 
 		if (IsItemStillFaulty(g_items[i])) {
-			if (g_items[i].fault_now == 0u && IsFaultKind(g_items[i].kind) &&
-			    !IsConfigFaultKind(g_items[i].kind)) {
-				EventLog_PostDeviceFaultItem(g_items[i], 0u);
+			if (g_items[i].fault_now == 0u) {
+				g_items[i].appeared_ms = now_ms;
+				if (IsFaultKind(g_items[i].kind) && !IsConfigFaultKind(g_items[i].kind)) {
+					EventLog_PostDeviceFaultItem(g_items[i], 0u);
+				}
 			}
 			g_items[i].fault_now = 1u;
 			g_items[i].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
@@ -710,6 +717,9 @@ static uint8_t UpsertConfigUiItem(uint8_t kind, uint8_t zone, uint8_t h_adr, uin
 {
 	int idx = FindItem(kind, zone, h_adr, v_l_adr, mcu_d_type, v_d_type, 0u);
 	if (idx >= 0) {
+		if (g_items[(uint8_t)idx].fault_now == 0u) {
+			g_items[(uint8_t)idx].appeared_ms = now_ms;
+		}
 		g_items[(uint8_t)idx].fault_now = 1u;
 		g_items[(uint8_t)idx].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
 		return 0u;
@@ -727,6 +737,7 @@ static uint8_t UpsertConfigUiItem(uint8_t kind, uint8_t zone, uint8_t h_adr, uin
 		g_items[i].v_d_type = v_d_type;
 		g_items[i].fault_now = 1u;
 		g_items[i].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
+		g_items[i].appeared_ms = now_ms;
 		return 1u;
 	}
 	return 0u;
@@ -843,24 +854,12 @@ static uint8_t BuildUiPayload(char (*big_titles)[WARN_TITLE_LEN], char (*details
 		}
 		order[on++] = i;
 	}
-	/* Стабильный порядок для UI: zone -> h_adr -> l_adr -> type.
-	 * Это убирает "скакание" строк при нескольких неисправностях. */
+	/* Новее сверху: АВАРИЯ 1 = последнее событие. */
 	for (uint8_t a = 1u; a < on; a++) {
 		uint8_t key = order[a];
 		uint8_t b = a;
-		while (b > 0u) {
-			const WarningItem& l = g_items[order[b - 1u]];
-			const WarningItem& r = g_items[key];
-			uint8_t greater = 0u;
-			if (l.zone > r.zone) greater = 1u;
-			else if (l.zone == r.zone && l.h_adr > r.h_adr) greater = 1u;
-			else if (l.zone == r.zone && l.h_adr == r.h_adr && l.v_l_adr > r.v_l_adr) greater = 1u;
-			else if (l.zone == r.zone && l.h_adr == r.h_adr && l.v_l_adr == r.v_l_adr && l.kind > r.kind) greater = 1u;
-			else if (l.zone == r.zone && l.h_adr == r.h_adr && l.v_l_adr == r.v_l_adr && l.kind == r.kind && l.can_idx > r.can_idx) greater = 1u;
-			else if (l.zone == r.zone && l.h_adr == r.h_adr && l.v_l_adr == r.v_l_adr && l.kind == r.kind && l.can_idx == r.can_idx && l.v_d_type > r.v_d_type) greater = 1u;
-			if (!greater) {
-				break;
-			}
+		while (b > 0u &&
+		       g_items[order[b - 1u]].appeared_ms < g_items[key].appeared_ms) {
 			order[b] = order[b - 1u];
 			b--;
 		}

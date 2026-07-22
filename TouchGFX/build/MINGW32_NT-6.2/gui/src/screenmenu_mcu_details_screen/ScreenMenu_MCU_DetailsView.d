@@ -1,7 +1,7 @@
-build/MINGW32_NT-6.2/gui/src/mainscreen_screen/mainscreenView.o: \
- gui/src/mainscreen_screen/mainscreenView.cpp \
- gui/include/gui/mainscreen_screen/mainscreenView.hpp \
- generated/gui_generated/include/gui_generated/mainscreen_screen/mainscreenViewBase.hpp \
+build/MINGW32_NT-6.2/gui/src/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsView.o: \
+ gui/src/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsView.cpp \
+ gui/include/gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsView.hpp \
+ generated/gui_generated/include/gui_generated/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsViewBase.hpp \
  gui/include/gui/common/FrontendApplication.hpp \
  generated/gui_generated/include/gui_generated/common/FrontendApplicationBase.hpp \
  ../Middlewares/ST/touchgfx/framework/include/mvp/MVPApplication.hpp \
@@ -44,35 +44,22 @@ build/MINGW32_NT-6.2/gui/src/mainscreen_screen/mainscreenView.o: \
  ../Middlewares/ST/touchgfx/framework/include/touchgfx/transitions/Transition.hpp \
  gui/include/gui/model/Model.hpp \
  ../Middlewares/ST/touchgfx/framework/include/mvp/View.hpp \
- gui/include/gui/mainscreen_screen/mainscreenPresenter.hpp \
+ gui/include/gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsPresenter.hpp \
  gui/include/gui/model/ModelListener.hpp \
  ../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/Box.hpp \
- gui/include/gui/containers/CustomContainerTopBar.hpp \
- generated/gui_generated/include/gui_generated/containers/CustomContainerTopBarBase.hpp \
+ ../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/TextAreaWithWildcard.hpp \
  ../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/TextArea.hpp \
  ../Middlewares/ST/touchgfx/framework/include/touchgfx/TypedText.hpp \
  ../Middlewares/ST/touchgfx/framework/include/touchgfx/Texts.hpp \
- ../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/Image.hpp \
- gui/include/gui/containers/CustomContainerScrollTime.hpp \
- generated/gui_generated/include/gui_generated/containers/CustomContainerScrollTimeBase.hpp \
- ../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/ScrollableContainer.hpp \
- ../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/ScrollWheel.hpp \
- ../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/DrawableList.hpp \
- ../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/ScrollWheelBase.hpp \
- ../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/ScrollBase.hpp \
  ../Middlewares/ST/touchgfx/framework/include/touchgfx/EasingEquations.hpp \
- gui/include/gui/containers/CustomContainerTime.hpp \
- generated/gui_generated/include/gui_generated/containers/CustomContainerTimeBase.hpp \
- ../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/TextAreaWithWildcard.hpp \
- gui/include/gui/containers/CustomContainerSollText.hpp \
- generated/gui_generated/include/gui_generated/containers/CustomContainerSollTextBase.hpp \
  ../Middlewares/ST/touchgfx/framework/include/touchgfx/mixins/MoveAnimator.hpp \
  ../Middlewares/ST/touchgfx/framework/include/touchgfx/mixins/Draggable.hpp \
- ../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/AnimatedImage.hpp
+ gui/include/gui/containers/CustomContainerSollText.hpp \
+ generated/gui_generated/include/gui_generated/containers/CustomContainerSollTextBase.hpp
 
-gui/include/gui/mainscreen_screen/mainscreenView.hpp:
+gui/include/gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsView.hpp:
 
-generated/gui_generated/include/gui_generated/mainscreen_screen/mainscreenViewBase.hpp:
+generated/gui_generated/include/gui_generated/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsViewBase.hpp:
 
 gui/include/gui/common/FrontendApplication.hpp:
 
@@ -158,15 +145,13 @@ gui/include/gui/model/Model.hpp:
 
 ../Middlewares/ST/touchgfx/framework/include/mvp/View.hpp:
 
-gui/include/gui/mainscreen_screen/mainscreenPresenter.hpp:
+gui/include/gui/screenmenu_mcu_details_screen/ScreenMenu_MCU_DetailsPresenter.hpp:
 
 gui/include/gui/model/ModelListener.hpp:
 
 ../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/Box.hpp:
 
-gui/include/gui/containers/CustomContainerTopBar.hpp:
-
-generated/gui_generated/include/gui_generated/containers/CustomContainerTopBarBase.hpp:
+../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/TextAreaWithWildcard.hpp:
 
 ../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/TextArea.hpp:
 
@@ -174,36 +159,12 @@ generated/gui_generated/include/gui_generated/containers/CustomContainerTopBarBa
 
 ../Middlewares/ST/touchgfx/framework/include/touchgfx/Texts.hpp:
 
-../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/Image.hpp:
-
-gui/include/gui/containers/CustomContainerScrollTime.hpp:
-
-generated/gui_generated/include/gui_generated/containers/CustomContainerScrollTimeBase.hpp:
-
-../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/ScrollableContainer.hpp:
-
-../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/ScrollWheel.hpp:
-
-../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/DrawableList.hpp:
-
-../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/ScrollWheelBase.hpp:
-
-../Middlewares/ST/touchgfx/framework/include/touchgfx/containers/scrollers/ScrollBase.hpp:
-
 ../Middlewares/ST/touchgfx/framework/include/touchgfx/EasingEquations.hpp:
-
-gui/include/gui/containers/CustomContainerTime.hpp:
-
-generated/gui_generated/include/gui_generated/containers/CustomContainerTimeBase.hpp:
-
-../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/TextAreaWithWildcard.hpp:
-
-gui/include/gui/containers/CustomContainerSollText.hpp:
-
-generated/gui_generated/include/gui_generated/containers/CustomContainerSollTextBase.hpp:
 
 ../Middlewares/ST/touchgfx/framework/include/touchgfx/mixins/MoveAnimator.hpp:
 
 ../Middlewares/ST/touchgfx/framework/include/touchgfx/mixins/Draggable.hpp:
 
-../Middlewares/ST/touchgfx/framework/include/touchgfx/widgets/AnimatedImage.hpp:
+gui/include/gui/containers/CustomContainerSollText.hpp:
+
+generated/gui_generated/include/gui_generated/containers/CustomContainerSollTextBase.hpp:
