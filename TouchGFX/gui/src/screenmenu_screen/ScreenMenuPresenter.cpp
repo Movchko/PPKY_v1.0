@@ -5,6 +5,7 @@
 #include "button.h"
 #include "device_config.h"
 #include "event_log.h"
+#include "gost_mode.h"
 extern PPKYCfg PPKYConfig;
 extern void SaveConfig(void);
 
@@ -24,6 +25,10 @@ void ScreenMenuPresenter::activate()
     soundOn = (PPKYConfig.beep != 0u);
     app->getModel().setSoundOn(soundOn);
     currentIndex = view.getSelectedMenuIndex();
+    if (currentIndex >= MENU_ITEMS) {
+        currentIndex = 0;
+        view.setMenuIndex(currentIndex);
+    }
     refreshLine();
 #endif
 }
@@ -33,9 +38,20 @@ void ScreenMenuPresenter::deactivate()
 }
 
 #ifndef SIMULATOR
+int ScreenMenuPresenter::menuActionIndex(int16_t logical_index)
+{
+#if GOST_MODE
+	/* Логические 0..5 → действия 1..6 (пропуск глобального «РЕЖИМ»). */
+	return (int)logical_index + 1;
+#else
+	return (int)logical_index;
+#endif
+}
+
 void ScreenMenuPresenter::refreshLine()
 {
-    view.updateParameterLine(currentIndex, PPKYConfig.fire_mode, soundOn, PPKYConfig.beep_block != 0u);
+    view.updateParameterLine(menuActionIndex(currentIndex), PPKYConfig.fire_mode, soundOn,
+			     PPKYConfig.beep_block != 0u);
 }
 
 void ScreenMenuPresenter::SetupMenuChangePos(unsigned char val) {
@@ -70,7 +86,8 @@ void ScreenMenuPresenter::handleButton(uint8_t but, uint8_t state)
     }
 
     if (but == BUT_ENTER) {
-        if (currentIndex == 0) {
+        const int action = menuActionIndex(currentIndex);
+        if (action == 0) {
             uint8_t mode = (uint8_t)((PPKYConfig.fire_mode + 1u) % 3u);
             PPKYConfig.fire_mode = mode;
             SaveConfig();
@@ -78,7 +95,7 @@ void ScreenMenuPresenter::handleButton(uint8_t but, uint8_t state)
             refreshLine();
             return;
         }
-        if (currentIndex == 1) {
+        if (action == 1) {
             if (PPKYConfig.beep_block != 0u) {
                 refreshLine();
                 return;
@@ -92,23 +109,23 @@ void ScreenMenuPresenter::handleButton(uint8_t but, uint8_t state)
             refreshLine();
             return;
         }
-        if (currentIndex == 2) {
+        if (action == 2) {
             app->gotoScreenMenuConnectionScreenNoTransition();
             return;
         }
-        if (currentIndex == 3) {
+        if (action == 3) {
             app->gotoScreenMenuJurnalScreenNoTransition();
             return;
         }
-        if (currentIndex == 4) {
+        if (action == 4) {
             app->gotoScreenDevicesScreenNoTransition();
             return;
         }
-        if (currentIndex == 5) {
+        if (action == 5) {
             app->gotoScreenBlockZoneScreenNoTransition();
             return;
         }
-        if (currentIndex == 6) {
+        if (action == 6) {
             /* Экранный wipe по тикам; звук + змейка — после него в View. */
             view.startIndicationTest();
             return;

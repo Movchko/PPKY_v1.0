@@ -7,6 +7,7 @@
 #ifndef SIMULATOR
 #include "beeper.h"
 #include "led.h"
+#include "gost_mode.h"
 #endif
 
 ScreenMenuView::ScreenMenuView()
@@ -19,23 +20,33 @@ ScreenMenuView::ScreenMenuView()
 
 int16_t ScreenMenuView::getSelectedMenuIndex() const
 {
+#if !defined(SIMULATOR) && GOST_MODE
+    const int16_t max_idx = 5;
+#else
+    const int16_t max_idx = 6;
+#endif
     int16_t idx = (int16_t)scrollWheel1.getSelectedItem();
     if (idx < 0) {
         return 0;
     }
-    if (idx > 6) {
-        return 6;
+    if (idx > max_idx) {
+        return max_idx;
     }
     return idx;
 }
 
 void ScreenMenuView::setMenuIndex(int16_t index)
 {
+#if !defined(SIMULATOR) && GOST_MODE
+    const int16_t max_idx = 5;
+#else
+    const int16_t max_idx = 6;
+#endif
     if (index < 0) {
         index = 0;
     }
-    if (index > 6) {
-        index = 6;
+    if (index > max_idx) {
+        index = max_idx;
     }
     scrollWheel1.animateToItem(index, 10);
 }
@@ -185,7 +196,11 @@ void ScreenMenuView::setupScreen()
 {
     ScreenMenuViewBase::setupScreen();
 #ifndef SIMULATOR
+#if GOST_MODE
+    scrollWheel1.setNumberOfItems(6);
+#else
     scrollWheel1.setNumberOfItems(7);
+#endif
     initParamLineText();
     /* Поверх paramLineText: сначала белый, сверху чёрный (для перекрытия). */
     remove(box1_white);
@@ -194,7 +209,14 @@ void ScreenMenuView::setupScreen()
     add(box1_black);
     for (int i = 0; i < scrollWheel1ListItems.getNumberOfDrawables(); i++) {
         scrollWheel1.itemChanged(i);
-        scrollWheel1ListItems[i].updateText(i);
+        scrollWheel1ListItems[i].updateText(
+#if GOST_MODE
+            /* Логический i → подпись без «РЕЖИМ» (сдвиг +1). */
+            (int16_t)(i + 1)
+#else
+            (int16_t)i
+#endif
+        );
     }
 #endif
 }
@@ -223,10 +245,21 @@ void ScreenMenuView::SetupMenuChangePos(uint8_t val)
 
 void ScreenMenuView::scrollWheel1UpdateItem(mainmenu& item, int16_t itemIndex)
 {
+#if GOST_MODE
+    /* Логические 0..5 → подписи 1..6 (без глобального «РЕЖИМ»). */
+    if (itemIndex < 0) {
+        itemIndex = 0;
+    }
+    if (itemIndex > 5) {
+        itemIndex = 5;
+    }
+    item.updateText((int16_t)(itemIndex + 1));
+#else
     if (itemIndex > 6) {
         itemIndex = 6;
     }
     item.updateText(itemIndex);
+#endif
 }
 
 void ScreenMenuView::startIndicationTest()

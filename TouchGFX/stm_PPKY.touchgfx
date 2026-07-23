@@ -515,9 +515,9 @@
           {
             "Type": "TextArea",
             "Name": "textAreatime_on_off",
-            "Y": 41,
+            "Y": 47,
             "Width": 128,
-            "Height": 23,
+            "Height": 17,
             "TextId": "__SingleUse_K73U",
             "TextRotation": "0",
             "Color": {
@@ -536,7 +536,7 @@
           {
             "Type": "CustomContainerInstance",
             "Name": "CustomContainerSrollText",
-            "Y": 23,
+            "Y": 29,
             "Width": 128,
             "Height": 18,
             "CustomContainerDefinitionName": "CustomContainerSollText"

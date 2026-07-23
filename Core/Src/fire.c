@@ -122,9 +122,17 @@ typedef struct {
 	uint8_t  extinguish_locked;
 	uint8_t  fire_redisplay;
 	uint8_t  launch_stopped; /* ОСТАНОВ по этой зоне (GOST): авто-таймер зоны не идёт */
+	uint8_t  countdown_paused; /* GOST: пауза таймера ДО ПУСКА по зоне */
+	uint8_t  extinguish_aborted; /* GOST: операторский стоп тушения («ТУШЕНИЕ ОСТ.») */
 	uint8_t  ext_seen_no_ack;
 	uint8_t  source_count;
 	uint8_t  log_incomplete_posted;
+#if GOST_MODE
+	uint8_t  ui_src_valid;   /* бегущая строка: МКУ + канал источника */
+	uint8_t  ui_mcu_h_adr;
+	uint8_t  ui_ch_d_type;
+	uint8_t  ui_ch_l_adr;
+#endif
 	uint32_t phase2_deadline_ms;
 	uint32_t ext_retry_next_ms;
 	uint32_t paused_remaining_ms;
@@ -267,7 +275,8 @@ static int8_t Fire_FindSlotZone(uint8_t zone);
 /* Выделяет свободный слот пожара, возвращает индекс или -1. */
 static int8_t Fire_AllocSlot(void);
 /** @return 1 если зона добавлена впервые в цикле, 0 если по этой зоне пожар уже учтён */
-static uint8_t Fire_TryAddNewFireZone(uint8_t zone, uint32_t source_key, uint8_t and_effective, uint32_t now_ms);
+static uint8_t Fire_TryAddNewFireZone(uint8_t zone, uint32_t source_key, uint8_t and_effective,
+				      uint32_t now_ms, uint32_t msg_id, const uint8_t *msg_data);
 /* Операции с "И"-логикой пожара и источниками зоны. */
 static uint8_t Fire_IsAndEnabledForZone(uint8_t zone);
 static uint8_t Fire_CountOnlineDptForZone(uint8_t zone);
@@ -346,6 +355,7 @@ static void Fire_StartAllHoldSoundOn(void);
 static void Fire_StartAllHoldSoundOff(void);
 static uint8_t Fire_Phase2SelectedPending(uint8_t zone);
 static void Fire_SendStopZone(uint8_t zone);
+static void Fire_AbortExtinguishRetriesForZone(uint8_t zone);
 static uint8_t Fire_GetSelectedZoneFromUi(uint8_t *zone);
 static void Fire_EnterManualStop(uint32_t now_ms, uint8_t blink_stop_text, uint8_t stop_reason);
 static void Fire_ApplyFireModePolicy(uint32_t now_ms);
@@ -459,6 +469,16 @@ static uint8_t Fire_ZoneCanToIdx(uint8_t zone_can)
 static uint8_t Fire_ZoneLaunchBlocked(uint8_t zone_can)
 {
 	return PPKY_ZoneLaunchBlockedByCanZone(zone_can);
+}
+
+static uint8_t Fire_ZoneIsManual(uint8_t zone_can)
+{
+	return PPKY_ZoneIsManualByCanZone(zone_can);
+}
+
+static void Fire_RefreshAutoOffLed(void)
+{
+	Led_Set(LED_AUTO_OFF, PPKY_AnyZoneManualOrBlocked() ? 1u : 0u);
 }
 
 static uint8_t Fire_ZoneDelaySec(uint8_t zone)
@@ -617,6 +637,67 @@ static uint8_t Fire_IsMcuDType(uint8_t d_type)
 		d_type == DEVICE_MCU_K3 ||
 		d_type == DEVICE_MCU_KR) ? 1u : 0u;
 }
+
+#if GOST_MODE
+static const char *Fire_ChannelTypeShort(uint8_t v_d_type)
+{
+	switch (v_d_type & 0x7Fu) {
+	case DEVICE_DPT_TYPE: return "ДПТ";
+	case DEVICE_IGNITER_TYPE: return "СП";
+	case DEVICE_BUTTON_TYPE: return "КН";
+	case DEVICE_LSWITCH_TYPE: return "КОН";
+	default: return "К";
+	}
+}
+
+static uint8_t Fire_ResolveMcuHAdr(uint8_t zone, uint8_t ch_d_type, uint8_t ch_l_adr,
+				   uint8_t id_h_adr, uint8_t id_d_type)
+{
+	if (Fire_IsMcuDType(id_d_type) && id_h_adr != 0u) {
+		return id_h_adr;
+	}
+	for (uint8_t i = 0u; i < g_active_devices_count; i++) {
+		const ActiveDeviceInfo *ad = &g_active_devices[i];
+		if (!ad->online || !Fire_IsMcuDType(ad->dev.d_type) ||
+		    (ad->dev.zone & 0x7Fu) != (zone & 0x7Fu)) {
+			continue;
+		}
+		if (ch_d_type == 0u && ch_l_adr == 0u) {
+			return ad->dev.h_adr;
+		}
+		for (uint8_t vi = 0u; vi < ad->vdev_count; vi++) {
+			if ((ad->vdevs[vi].v_d_type & 0x7Fu) == (ch_d_type & 0x7Fu) &&
+			    (ad->vdevs[vi].v_l_adr & 0x3Fu) == (ch_l_adr & 0x3Fu)) {
+				return ad->dev.h_adr;
+			}
+		}
+	}
+	return id_h_adr;
+}
+
+static void Fire_SlotRememberUiSource(FireZoneSlot *slot, uint32_t msg_id, const uint8_t *msg_data)
+{
+	can_ext_id_t id;
+	uint8_t ch_d_type = 0u;
+	uint8_t ch_l_adr = 0u;
+
+	if (slot == NULL) {
+		return;
+	}
+	id.ID = msg_id & 0x0FFFFFFFu;
+	if (msg_data != NULL) {
+		/* SetStatusFire: [0]=cmd [1]=origin_d_type [2]=origin_l_adr */
+		ch_d_type = msg_data[1];
+		ch_l_adr = msg_data[2] & 0x3Fu;
+	}
+	slot->ui_ch_d_type = ch_d_type;
+	slot->ui_ch_l_adr = ch_l_adr;
+	slot->ui_mcu_h_adr = Fire_ResolveMcuHAdr(slot->zone, ch_d_type, ch_l_adr,
+						 (uint8_t)id.field.h_adr,
+						 (uint8_t)(id.field.d_type & 0x7Fu));
+	slot->ui_src_valid = 1u;
+}
+#endif
 
 static uint8_t Fire_ClampU8FromU32(uint32_t v)
 {
@@ -1214,6 +1295,8 @@ static void Fire_MarkSlotPhase2Sent(FireZoneSlot *slot, uint32_t now_ms, uint8_t
 	slot->phase2_sent = 1u;
 	slot->fire1_waiting = 0u;
 	slot->launch_stopped = 0u;
+	slot->countdown_paused = 0u;
+	slot->extinguish_aborted = 0u;
 	slot->extinguish_locked = 1u;
 	slot->ext_retry_attempts = 0u;
 	slot->ext_retry_failed = 0u;
@@ -1252,6 +1335,7 @@ static void Fire_PauseCountdownAndDispatch(uint32_t now_ms)
 		} else {
 			s->paused_remaining_ms = s->phase2_deadline_ms - now_ms;
 		}
+		s->countdown_paused = 1u;
 		FireIgniterAddr ign[16];
 		uint8_t n = Fire_CollectSortedIgniterTargetsByZone(s->zone, ign, (uint8_t)(sizeof(ign) / sizeof(ign[0])));
 		for (uint8_t j = 0u; j < n; j++) {
@@ -1272,6 +1356,7 @@ static void Fire_ResumeCountdownAndDispatch(uint32_t now_ms)
 			continue;
 		}
 		s->phase2_deadline_ms = now_ms + s->paused_remaining_ms;
+		s->countdown_paused = 0u;
 		FireIgniterAddr ign[16];
 		uint8_t n = Fire_CollectSortedIgniterTargetsByZone(s->zone, ign, (uint8_t)(sizeof(ign) / sizeof(ign[0])));
 		for (uint8_t j = 0u; j < n; j++) {
@@ -1290,6 +1375,72 @@ static int8_t Fire_FindSlotZone(uint8_t zone)
 	}
 	return -1;
 }
+
+#if GOST_MODE
+static void Fire_PauseZoneCountdown(uint8_t zone, uint32_t now_ms)
+{
+	int8_t si = Fire_FindSlotZone(zone);
+	if (si < 0) {
+		return;
+	}
+	FireZoneSlot *s = &g_fire.slots[(uint8_t)si];
+	if (!s->active || s->phase2_sent || s->fire1_waiting || s->launch_stopped ||
+	    s->countdown_paused != 0u || s->extinguish_aborted != 0u) {
+		return;
+	}
+	if (now_ms >= s->phase2_deadline_ms) {
+		s->paused_remaining_ms = 0u;
+	} else {
+		s->paused_remaining_ms = s->phase2_deadline_ms - now_ms;
+	}
+	s->countdown_paused = 1u;
+	FireIgniterAddr ign[16];
+	uint8_t n = Fire_CollectSortedIgniterTargetsByZone(s->zone, ign, (uint8_t)(sizeof(ign) / sizeof(ign[0])));
+	for (uint8_t j = 0u; j < n; j++) {
+		Fire_RetryQueuePause(&ign[j], now_ms);
+	}
+}
+
+static void Fire_ResumeZoneCountdown(uint8_t zone, uint32_t now_ms)
+{
+	int8_t si = Fire_FindSlotZone(zone);
+	if (si < 0) {
+		return;
+	}
+	FireZoneSlot *s = &g_fire.slots[(uint8_t)si];
+	if (!s->active || s->countdown_paused == 0u) {
+		return;
+	}
+	s->phase2_deadline_ms = now_ms + s->paused_remaining_ms;
+	s->countdown_paused = 0u;
+	FireIgniterAddr ign[16];
+	uint8_t n = Fire_CollectSortedIgniterTargetsByZone(s->zone, ign, (uint8_t)(sizeof(ign) / sizeof(ign[0])));
+	for (uint8_t j = 0u; j < n; j++) {
+		Fire_RetryQueueResume(&ign[j], now_ms);
+	}
+}
+
+static uint8_t Fire_AbortZoneExtinguishOperator(uint8_t zone, uint32_t now_ms)
+{
+	int8_t si = Fire_FindSlotZone(zone);
+	if (si < 0) {
+		return 0u;
+	}
+	FireZoneSlot *s = &g_fire.slots[(uint8_t)si];
+	if (!s->active || !s->phase2_sent || s->extinguish_aborted != 0u) {
+		return 0u;
+	}
+	(void)now_ms;
+	Fire_ResetSuppressAddFromSlot(s);
+	Fire_SendStopZone(zone);
+	Fire_AbortExtinguishRetriesForZone(zone);
+	s->extinguish_aborted = 1u;
+	s->ext_retry_failed = 0u;
+	s->ext_retry_next_ms = 0u;
+	s->launch_stopped = 1u;
+	return 1u;
+}
+#endif
 
 static int8_t Fire_AllocSlot(void)
 {
@@ -1436,12 +1587,17 @@ static uint8_t Fire_PromoteFire1WhenAndUnavailable(uint32_t now_ms)
 	return promoted;
 }
 
-static uint8_t Fire_TryAddNewFireZone(uint8_t zone, uint32_t source_key, uint8_t and_effective, uint32_t now_ms)
+static uint8_t Fire_TryAddNewFireZone(uint8_t zone, uint32_t source_key, uint8_t and_effective,
+				      uint32_t now_ms, uint32_t msg_id, const uint8_t *msg_data)
 {
 	/* Возвращает:
 	 * 0 - без изменений (дубль источника),
 	 * 1 - новая зона,
 	 * 2 - переход зоны из ПОЖАР1 в ПОЖАР2. */
+#if !GOST_MODE
+	(void)msg_id;
+	(void)msg_data;
+#endif
 #if GOST_MODE
 	/* Квитированный источник: МКУ может ретраить SetStatusFire — не поднимаем пожар снова. */
 	if (Fire_ResetSuppressHas(zone, source_key)) {
@@ -1454,6 +1610,10 @@ static uint8_t Fire_TryAddNewFireZone(uint8_t zone, uint32_t source_key, uint8_t
 		if (!Fire_AddSourceToSlot(existing, source_key)) {
 			return 0u;
 		}
+#if GOST_MODE
+		/* Новый источник / повторный цикл — обновить подпись бегущей строки. */
+		Fire_SlotRememberUiSource(existing, msg_id, msg_data);
+#endif
 		if (existing->extinguish_locked) {
 			existing->fire_redisplay = 1u;
 			existing->appeared_ms = now_ms; /* новый цикл пожара — сверху в UI */
@@ -1485,11 +1645,23 @@ static uint8_t Fire_TryAddNewFireZone(uint8_t zone, uint32_t source_key, uint8_t
 	s->zone = zone;
 	s->appeared_ms = now_ms;
 	(void)Fire_AddSourceToSlot(s, source_key);
+#if GOST_MODE
+	Fire_SlotRememberUiSource(s, msg_id, msg_data);
+#endif
 	if (Fire_ZoneLaunchBlocked(zone)) {
 		s->fire1_waiting = 0u;
 		s->phase2_sent = 0u;
 		s->phase2_deadline_ms = 0u;
 		s->paused_remaining_ms = 0u;
+		return 1u;
+	}
+	if (Fire_ZoneIsManual(zone)) {
+		s->fire1_waiting = 0u;
+		s->phase2_sent = 0u;
+		s->phase2_deadline_ms = 0u;
+		s->paused_remaining_ms = 0u;
+		s->launch_stopped = 1u;
+		Fire_SendPhase1Zone(zone);
 		return 1u;
 	}
 	if (and_effective) {
@@ -1734,9 +1906,15 @@ static uint8_t Fire_CountManualStartable(void)
 {
 	uint8_t c = 0u;
 	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
-		if (g_fire.slots[i].active && !g_fire.slots[i].phase2_sent &&
-		    !g_fire.slots[i].fire1_waiting &&
-		    !Fire_ZoneLaunchBlocked(g_fire.slots[i].zone)) {
+		FireZoneSlot *s = &g_fire.slots[i];
+		if (!s->active || Fire_ZoneLaunchBlocked(s->zone)) {
+			continue;
+		}
+		if (s->extinguish_aborted != 0u) {
+			c++;
+			continue;
+		}
+		if (!s->phase2_sent && !s->fire1_waiting) {
 			c++;
 		}
 	}
@@ -1758,38 +1936,23 @@ static uint8_t Fire_MinRemainingSec(uint32_t now_ms)
 	if (g_fire.zone_countdown_stopped) {
 		return 0u;
 	}
-	if (g_fire.zone_countdown_paused) {
-		uint32_t best_ms = 0xFFFFFFFFu;
-		uint8_t found = 0u;
-		for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
-			if (!g_fire.slots[i].active || g_fire.slots[i].phase2_sent ||
-			    g_fire.slots[i].fire1_waiting || g_fire.slots[i].launch_stopped ||
-			    Fire_ZoneLaunchBlocked(g_fire.slots[i].zone)) {
-				continue;
-			}
-			found = 1u;
-			if (g_fire.slots[i].paused_remaining_ms < best_ms) {
-				best_ms = g_fire.slots[i].paused_remaining_ms;
-			}
-		}
-		if (!found) {
-			return 0u;
-		}
-		return (uint8_t)((best_ms + 999u) / 1000u);
-	}
 	uint32_t best_ms = 0xFFFFFFFFu;
 	uint8_t found = 0u;
 	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
-		if (!g_fire.slots[i].active || g_fire.slots[i].phase2_sent ||
-		    g_fire.slots[i].fire1_waiting || g_fire.slots[i].launch_stopped ||
-		    Fire_ZoneLaunchBlocked(g_fire.slots[i].zone)) {
+		FireZoneSlot *s = &g_fire.slots[i];
+		if (!s->active || s->phase2_sent || s->fire1_waiting || s->launch_stopped ||
+		    Fire_ZoneLaunchBlocked(s->zone)) {
 			continue;
 		}
 		found = 1u;
-		if (now_ms >= g_fire.slots[i].phase2_deadline_ms) {
+		uint32_t rem;
+		if (g_fire.zone_countdown_paused || s->countdown_paused != 0u) {
+			rem = s->paused_remaining_ms;
+		} else if (now_ms >= s->phase2_deadline_ms) {
 			return 0u;
+		} else {
+			rem = s->phase2_deadline_ms - now_ms;
 		}
-		uint32_t rem = g_fire.slots[i].phase2_deadline_ms - now_ms;
 		if (rem < best_ms) {
 			best_ms = rem;
 		}
@@ -1811,42 +1974,25 @@ static uint8_t Fire_RemainingSecForZone(uint8_t zone, uint32_t now_ms)
 	if (g_fire.zone_countdown_stopped) {
 		return 0u;
 	}
-	if (g_fire.zone_countdown_paused) {
-		for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
-			if (!g_fire.slots[i].active || g_fire.slots[i].phase2_sent ||
-			    g_fire.slots[i].fire1_waiting || g_fire.slots[i].launch_stopped) {
-				continue;
-			}
-			if ((g_fire.slots[i].zone & 0x7Fu) != (zone & 0x7Fu)) {
-				continue;
-			}
-			found = 1u;
-			if (g_fire.slots[i].paused_remaining_ms < best_ms) {
-				best_ms = g_fire.slots[i].paused_remaining_ms;
-			}
-		}
-		if (!found) {
-			return 0u;
-		}
-		return (uint8_t)((best_ms + 999u) / 1000u);
-	}
 	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
-		if (!g_fire.slots[i].active || g_fire.slots[i].phase2_sent ||
-		    g_fire.slots[i].fire1_waiting || g_fire.slots[i].launch_stopped) {
+		FireZoneSlot *s = &g_fire.slots[i];
+		if (!s->active || s->phase2_sent || s->fire1_waiting || s->launch_stopped) {
 			continue;
 		}
-		if ((g_fire.slots[i].zone & 0x7Fu) != (zone & 0x7Fu)) {
+		if ((s->zone & 0x7Fu) != (zone & 0x7Fu)) {
 			continue;
 		}
 		found = 1u;
-		if (now_ms >= g_fire.slots[i].phase2_deadline_ms) {
+		uint32_t rem;
+		if (g_fire.zone_countdown_paused || s->countdown_paused != 0u) {
+			rem = s->paused_remaining_ms;
+		} else if (now_ms >= s->phase2_deadline_ms) {
 			return 0u;
+		} else {
+			rem = s->phase2_deadline_ms - now_ms;
 		}
-		{
-			uint32_t rem = g_fire.slots[i].phase2_deadline_ms - now_ms;
-			if (rem < best_ms) {
-				best_ms = rem;
-			}
+		if (rem < best_ms) {
+			best_ms = rem;
 		}
 	}
 	if (!found) {
@@ -1867,7 +2013,12 @@ static uint8_t Fire_ProcessAutoDeadlines(uint32_t now_ms)
 	}
 	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
 		if (!g_fire.slots[i].active || g_fire.slots[i].phase2_sent ||
-		    g_fire.slots[i].fire1_waiting || g_fire.slots[i].launch_stopped) {
+		    g_fire.slots[i].fire1_waiting || g_fire.slots[i].launch_stopped ||
+		    g_fire.slots[i].countdown_paused != 0u ||
+		    g_fire.slots[i].extinguish_aborted != 0u) {
+			continue;
+		}
+		if (Fire_ZoneIsManual(g_fire.slots[i].zone)) {
 			continue;
 		}
 		if (now_ms >= g_fire.slots[i].phase2_deadline_ms) {
@@ -1883,14 +2034,24 @@ static uint8_t Fire_ProcessAutoDeadlines(uint32_t now_ms)
 static void Fire_Phase2AllPending(void)
 {
 	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
-		if (!g_fire.slots[i].active || g_fire.slots[i].phase2_sent || g_fire.slots[i].fire1_waiting) {
+		if (!g_fire.slots[i].active || g_fire.slots[i].fire1_waiting) {
 			continue;
 		}
 		if (Fire_ZoneLaunchBlocked(g_fire.slots[i].zone)) {
 			continue;
 		}
+		if (g_fire.slots[i].extinguish_aborted != 0u) {
+			g_fire.slots[i].extinguish_aborted = 0u;
+			g_fire.slots[i].phase2_sent = 0u;
+			g_fire.slots[i].extinguish_locked = 0u;
+			g_fire.slots[i].ext_retry_failed = 0u;
+		}
+		if (g_fire.slots[i].phase2_sent) {
+			continue;
+		}
 		/* ПУСК СП/ОБЩИЙ снимает зональный ОСТАНОВ и запускает фазу 2. */
 		g_fire.slots[i].launch_stopped = 0u;
+		g_fire.slots[i].countdown_paused = 0u;
 		if (Fire_SendPhase2Zone(g_fire.slots[i].zone)) {
 			Fire_MarkSlotPhase2Sent(&g_fire.slots[i], HAL_GetTick(), FIRE_LOG_START_MANUAL);
 		}
@@ -1901,13 +2062,26 @@ static uint8_t Fire_Phase2SelectedPending(uint8_t zone)
 {
 	uint8_t started = 0u;
 	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
-		if (!g_fire.slots[i].active || g_fire.slots[i].phase2_sent || g_fire.slots[i].fire1_waiting) {
+		if (!g_fire.slots[i].active) {
 			continue;
 		}
 		if ((g_fire.slots[i].zone & 0x7Fu) != (zone & 0x7Fu)) {
 			continue;
 		}
+		if (g_fire.slots[i].fire1_waiting) {
+			continue;
+		}
+		if (g_fire.slots[i].extinguish_aborted != 0u) {
+			g_fire.slots[i].extinguish_aborted = 0u;
+			g_fire.slots[i].phase2_sent = 0u;
+			g_fire.slots[i].extinguish_locked = 0u;
+			g_fire.slots[i].ext_retry_failed = 0u;
+		}
+		if (g_fire.slots[i].phase2_sent) {
+			continue;
+		}
 		g_fire.slots[i].launch_stopped = 0u;
+		g_fire.slots[i].countdown_paused = 0u;
 		if (Fire_SendPhase2Zone(g_fire.slots[i].zone)) {
 			Fire_MarkSlotPhase2Sent(&g_fire.slots[i], HAL_GetTick(), FIRE_LOG_START_MANUAL);
 			started = 1u;
@@ -1929,8 +2103,9 @@ static void Fire_AbortExtinguishRetriesForZone(uint8_t zone)
 		}
 		s->fire1_waiting = 0u;
 		if (s->phase2_sent) {
-			s->ext_retry_failed = 1u;
+			/* Останавливаем дотушивание без «ТУШ.ОШ.» (LED_ERR только при реальном fail). */
 			s->ext_retry_next_ms = 0u;
+			s->ext_retry_attempts = FIRE_EXT_RETRY_MAX_ATTEMPTS;
 		}
 	}
 }
@@ -1942,8 +2117,8 @@ static void Fire_AbortExtinguishRetriesAll(void)
 		if (!s->active || !s->phase2_sent) {
 			continue;
 		}
-		s->ext_retry_failed = 1u;
 		s->ext_retry_next_ms = 0u;
+		s->ext_retry_attempts = FIRE_EXT_RETRY_MAX_ATTEMPTS;
 	}
 }
 
@@ -2083,6 +2258,11 @@ static uint8_t Fire_AllActiveZonesTerminal(void)
 			continue;
 		}
 		any_zone = 1u;
+		/* Операторский стоп: зона остаётся в ПОЖАР — не считаем «все терминальны»
+		 * (иначе Sync уйдёт в IDLE и баннер ПОЖАР пропадёт). */
+		if (s->extinguish_aborted != 0u) {
+			return 0u;
+		}
 		if (!s->phase2_sent) {
 			return 0u;
 		}
@@ -2111,7 +2291,8 @@ static void Fire_ProcessExtinguishRetries(uint32_t now_ms)
 	}
 	for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
 		FireZoneSlot *s = &g_fire.slots[i];
-		if (!s->active || !s->phase2_sent || s->ext_retry_failed != 0u) {
+		if (!s->active || !s->phase2_sent || s->ext_retry_failed != 0u ||
+		    s->extinguish_aborted != 0u) {
 			continue;
 		}
 		if (Fire_ZoneAllIgnitersEndAck(s->zone)) {
@@ -2241,10 +2422,39 @@ static void Fire_FillZoneNamesForUi(char (*out_names)[FIRE_UI_NAME_LEN], uint8_t
 			}
 		}
 		if (name[0] == '\0') {
-			(void)snprintf(dst, (size_t)FIRE_UI_NAME_LEN, "Зона %u", (unsigned)z_can);
-		} else {
-			(void)snprintf(dst, (size_t)FIRE_UI_NAME_LEN, "%s", name);
+			(void)snprintf(name, sizeof(name), "Зона %u", (unsigned)z_can);
 		}
+#if GOST_MODE
+		{
+			int8_t si = Fire_FindSlotZone(z_can);
+			if (si >= 0 && g_fire.slots[(uint8_t)si].ui_src_valid != 0u) {
+				const FireZoneSlot *slot = &g_fire.slots[(uint8_t)si];
+				char suffix[28];
+				size_t suffix_len;
+				size_t name_max;
+				if (slot->ui_mcu_h_adr != 0u) {
+					(void)snprintf(suffix, sizeof(suffix), " МКУ %u %s%u",
+						       (unsigned)slot->ui_mcu_h_adr,
+						       Fire_ChannelTypeShort(slot->ui_ch_d_type),
+						       (unsigned)slot->ui_ch_l_adr);
+				} else {
+					(void)snprintf(suffix, sizeof(suffix), " %s%u",
+						       Fire_ChannelTypeShort(slot->ui_ch_d_type),
+						       (unsigned)slot->ui_ch_l_adr);
+				}
+				suffix_len = strlen(suffix);
+				name_max = (FIRE_UI_NAME_LEN > (suffix_len + 1u))
+						   ? (size_t)(FIRE_UI_NAME_LEN - 1u - suffix_len)
+						   : 0u;
+				(void)snprintf(dst, (size_t)FIRE_UI_NAME_LEN, "%.*s%s",
+					       (int)name_max, name, suffix);
+			} else {
+				(void)snprintf(dst, (size_t)FIRE_UI_NAME_LEN, "%s", name);
+			}
+		}
+#else
+		(void)snprintf(dst, (size_t)FIRE_UI_NAME_LEN, "%s", name);
+#endif
 		dst[FIRE_UI_NAME_LEN - 1u] = '\0';
 	}
 }
@@ -2347,7 +2557,7 @@ static void Fire_SetIdleIndication(void)
 	Led_Set(LED_STR_STOP, 0);
 	Led_Set(LED_START, 0);
 	Led_Set(LED_STOP, 0);
-	Led_Set(LED_AUTO_OFF, (PPKYConfig.fire_mode == 2u) ? 1u : 0u);
+	Fire_RefreshAutoOffLed();
 	/* LED_FIRE — в Fire_UpdateLedFire (в т.ч. ВНИМАНИЕ при IDLE). */
 	g_fire.stop_launch_pressed_latched = 0u;
 	g_fire.beeper_alert_active = 0u;
@@ -2483,9 +2693,10 @@ static void Fire_ApplyFireModePolicy(uint32_t now_ms)
 		return;
 	}
 	g_fire.last_fire_mode = mode;
-	Led_Set(LED_AUTO_OFF, (mode == 2u) ? 1u : 0u);
+	Fire_RefreshAutoOffLed();
 
 	/* Внешний перевод в manual во время активного пожара должен вести себя как кнопка STOP. */
+#if !GOST_MODE
 	if ((mode == 2u) && Fire_AnyActiveSlot() && (Fire_CountPendingPhase2() > 0u) && !g_fire.zone_countdown_stopped) {
 		Fire_EnterManualStop(now_ms, 1u, FIRE_LOG_STOP_MODE_CHANGE);
 		return;
@@ -2496,6 +2707,10 @@ static void Fire_ApplyFireModePolicy(uint32_t now_ms)
 	    !g_fire.zone_countdown_stopped && (Fire_CountPendingPhase2() > 0u)) {
 		g_fire.state = FIRE_STATE_WAIT_AUTO;
 	}
+#else
+	(void)now_ms;
+	/* В GOST режим по зонам — через zone_fire_mode; глобальный fire_mode не стопает все зоны. */
+#endif
 }
 
 static uint8_t Fire_ButtonPressedEvent(uint8_t button_id, uint8_t *latched_flag)
@@ -2514,11 +2729,7 @@ static uint8_t Fire_ButtonPressedEvent(uint8_t button_id, uint8_t *latched_flag)
 static void Fire_ApplyStateLeds(uint32_t now_ms)
 {
 	/* Профиль индикации для не-IDLE состояний; отдельные override применяются в Fire_Transition(). */
-	if (PPKYConfig.fire_mode == 2u) {
-		Led_Set(LED_AUTO_OFF, 1);
-	} else {
-		Led_Set(LED_AUTO_OFF, 0);
-	}
+	Fire_RefreshAutoOffLed();
 
 	uint8_t manual_startable = Fire_CountManualStartable();
 
@@ -2604,17 +2815,26 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 	case FIRE_EVENT_STATUS_FIRE:
 		g_fire.start_launch_pressed_latched = 0u;
 		if (g_fire.state == FIRE_STATE_IDLE) {
+#if GOST_MODE
+			g_fire.state = FIRE_STATE_WAIT_AUTO;
+#else
 			g_fire.state = (PPKYConfig.fire_mode == 2u) ? FIRE_STATE_WAIT_MANUAL : FIRE_STATE_WAIT_AUTO;
+#endif
 			g_fire.reply_received = 0u;
 		}
 		Led_ForceStatusBright(LED_FIRE);
 		/* Новый пожар: профиль звука зависит от ПОЖАР1/ПОЖАР2. */
 		Fire_BeeperEnterAlert(Fire_ShouldUseFire1Sound());
+#if !GOST_MODE
 		if (PPKYConfig.fire_mode == 2u) {
 			/* В ручном режиме пожар сразу обрабатывается как "ОСТАНОВ ПУСКА". */
 			Fire_EnterManualStop(now_ms, 0u, FIRE_LOG_STOP_NO_EVENT);
 			fire_processed = 1u;
 		}
+#else
+		Fire_RefreshAutoOffLed();
+		fire_processed = 1u;
+#endif
 		break;
 	case FIRE_EVENT_STATUS_FIRE_REDISPLAY:
 		/* Повторный пожар в зоне, где тушение уже запускалось: только индикация. */
@@ -2734,10 +2954,22 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 	} break;
 	case FIRE_EVENT_BTN_STOP:
 		/* ОСТАНОВ ПУСКА.
-		 * GOST_MODE + выбор зоны на UI: стоп только выбранной зоны, остальные пожары живут.
+		 * GOST: по выбранной зоне — pause/resume таймера или стоп тушения (не fire_mode=2).
 		 * Иначе: глобальный ручной стоп всех текущих пожаров (как раньше). */
 		if (g_fire.start_launch_pressed_latched) {
-			break;
+			/* После ПУСК/автопуска флаг держит LED/звук «ПУСК», но ОСТАНОВ
+			 * уже запущенного тушения (фаза 2) должен работать — иначе смысла нет. */
+			uint8_t any_phase2 = 0u;
+			for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
+				if (g_fire.slots[i].active && g_fire.slots[i].phase2_sent != 0u) {
+					any_phase2 = 1u;
+					break;
+				}
+			}
+			if (any_phase2 == 0u) {
+				break;
+			}
+			g_fire.start_launch_pressed_latched = 0u;
 		}
 		if (!Fire_AnyActiveSlot()) {
 			/* Нет активного слота: для ПОЖАР1 — только дежурный звук. */
@@ -2749,12 +2981,59 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 		}
 		{
 #if GOST_MODE
+			uint8_t sel_zone = 0u;
+			uint8_t have_zone = 0u;
 			if (g_fire_ui_manual_select_enabled) {
-				uint8_t sel_zone = 0u;
-				if (Fire_GetSelectedZoneFromUi(&sel_zone)) {
-					if (g_fire_panel_btn_source != 0u) {
-						Fire_LogPanelButton(FIRE_LOG_BTN_STOP, sel_zone, 0u);
+				have_zone = Fire_GetSelectedZoneFromUi(&sel_zone);
+			}
+			if (!have_zone) {
+				/* Без выбора — первая активная зона. */
+				for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
+					if (g_fire.slots[i].active) {
+						sel_zone = g_fire.slots[i].zone;
+						have_zone = 1u;
+						break;
 					}
+				}
+			}
+			if (have_zone) {
+				int8_t si = Fire_FindSlotZone(sel_zone);
+				if (g_fire_panel_btn_source != 0u) {
+					Fire_LogPanelButton(FIRE_LOG_BTN_STOP, sel_zone, 0u);
+				}
+				if (si >= 0) {
+					FireZoneSlot *s = &g_fire.slots[(uint8_t)si];
+					if (s->phase2_sent && s->extinguish_aborted == 0u &&
+					    s->ext_retry_failed == 0u &&
+					    !Fire_ZoneAllIgnitersEndAck(sel_zone)) {
+						Fire_LogForceStop(FIRE_LOG_STOP_OPERATOR, sel_zone);
+						(void)Fire_AbortZoneExtinguishOperator(sel_zone, now_ms);
+						g_fire.start_launch_pressed_latched = 0u;
+						g_fire.stop_launch_pressed_latched = 1u;
+						g_fire.stop_text_blink_until_ms =
+							now_ms + (FIRE_STOP_TEXT_BLINK_PERIOD_MS * 3u);
+						Fire_SyncStateFromSlots();
+						fire_processed = 1u;
+						break;
+					}
+					if (!s->phase2_sent && !s->fire1_waiting &&
+					    s->extinguish_aborted == 0u) {
+						Fire_LogForceStop(FIRE_LOG_STOP_OPERATOR, sel_zone);
+						if (s->countdown_paused != 0u) {
+							Fire_ResumeZoneCountdown(sel_zone, now_ms);
+							g_fire.stop_launch_pressed_latched = 0u;
+						} else {
+							Fire_PauseZoneCountdown(sel_zone, now_ms);
+							g_fire.stop_launch_pressed_latched = 1u;
+							g_fire.stop_text_blink_until_ms =
+								now_ms + (FIRE_STOP_TEXT_BLINK_PERIOD_MS * 3u);
+						}
+						g_fire.start_launch_pressed_latched = 0u;
+						Fire_SyncStateFromSlots();
+						fire_processed = 1u;
+						break;
+					}
+					/* ПОЖАР1 / уже ост. / туш.вып — как зональный стоп launch_stopped */
 					Fire_LogForceStop(FIRE_LOG_STOP_OPERATOR, sel_zone);
 					Fire_SendStopZone(sel_zone);
 					g_fire.start_launch_pressed_latched = 0u;
@@ -2766,7 +3045,8 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 					break;
 				}
 			}
-#endif
+			break;
+#else
 			if (g_fire_panel_btn_source != 0u) {
 				Fire_LogPanelButton(FIRE_LOG_BTN_STOP, 0u, 0u);
 			}
@@ -2775,6 +3055,7 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 			g_fire.last_fire_mode = 2u;
 			Fire_EnterManualStop(now_ms, manual_mode_initial ? 0u : 1u, FIRE_LOG_STOP_OPERATOR);
 			fire_processed = 1u;
+#endif
 		}
 		break;
 	case FIRE_EVENT_TICK_1MS:
@@ -2831,6 +3112,12 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 					if (Fire_ZoneLaunchBlocked(sel_zone)) {
 						ui_mode = 8u; /* ПУСК ЗАБЛ. */
 						ui_remaining = 0u;
+					} else if (si >= 0 && g_fire.slots[(uint8_t)si].extinguish_aborted != 0u) {
+						ui_mode = 9u; /* ТУШЕНИЕ ОСТ. */
+						ui_remaining = 0u;
+					} else if (si >= 0 && g_fire.slots[(uint8_t)si].countdown_paused != 0u) {
+						ui_mode = 5u; /* ПАУЗА */
+						ui_remaining = (uint8_t)((g_fire.slots[(uint8_t)si].paused_remaining_ms + 999u) / 1000u);
 					} else if (si >= 0 && g_fire.slots[(uint8_t)si].launch_stopped) {
 						ui_mode = 4u; /* ПОЖАР/ОСТ. ПУСКА по выбранной зоне */
 						ui_remaining = 0u;
@@ -2857,7 +3144,21 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 					ui_mode = 8u; /* ПУСК ЗАБЛ. */
 					ui_remaining = 0u;
 				} else {
-					ui_mode = g_fire.zone_countdown_paused ? 5u : 1u; /* ПАУЗА или ДО ПУСКА */
+					uint8_t any_pending = 0u;
+					uint8_t all_paused = 1u;
+					for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
+						const FireZoneSlot *s = &g_fire.slots[i];
+						if (!s->active || s->phase2_sent || s->fire1_waiting ||
+						    s->launch_stopped || Fire_ZoneLaunchBlocked(s->zone)) {
+							continue;
+						}
+						any_pending = 1u;
+						if (s->countdown_paused == 0u && g_fire.zone_countdown_paused == 0u) {
+							all_paused = 0u;
+						}
+					}
+					ui_mode = (any_pending && all_paused) || g_fire.zone_countdown_paused
+						  ? 5u : 1u; /* ПАУЗА или ДО ПУСКА */
 				}
 			}
 		} else {
@@ -2867,11 +3168,48 @@ static void Fire_Transition(FireEvent ev, uint32_t now_ms)
 	} else if (g_fire.state == FIRE_STATE_EXTINGUISHING) {
 		ui_remaining = 0u;
 		ui_mode = 2u; /* ТУШЕНИЕ */
-		if (Fire_AllActiveZonesEndAck()) {
-			ui_mode = 3u; /* ТУШЕНИЕ ПРОИЗВЕДЕНО */
-			Fire_LogExtinguishComplete();
-		} else if (Fire_AllActiveZonesTerminal() && Fire_HasExtinguishFailure()) {
-			ui_mode = 7u; /* ТУШЕНИЕ НЕ ВЫПОЛНЕНО */
+#if GOST_MODE
+		if (g_fire_ui_manual_select_enabled) {
+			uint8_t sel_zone = 0u;
+			if (Fire_GetSelectedZoneFromUi(&sel_zone)) {
+				int8_t si = Fire_FindSlotZone(sel_zone);
+				if (si >= 0 && g_fire.slots[(uint8_t)si].extinguish_aborted != 0u) {
+					ui_mode = 9u; /* ТУШЕНИЕ ОСТ. */
+				} else if (si >= 0 && g_fire.slots[(uint8_t)si].ext_retry_failed != 0u) {
+					ui_mode = 7u;
+				} else if (si >= 0 && Fire_ZoneAllIgnitersEndAck(sel_zone)) {
+					ui_mode = 3u;
+				}
+			}
+		}
+#endif
+		if (ui_mode == 2u) {
+			if (Fire_AllActiveZonesEndAck()) {
+				ui_mode = 3u; /* ТУШЕНИЕ ПРОИЗВЕДЕНО */
+				Fire_LogExtinguishComplete();
+			} else if (Fire_AllActiveZonesTerminal() && Fire_HasExtinguishFailure()) {
+				ui_mode = 7u; /* ТУШЕНИЕ НЕ ВЫПОЛНЕНО */
+#if GOST_MODE
+			} else if (!g_fire_ui_manual_select_enabled) {
+				/* Все фазы 2 остановлены оператором — «ТУШ.ОСТ.» без UI-выбора. */
+				uint8_t any_p2 = 0u;
+				uint8_t all_aborted = 1u;
+				for (uint8_t i = 0u; i < FIRE_MAX_SLOTS; i++) {
+					const FireZoneSlot *s = &g_fire.slots[i];
+					if (!s->active || !s->phase2_sent) {
+						continue;
+					}
+					any_p2 = 1u;
+					if (s->extinguish_aborted == 0u) {
+						all_aborted = 0u;
+						break;
+					}
+				}
+				if (any_p2 && all_aborted) {
+					ui_mode = 9u;
+				}
+#endif
+			}
 		}
 	}
 
@@ -2942,7 +3280,7 @@ void Fire_Init(void)
 	g_fire.start_all_is_bright = 0u;
 	g_fire.last_ui_nzones = 0u;
 	g_fire.last_fire_mode = PPKYConfig.fire_mode;
-	Led_Set(LED_AUTO_OFF, (PPKYConfig.fire_mode == 2u) ? 1u : 0u);
+	Fire_RefreshAutoOffLed();
 	g_fire_ui_manual_select_enabled = 0u;
 	g_fire_ui_selected_index = 0u;
 }
@@ -2962,8 +3300,9 @@ void Fire_Timer1ms(void)
 	}
 	Fire_RetryProcess(now);
 	if (g_fire.state == FIRE_STATE_IDLE && !Fire_AnyActiveSlot() && !g_fire.all_hold_active) {
-		/* IDLE: всё равно крутим LED_FIRE (ВНИМАНИЕ по ГОСТ). */
+		/* IDLE: LED_FIRE (ВНИМАНИЕ) + актуальный LED_AUTO_OFF по режимам зон. */
 		Fire_UpdateLedFire(now);
+		Fire_RefreshAutoOffLed();
 		return;
 	}
 	Fire_Transition(FIRE_EVENT_TICK_1MS, now);
@@ -2998,6 +3337,8 @@ void Fire_Timer10ms(void)
 		g_fire.all_hold_ms = 0u;
 		g_fire.btn_start_all_hold_latched = 0u;
 		Fire_StartAllHoldSoundOff();
+		/* Сброс кэша UI: иначе после неполного удержания мог не уйти active=0. */
+		g_fire.last_ui_active = 0xFFu;
 		/* Обновить UI/LED сразу после отпускания кнопки, даже если пожара нет */
 		Fire_Transition(FIRE_EVENT_TICK_1MS, HAL_GetTick());
 	}
@@ -3070,7 +3411,7 @@ void Fire_OnStatusFire(uint32_t msg_id, const uint8_t *msg_data)
 	uint32_t source_key = Fire_SourceKeyFromMsgId(msg_id);
 	uint8_t and_effective = Fire_IsAndEffectiveForZone(zone);
 	uint32_t now = HAL_GetTick();
-	uint8_t res = Fire_TryAddNewFireZone(zone, source_key, and_effective, now);
+	uint8_t res = Fire_TryAddNewFireZone(zone, source_key, and_effective, now, msg_id, msg_data);
 	if (res == 1u || res == 2u) {
 		Fire_LogFireDetected(msg_id, msg_data, zone);
 		/* Новая зона / ПОЖАР1->ПОЖАР2: слот и фаза 1, затем FSM */
@@ -3181,6 +3522,11 @@ uint8_t Fire_IsActive(void)
 	return (g_fire.state != FIRE_STATE_IDLE || Fire_AnyActiveSlot()) ? 1u : 0u;
 }
 
+uint8_t Fire_HasExtinguishIncomplete(void)
+{
+	return Fire_HasExtinguishFailure();
+}
+
 uint8_t Fire_IsStartAllHoldActive(void)
 {
 	return g_fire.all_hold_active ? 1u : 0u;
@@ -3190,4 +3536,13 @@ void Fire_UiSetManualSelection(uint8_t enabled, uint8_t selected_ui_index)
 {
 	g_fire_ui_manual_select_enabled = enabled ? 1u : 0u;
 	g_fire_ui_selected_index = selected_ui_index;
+}
+
+void Fire_NotifyZoneModeChanged(void)
+{
+	const uint8_t on = PPKY_AnyZoneManualOrBlocked() ? 1u : 0u;
+	Led_Set(LED_AUTO_OFF, on);
+	if (on != 0u) {
+		Led_ForceStatusBright(LED_AUTO_OFF);
+	}
 }

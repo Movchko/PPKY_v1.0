@@ -99,6 +99,7 @@ void Model::setFireStatusFromApp(bool active, uint8_t mode, uint8_t zone, uint8_
 	fireZoneNameCount = nZoneNames;
 	if (nZoneNames == 0u) {
 		std::memset(fireZoneNames, 0, sizeof(fireZoneNames));
+		/* Не выходим раньше: active/mode/remaining уже обновлены (сброс таймера ПУСК ОБЩИЙ). */
 		return;
 	}
 	for (uint8_t i = 0u; i < nZoneNames; i++) {

@@ -40,12 +40,16 @@ public:
     void fireShowCurrentZone();
     void warningOnMarqueeOnePassDone();
     void warningShowCurrent();
+    /** Показать текущую зону списка ручного/заблокированного режима. */
+    void modeShowCurrent();
     void handleMainNavButton(uint8_t but);
     void uiSetWarningHeaderVisible(bool visible);
     void uiUpdateWarningHeader(uint8_t cur_idx, uint8_t total);
     void uiSetTopHeaderText(const char* text);
     /** Дежурный режим: по центру большого поля — «НОРМА». */
     void uiShowNormalStatus();
+    /** Удержание ПУСК ОБЩИЙ: таймер 3с по центру (важнее «НОРМА»). */
+    void uiShowStartAllHoldTimer(const char* center_text);
     /** imageMute в top_bar: показать при выключенном звуке. */
     void applyMuteIcon(bool soundOn);
     /** imageWifi в top_bar: показать при активном TCP-подключении хоста. */

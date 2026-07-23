@@ -15,6 +15,7 @@
 #include "gui/common/FrontendHeap.hpp"
 #include "fire.h"
 #include "warning.h"
+#include "config_zone_block.h"
 #include "menu_ui.h"
 #include "rtc_cache.h"
 #include "event_log.h"
@@ -613,6 +614,16 @@ static uint8_t RelayAuto_IsFaultTriggerInZone(uint8_t zone)
 	return 0u;
 }
 
+static uint8_t RelayAuto_IsFaultTriggerAnyZone(void)
+{
+	for (uint8_t zi = 1u; zi <= ZONE_NUMBER; zi++) {
+		if (RelayAuto_IsFaultTriggerInZone(zi) != 0u) {
+			return 1u;
+		}
+	}
+	return 0u;
+}
+
 static uint8_t RelayAuto_IsLswitchOpenTriggerInZone(uint8_t zone)
 {
 	for (uint8_t i = 0u; i < g_active_devices_count; i++) {
@@ -690,7 +701,7 @@ static void RelayAuto_Process(void)
 			}
 			const DeviceRelayConfig *cfg = (const DeviceRelayConfig*)m->Devices[slot].reserv;
 			const uint8_t mode = cfg->mode;
-			if (mode == 0u || mode > 6u) {
+			if (mode == 0u || mode > 7u) {
 				continue;
 			}
 
@@ -713,6 +724,9 @@ static void RelayAuto_Process(void)
 				trigger = RelayAuto_IsStartTriggerInZone(zone);
 			} else if (mode == 6u) {
 				trigger = RelayAuto_IsStartTriggerAnyZone();
+			} else if (mode == 7u) {
+				/* Неисправность в любой зоне (как mode 2, без привязки к зоне реле). */
+				trigger = RelayAuto_IsFaultTriggerAnyZone();
 			}
 
 			uint8_t target_state = (cfg->initial_state != 0u) ? 1u : 0u;
@@ -1229,6 +1243,23 @@ void AppInit() {
 	if (header_ok) {
 		ReadSavedConfig();
 		PPKYConfig = SavedPPKYConfig;
+		/* Миграция: если zone_fire_mode[] ещё все «авто» (0), взять дефолт из fire_mode. */
+		{
+			uint8_t any_non_auto = 0u;
+			for (uint16_t zi = 0; zi < ZONE_NUMBER; zi++) {
+				uint8_t m = PPKYConfig.zone_fire_mode[zi];
+				if (m > 3u) {
+					PPKYConfig.zone_fire_mode[zi] = 0u;
+					m = 0u;
+				}
+				if (m != 0u) {
+					any_non_auto = 1u;
+				}
+			}
+			if (any_non_auto == 0u && PPKYConfig.fire_mode != 0u) {
+				PPKY_ZoneFireModeInitFromGlobal();
+			}
+		}
 	} else {
 		// Заголовок мусор: считаем, что конфигурации нет
 		// Сбрасываем на значения по умолчанию и сохраняем в область конфигурации
@@ -1321,24 +1352,65 @@ uint32_t warning_process_delay = 10000;
 uint32_t led_power_toogle_cnt = 0;
 uint8_t led_power_is_toogle = 0;
 
+/* Гистерезис порогов входа питания: ширина зоны возврата (~2% номинала, не меньше 300 мВ).
+ * Без него на границе enter-порога ADC даёт частые set/clear → спам EventLog. */
+static constexpr uint32_t PPKU_POWER_HYST_PCT = 2u;
+static constexpr uint32_t PPKU_POWER_HYST_MIN_MV = 300u;
+static uint8_t s_ppku_input_fault_latched = 0u;
+
+static uint8_t App_PpkuInputFaultHyst(uint32_t mv_mV, uint8_t prev_fault,
+				      uint32_t low_enter_mv, uint32_t high_enter_mv,
+				      uint32_t low_exit_mv, uint32_t high_exit_mv)
+{
+	if (prev_fault != 0u) {
+		/* Сброс только когда напряжение уверенно внутри рабочей полосы. */
+		return (mv_mV >= low_exit_mv && mv_mV <= high_exit_mv) ? 0u : 1u;
+	}
+	/* Установка при выходе за enter-пороги. */
+	return (mv_mV < low_enter_mv || mv_mV > high_enter_mv) ? 1u : 0u;
+}
+
 static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 {
 	uint8_t power_fault_mask = 0u;       /* Ошибки выходов power-модуля (внешнее питание МКУ). */
 	uint8_t ppku_input_fault_mask = 0u;  /* Ошибки входов питания ППКУ. */
+	(void)now_ms;
 
-	/* Для "пропадания питания" используем порог присутствия 20% от номинала. */
+	/* Для "пропадания питания" используем порог присутствия 15%/10% от номинала + гистерезис. */
 	uint32_t nominal_mv = ((PPKYConfig.power_value != 0u) ? (uint32_t)PPKYConfig.power_value : 24u) * 1000u;
-	uint32_t present_threshold_mv = nominal_mv / 5;
+	uint32_t lov_present_threshold_mv = (nominal_mv * 15u) / 100u;
+	uint32_t high_present_threshold_mv = nominal_mv / 10u;
+	uint32_t hyst_mv = (nominal_mv * PPKU_POWER_HYST_PCT) / 100u;
+	if (hyst_mv < PPKU_POWER_HYST_MIN_MV) {
+		hyst_mv = PPKU_POWER_HYST_MIN_MV;
+	}
+	uint32_t low_enter_mv = (nominal_mv > lov_present_threshold_mv) ?
+				(nominal_mv - lov_present_threshold_mv) : 0u;
+	uint32_t high_enter_mv = nominal_mv + high_present_threshold_mv;
+	uint32_t low_exit_mv = low_enter_mv + hyst_mv;
+	uint32_t high_exit_mv = (high_enter_mv > hyst_mv) ? (high_enter_mv - hyst_mv) : high_enter_mv;
+	if (low_exit_mv > high_exit_mv) {
+		low_exit_mv = high_exit_mv;
+	}
+
 	uint32_t main_mv = (CHANNEL_VAL[4] > 0) ? (uint32_t)CHANNEL_VAL[4] : 0u; /* Основной ввод */
 	uint32_t reserve_mv = (CHANNEL_VAL[0] > 0) ? (uint32_t)CHANNEL_VAL[0] : 0u; /* Резервный ввод */
 	uint8_t reserve_required = (PPKYConfig.power_input == 0u) ? 1u : 0u; /* 0 = используем оба ввода */
 
-	if (main_mv < (nominal_mv - present_threshold_mv) || main_mv > (nominal_mv + present_threshold_mv)) {
+	if (App_PpkuInputFaultHyst(main_mv, (uint8_t)(s_ppku_input_fault_latched & 0x01u),
+				   low_enter_mv, high_enter_mv, low_exit_mv, high_exit_mv) != 0u) {
 		ppku_input_fault_mask |= 0x01u; /* ПИТАНИЕ 1 */
 	}
-	if (reserve_required && (reserve_mv < (nominal_mv - present_threshold_mv) || reserve_mv > (nominal_mv + present_threshold_mv))) {
-		ppku_input_fault_mask |= 0x02u; /* ПИТАНИЕ 2 */
+	if (reserve_required) {
+		if (App_PpkuInputFaultHyst(reserve_mv, (uint8_t)((s_ppku_input_fault_latched >> 1) & 0x01u),
+					   low_enter_mv, high_enter_mv, low_exit_mv, high_exit_mv) != 0u) {
+			ppku_input_fault_mask |= 0x02u; /* ПИТАНИЕ 2 */
+		}
+	} else {
+		/* Резерв не используется — не удерживаем старую ошибку канала 2. */
+		ppku_input_fault_mask &= (uint8_t)~0x02u;
 	}
+	s_ppku_input_fault_latched = ppku_input_fault_mask;
 
 	for (uint8_t i = 0u; i < 2u; i++) {
 		if (Power[i] != nullptr && Power[i]->IsError()) {
@@ -1366,15 +1438,6 @@ static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 			led_power_toogle_cnt = LED_POWER_TOOGLE_PERIOD_MS;
 		}
 	}
-
-
-
-	/* При отсутствии основного ввода индикатор питания должен гаснуть. */
-	//Led_Set(LED_POWER, ((ppku_input_fault_mask & 0x01u) != 0u) ? 0u : 1u);
-
-
-
-
 
 	/* LED_ERR — только неисправность (WarningProcess1ms). ВНИМАНИЕ — на LED_FIRE. */
 	uint8_t has_fault = (power_fault_mask != 0u || ppku_input_fault_mask != 0u) ? 1u :

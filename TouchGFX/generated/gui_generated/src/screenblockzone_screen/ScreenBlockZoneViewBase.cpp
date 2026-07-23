@@ -15,7 +15,7 @@ ScreenBlockZoneViewBase::ScreenBlockZoneViewBase()
     box1.setColor(touchgfx::Color::getColorFromRGB(0, 0, 0));
     add(box1);
 
-    textAreatime_on_off.setPosition(0, 41, 128, 23);
+    textAreatime_on_off.setPosition(0, 47, 128, 17);
     textAreatime_on_off.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
     textAreatime_on_off.setLinespacing(0);
     Unicode::snprintf(textAreatime_on_offBuffer, TEXTAREATIME_ON_OFF_SIZE, "%s", touchgfx::TypedText(T___SINGLEUSE_7EI5).getText());
@@ -23,7 +23,7 @@ ScreenBlockZoneViewBase::ScreenBlockZoneViewBase()
     textAreatime_on_off.setTypedText(touchgfx::TypedText(T___SINGLEUSE_K73U));
     add(textAreatime_on_off);
 
-    CustomContainerSrollText.setXY(0, 23);
+    CustomContainerSrollText.setXY(0, 29);
     add(CustomContainerSrollText);
 
     textAreatime_top_bar.setPosition(0, 0, 128, 23);

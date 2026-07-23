@@ -4,6 +4,10 @@
 #include <gui/model/ModelListener.hpp>
 #include <mvp/Presenter.hpp>
 
+#ifndef SIMULATOR
+#include "gost_mode.h"
+#endif
+
 using namespace touchgfx;
 
 class ScreenMenuView;
@@ -27,10 +31,17 @@ private:
     ScreenMenuView& view;
 
 #ifndef SIMULATOR
+#if GOST_MODE
+    /* Без пункта «РЕЖИМ» (глобальный fire_mode) — только «РЕЖИМ ЗОН». */
+    static const int MENU_ITEMS = 6;
+#else
     static const int MENU_ITEMS = 7;
+#endif
     bool soundOn;
     int16_t currentIndex;
     void refreshLine();
+    /** Логический индекс меню → «старый» индекс действий/подписей (0=РЕЖИМ …). */
+    static int menuActionIndex(int16_t logical_index);
 #endif
 };
 

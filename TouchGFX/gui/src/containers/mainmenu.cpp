@@ -64,7 +64,7 @@ void mainmenu::updateText(int16_t value)
 
 		case 5: {
 
-			Unicode::snprintf(textAreaMainMenuBuffer, TEXTAREAMAINMENU_SIZE, "%s", touchgfx::TypedText(TEXTS(T_IGN_BLOCK)).getText());
+			Unicode::fromUTF8(reinterpret_cast<const uint8_t*>("РЕЖИМ ЗОН"), textAreaMainMenuBuffer, TEXTAREAMAINMENU_SIZE);
 
 		}break;
 

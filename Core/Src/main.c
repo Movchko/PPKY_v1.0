@@ -28,6 +28,7 @@
 #include "led.h"
 #include "can_bus.h"
 #include "rtc_cache.h"
+#include "menu_ui.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/

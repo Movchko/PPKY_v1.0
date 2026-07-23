@@ -231,10 +231,12 @@ void DefaultConfig() {
 
 	// Примеры значений по умолчанию
 	PPKYConfig.beep = 1; // звук включен
+	PPKYConfig.fire_mode = 0u;
 
-	// Имена зон очищаем (пустые строки)
+	// Имена зон очищаем (пустые строки); zone_fire_mode = глобальный fire_mode
 	for (uint16_t i = 0; i < ZONE_NUMBER; i++) {
 		memset(PPKYConfig.zone_name[i], 0, ZONE_NAME_SIZE);
+		PPKYConfig.zone_fire_mode[i] = PPKYConfig.fire_mode;
 	}
 
 	// reserv оставляем нулевым

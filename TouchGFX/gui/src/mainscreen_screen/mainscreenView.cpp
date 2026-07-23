@@ -5,15 +5,20 @@
 #ifndef SIMULATOR
 #include "main.h"
 #include "device_config.h"
+#include "config_zone_block.h"
+#include "gost_mode.h"
 #include "button.h"
 #include "fire.h"
 #include "led.h"
-#include "gost_mode.h"
+
+extern PPKYCfg PPKYConfig;
 
 namespace {
 
 constexpr uint32_t FIRE_NAME_HOLD_MS = 3000u;
+constexpr uint32_t NEW_EVENT_HOLD_MS = 5000u;
 constexpr uint32_t MAIN_NAV_AUTO_RETURN_MS = (uint32_t)LED_BUT_IDLE_TIMEOUT_TICKS * 10u;
+constexpr uint8_t UI_LIST_CAPACITY = 16u;
 
 enum FireNamePhase : uint8_t {
 	PH_IDLE = 0,
@@ -21,117 +26,243 @@ enum FireNamePhase : uint8_t {
 	PH_HOLD_3S
 };
 
+/* Значения также задают порядок приоритета. */
 enum UiBannerMode : uint8_t {
 	BANNER_NONE = 0,
 	BANNER_FIRE,
-	BANNER_WARNING
+	BANNER_ATTENTION,
+	BANNER_FAULT,
+	BANNER_MODE,
+	BANNER_WARNING = BANNER_FAULT /* совместимость со старым именем */
 };
 
-mainscreenView* g_fire_main_view = nullptr;
+mainscreenView* g_main_view = nullptr;
 
-uint8_t s_fn_n = 0;
-char s_fn_names[16][ZONE_NAME_SIZE + 1];
-uint8_t s_fn_cur = 0;
-FireNamePhase s_fn_ph = PH_IDLE;
-uint32_t s_fn_hold_from = 0;
+uint8_t s_fn_n = 0u;
+char s_fn_names[UI_LIST_CAPACITY][ZONE_NAME_SIZE + 1];
+
+uint8_t s_an_n = 0u;
+char s_an_titles[UI_LIST_CAPACITY][WARNING_TITLE_LEN];
+char s_an_details[UI_LIST_CAPACITY][ZONE_NAME_SIZE + 1];
+
+uint8_t s_wn_n = 0u;
+char s_wn_titles[UI_LIST_CAPACITY][WARNING_TITLE_LEN];
+char s_wn_details[UI_LIST_CAPACITY][ZONE_NAME_SIZE + 1];
+
+uint8_t s_mn_n = 0u;
+uint8_t s_mn_zones[UI_LIST_CAPACITY];
+char s_mn_names[UI_LIST_CAPACITY][ZONE_NAME_SIZE + 1];
+uint8_t s_mn_modes[UI_LIST_CAPACITY];
+
+uint8_t s_cur[5] = {0u};
+FireNamePhase s_phase[5] = {PH_IDLE};
+uint32_t s_hold_from[5] = {0u};
 UiBannerMode s_banner_mode = BANNER_NONE;
-
-uint8_t s_wn_n = 0;
-char s_wn_titles[16][WARNING_TITLE_LEN];
-char s_wn_details[16][ZONE_NAME_SIZE + 1];
-uint8_t s_wn_is_attention[16] = {0u};
-uint8_t s_wn_cur = 0;
-FireNamePhase s_wn_ph = PH_IDLE;
-uint32_t s_wn_hold_from = 0;
+UiBannerMode s_pending_banner = BANNER_NONE;
+uint32_t s_pending_from = 0u;
 char s_top_header_text[24] = {0};
-uint8_t s_fire_manual_select = 0u;
-uint8_t s_warning_manual_select = 0u;
+uint8_t s_manual_browse = 0u;
+uint32_t s_nav_last_press_ms = 0u;
 uint8_t s_fire_mode = 0u;
-uint32_t s_fire_nav_last_press_ms = 0u;
-uint32_t s_warning_nav_last_press_ms = 0u;
+uint8_t s_fire_active = 0u;
+char s_fire_center_text[32] = {0};
+uint8_t s_start_all_hold_shown = 0u;
 
-/* ГОСТ: без авторотации — на экране всегда индекс 0 («актуальный»). */
-static uint8_t ui_auto_rotate_lists(void)
+static bool ui_fire_blocks_events(void)
 {
-#if GOST_MODE
-	return 0u;
-#else
-	return 1u;
-#endif
+	return (s_fire_active != 0u && (s_fire_mode == 1u || s_fire_mode == 2u));
 }
 
-static void ui_fire_return_to_actual(mainscreenView* view)
+/* Удержание ПУСК ОБЩИЙ: по факту кнопки/FSM, а не по кэшу UI (иначе после отпускания
+ * таймер «залипает», пока не придёт другой апдейт). */
+static bool ui_is_start_all_hold(void)
 {
-	s_fire_manual_select = 0u;
-	Fire_UiSetManualSelection(0u, 0u);
-	s_fn_cur = 0u;
-	s_fn_ph = PH_IDLE;
-	s_fn_hold_from = 0u;
-	s_fire_nav_last_press_ms = 0u;
-	if (view != nullptr && s_fn_n > 0u) {
+	return (Fire_IsStartAllHoldActive() != 0u);
+}
+
+static uint8_t ui_count(UiBannerMode banner)
+{
+	switch (banner) {
+	case BANNER_FIRE: return s_fn_n;
+	case BANNER_ATTENTION: return s_an_n;
+	case BANNER_FAULT: return s_wn_n;
+	case BANNER_MODE: return s_mn_n;
+	default: return 0u;
+	}
+}
+
+static UiBannerMode ui_highest_nonempty(void)
+{
+	for (uint8_t b = BANNER_FIRE; b <= BANNER_MODE; ++b) {
+		if (ui_count((UiBannerMode)b) != 0u) {
+			return (UiBannerMode)b;
+		}
+	}
+	return BANNER_NONE;
+}
+
+static void ui_clear_phase(UiBannerMode banner)
+{
+	s_phase[banner] = PH_IDLE;
+	s_hold_from[banner] = 0u;
+}
+
+static void ui_request_new_event(UiBannerMode banner, uint8_t item)
+{
+	if (ui_count(banner) == 0u) {
+		return;
+	}
+	s_cur[banner] = (item < ui_count(banner)) ? item : 0u;
+	ui_clear_phase(banner);
+	s_pending_banner = banner;
+	s_pending_from = HAL_GetTick();
+}
+
+static void trim_zone_name(char* dst, size_t dst_size, const int8_t* src)
+{
+	if (dst == nullptr || dst_size == 0u || src == nullptr) {
+		return;
+	}
+	size_t n = 0u;
+	while (n + 1u < dst_size && src[n] != 0) {
+		dst[n] = (char)src[n];
+		n++;
+	}
+	dst[n] = '\0';
+	while (n > 0u && dst[n - 1u] == ' ') {
+		dst[--n] = '\0';
+	}
+}
+
+static void ui_refresh_mode_list(void)
+{
+	s_mn_n = 0u;
+	for (uint8_t zi = 0u; zi < ZONE_NUMBER && s_mn_n < UI_LIST_CAPACITY; ++zi) {
+		const uint8_t mode = PPKY_ZoneFireModeGet(zi);
+		if (mode != 2u && mode != 3u) {
+			continue;
+		}
+		const uint8_t pos = s_mn_n++;
+		s_mn_zones[pos] = zi;
+		s_mn_modes[pos] = mode;
+		trim_zone_name(s_mn_names[pos], sizeof(s_mn_names[pos]), PPKYConfig.zone_name[zi]);
+	}
+	if (s_mn_n == 0u) {
+		s_cur[BANNER_MODE] = 0u;
+	} else if (s_cur[BANNER_MODE] >= s_mn_n) {
+		s_cur[BANNER_MODE] = 0u;
+	}
+	/* Новое событие списка РЕЖИМ — только через PPKY_ZoneModeUiNotify (меню). */
+}
+
+static UiBannerMode ui_desired_banner(void)
+{
+	if (s_manual_browse && ui_count(s_banner_mode) > 0u) {
+		return s_banner_mode;
+	}
+	if (s_pending_banner != BANNER_NONE) {
+		if ((HAL_GetTick() - s_pending_from) >= NEW_EVENT_HOLD_MS) {
+			s_pending_banner = BANNER_NONE;
+		} else if (!ui_fire_blocks_events() && ui_count(s_pending_banner) > 0u) {
+			return s_pending_banner;
+		}
+	}
+	return ui_highest_nonempty();
+}
+
+static void ui_set_warning_header_visible(mainscreenView* view, bool visible)
+{
+	if (view != nullptr) {
+		view->uiSetWarningHeaderVisible(visible);
+	}
+}
+
+static void fire_marquee_done_thunk(CustomContainerSollText*)
+{
+	if (g_main_view == nullptr) {
+		return;
+	}
+	if (s_banner_mode == BANNER_FIRE) {
+		g_main_view->fireOnMarqueeOnePassDone();
+	} else if (s_banner_mode == BANNER_ATTENTION || s_banner_mode == BANNER_FAULT ||
+		   s_banner_mode == BANNER_MODE) {
+		g_main_view->warningOnMarqueeOnePassDone();
+	}
+}
+
+static void ui_show_desired(mainscreenView* view, bool force = false)
+{
+	if (view == nullptr) {
+		return;
+	}
+	/* Таймер ПУСК ОБЩИЙ важнее НОРМА / прочих баннеров. */
+	if (ui_is_start_all_hold()) {
+		s_start_all_hold_shown = 1u;
+		view->uiShowStartAllHoldTimer(s_fire_center_text);
+		s_banner_mode = BANNER_NONE;
+		return;
+	}
+	/* Отпустили до 3 с — вернуть НОРМА / неисправности / режимы. */
+	if (s_start_all_hold_shown != 0u) {
+		s_start_all_hold_shown = 0u;
+		s_fire_center_text[0] = '\0';
+		force = true;
+	}
+	const UiBannerMode desired = ui_desired_banner();
+	if (!force && desired == s_banner_mode) {
+		return;
+	}
+	if (desired == BANNER_FIRE) {
 		view->fireShowCurrentZone();
-	}
-}
-
-static void ui_warning_return_to_actual(mainscreenView* view)
-{
-	s_warning_manual_select = 0u;
-	s_wn_cur = 0u;
-	s_wn_ph = PH_IDLE;
-	s_wn_hold_from = 0u;
-	s_warning_nav_last_press_ms = 0u;
-	if (view != nullptr && s_wn_n > 0u) {
+	} else if (desired == BANNER_ATTENTION || desired == BANNER_FAULT) {
+		s_banner_mode = desired;
 		view->warningShowCurrent();
+	} else if (desired == BANNER_MODE) {
+		s_banner_mode = desired;
+		view->modeShowCurrent();
+	} else {
+		view->uiShowNormalStatus();
+		ui_set_warning_header_visible(view, false);
 	}
 }
 
-static void fire_copy_list(uint8_t n, char (*src)[ZONE_NAME_SIZE + 1])
+static void ui_return_to_priority(mainscreenView* view)
 {
-	s_fn_n = (n > 16u) ? 16u : n;
-	for (uint8_t i = 0u; i < s_fn_n; i++) {
-		std::strncpy(s_fn_names[i], src[i], ZONE_NAME_SIZE);
-		s_fn_names[i][ZONE_NAME_SIZE] = '\0';
-	}
+	s_manual_browse = 0u;
+	s_nav_last_press_ms = 0u;
+	Fire_UiSetManualSelection(0u, 0u);
+	s_banner_mode = BANNER_NONE;
+	ui_show_desired(view, true);
 }
 
-static bool fire_list_equals(uint8_t n, char (*src)[ZONE_NAME_SIZE + 1])
+static bool ui_warning_list_equals(uint8_t n, char (*titles)[WARNING_TITLE_LEN],
+					   char (*details)[ZONE_NAME_SIZE + 1])
 {
-	if (n != s_fn_n) {
+	if (n != s_wn_n) {
 		return false;
 	}
-	for (uint8_t i = 0u; i < n; i++) {
-		if (std::strncmp(s_fn_names[i], src[i], ZONE_NAME_SIZE + 1) != 0) {
+	for (uint8_t i = 0u; i < n; ++i) {
+		if (std::strncmp(s_wn_titles[i], titles[i], WARNING_TITLE_LEN) != 0 ||
+		    std::strncmp(s_wn_details[i], details[i], ZONE_NAME_SIZE + 1) != 0) {
 			return false;
 		}
 	}
 	return true;
 }
 
-static void fire_marquee_done_thunk(CustomContainerSollText*)
+static bool ui_attention_list_equals(uint8_t n, char (*titles)[WARNING_TITLE_LEN],
+					     char (*details)[ZONE_NAME_SIZE + 1])
 {
-	if (g_fire_main_view != nullptr) {
-		if (s_banner_mode == BANNER_FIRE) {
-			g_fire_main_view->fireOnMarqueeOnePassDone();
-		} else if (s_banner_mode == BANNER_WARNING) {
-			g_fire_main_view->warningOnMarqueeOnePassDone();
+	if (n != s_an_n) {
+		return false;
+	}
+	for (uint8_t i = 0u; i < n; ++i) {
+		if (std::strncmp(s_an_titles[i], titles[i], WARNING_TITLE_LEN) != 0 ||
+		    std::strncmp(s_an_details[i], details[i], ZONE_NAME_SIZE + 1) != 0) {
+			return false;
 		}
 	}
-}
-
-static void ui_set_warning_header_visible(mainscreenView* view, bool visible)
-{
-	if (view == nullptr) {
-		return;
-	}
-	view->uiSetWarningHeaderVisible(visible);
-}
-
-static void ui_update_warning_header(mainscreenView* view)
-{
-	if (view == nullptr || s_wn_n == 0u) {
-		return;
-	}
-	view->uiUpdateWarningHeader((uint8_t)(s_wn_cur + 1u), s_wn_n);
+	return true;
 }
 
 } // namespace
@@ -139,84 +270,90 @@ static void ui_update_warning_header(mainscreenView* view)
 
 mainscreenView::mainscreenView()
 {
-
 }
 
 void mainscreenView::setupScreen()
 {
-    mainscreenViewBase::setupScreen();
-
-    /* По умолчанию пустая бегущая строка, будет задаваться из приложения (пожар, ошибки и т.п.) */
-    CustomContainerSrollText.setText("");
+	mainscreenViewBase::setupScreen();
+	CustomContainerSrollText.setText("");
 #ifndef SIMULATOR
-    g_fire_main_view = this;
-    CustomContainerSrollText.setFinishedCallback(fire_marquee_done_thunk);
-    /* Экран пересоздаётся после выхода из меню: сбрасываем runtime-фазы,
-     * чтобы рендер баннеров (пожар/авария) гарантированно стартовал заново
-     * даже при неизменном списке элементов. */
-    s_banner_mode = BANNER_NONE;
-    s_fn_ph = PH_IDLE;
-    s_fn_hold_from = 0u;
-    s_wn_ph = PH_IDLE;
-    s_wn_hold_from = 0u;
-    ui_set_warning_header_visible(this, false);
-    s_fire_manual_select = 0u;
-    s_warning_manual_select = 0u;
-    s_fire_nav_last_press_ms = 0u;
-    s_warning_nav_last_press_ms = 0u;
-    Fire_UiSetManualSelection(0u, 0u);
-    uiShowNormalStatus();
-    /* Видимость imageMute/imageWifi в top_bar выставит presenter::activate. */
+	g_main_view = this;
+	CustomContainerSrollText.setFinishedCallback(fire_marquee_done_thunk);
+	s_banner_mode = BANNER_NONE;
+	s_manual_browse = 0u;
+	s_nav_last_press_ms = 0u;
+	memset(s_phase, 0, sizeof(s_phase));
+	memset(s_hold_from, 0, sizeof(s_hold_from));
+	Fire_UiSetManualSelection(0u, 0u);
+	ui_refresh_mode_list();
+	uiShowNormalStatus();
 #endif
 }
 
 void mainscreenView::applyMuteIcon(bool soundOn)
 {
 #ifndef SIMULATOR
-    /* звук откл. → показать imageMute */
-    customContainerTopBar1.setMuteVisible(!soundOn);
+	customContainerTopBar1.setMuteVisible(!soundOn);
 #else
-    (void)soundOn;
+	(void)soundOn;
 #endif
 }
 
 void mainscreenView::applyWifiIcon(bool active)
 {
 #ifndef SIMULATOR
-    customContainerTopBar1.setWifiVisible(active);
+	customContainerTopBar1.setWifiVisible(active);
 #else
-    (void)active;
+	(void)active;
 #endif
 }
 
 void mainscreenView::tearDownScreen()
 {
 #ifndef SIMULATOR
-    if (g_fire_main_view == this) {
-        g_fire_main_view = nullptr;
-    }
-    CustomContainerSrollText.setFinishedCallback(nullptr);
+	if (g_main_view == this) {
+		g_main_view = nullptr;
+	}
+	CustomContainerSrollText.setFinishedCallback(nullptr);
 #endif
-    mainscreenViewBase::tearDownScreen();
+	mainscreenViewBase::tearDownScreen();
 }
 
 void mainscreenView::setDateTime(uint8_t hour, uint8_t min, uint8_t sec, uint8_t day, uint8_t month, uint8_t year)
 {
 #ifndef SIMULATOR
-    if (textAreatime_top_bar.isVisible()) {
-        return;
-    }
+	if (textAreatime_top_bar.isVisible()) {
+		return;
+	}
 #endif
-    customContainerScrollTime1.setTime(hour, min, sec, day, month, year);
+	customContainerScrollTime1.setTime(hour, min, sec, day, month, year);
 }
 
 #ifndef SIMULATOR
 void mainscreenView::fireOnMarqueeOnePassDone()
 {
-	if (s_fn_ph == PH_WAIT_LONG_SCROLL) {
-		s_fn_ph = PH_HOLD_3S;
-		s_fn_hold_from = HAL_GetTick();
+#if GOST_MODE
+	/* ГОСТ: без автосмены элемента — только ручная прокрутка. */
+	(void)0;
+#else
+	if (s_phase[BANNER_FIRE] == PH_WAIT_LONG_SCROLL) {
+		s_phase[BANNER_FIRE] = PH_HOLD_3S;
+		s_hold_from[BANNER_FIRE] = HAL_GetTick();
 	}
+#endif
+}
+
+void mainscreenView::warningOnMarqueeOnePassDone()
+{
+#if GOST_MODE
+	(void)0;
+#else
+	if (s_banner_mode >= BANNER_ATTENTION && s_banner_mode <= BANNER_MODE &&
+	    s_phase[s_banner_mode] == PH_WAIT_LONG_SCROLL) {
+		s_phase[s_banner_mode] = PH_HOLD_3S;
+		s_hold_from[s_banner_mode] = HAL_GetTick();
+	}
+#endif
 }
 
 void mainscreenView::fireShowCurrentZone()
@@ -224,123 +361,172 @@ void mainscreenView::fireShowCurrentZone()
 	if (s_fn_n == 0u) {
 		return;
 	}
-	CustomContainerSrollText.setText(s_fn_names[s_fn_cur]);
 	s_banner_mode = BANNER_FIRE;
-	if (s_fire_manual_select) {
-		/* В ручном выборе пожара верхняя строка должна быть как в штатном режиме пожара. */
-		if (s_fire_mode == 1u || s_fire_mode == 5u) {
-			ui_set_warning_header_visible(this, true);
-			uiSetTopHeaderText((s_fire_mode == 5u) ? "ПАУЗА" : "ДО ПУСКА");
-		} else if (s_fire_mode == 6u || s_fire_mode == 8u) {
-			ui_set_warning_header_visible(this, true);
-			uiSetTopHeaderText("");
-		} else {
-			ui_set_warning_header_visible(this, false);
-		}
-		s_fn_ph = PH_IDLE;
-		s_fn_hold_from = 0u;
-		return;
+	const bool show_hdr = (s_fire_mode == 1u || s_fire_mode == 5u ||
+			       s_fire_mode == 6u || s_fire_mode == 8u || s_manual_browse);
+	ui_set_warning_header_visible(this, show_hdr);
+	char hdr[24];
+	const char *base = "";
+	if (s_fire_mode == 1u) {
+		base = "ДО ПУСКА";
+	} else if (s_fire_mode == 5u) {
+		base = "ПАУЗА";
+	} else if (s_manual_browse) {
+		base = "ПОЖАР";
 	}
-	if (CustomContainerSrollText.isMarqueeFitting()) {
-		s_fn_ph = PH_HOLD_3S;
-		s_fn_hold_from = HAL_GetTick();
-	} else {
-		s_fn_ph = PH_WAIT_LONG_SCROLL;
+	if (s_manual_browse && base[0] != '\0') {
+		snprintf(hdr, sizeof(hdr), "%s %u/%u", base,
+			 (unsigned)(s_cur[BANNER_FIRE] + 1u), (unsigned)s_fn_n);
+		uiSetTopHeaderText(hdr);
+	} else if (base[0] != '\0') {
+		uiSetTopHeaderText(base);
+	} else if (s_fire_mode == 6u || s_fire_mode == 8u) {
+		uiSetTopHeaderText("");
 	}
-}
-
-void mainscreenView::warningOnMarqueeOnePassDone()
-{
-	if (s_wn_ph != PH_WAIT_LONG_SCROLL || s_wn_n == 0u) {
-		return;
-	}
-	if (ui_auto_rotate_lists() != 0u && !s_warning_manual_select) {
-		/* Обычный режим: после длинной строки — следующая неисправность. */
-		s_wn_cur = (uint8_t)((s_wn_cur + 1u) % s_wn_n);
-	}
-	/* ГОСТ / ручной выбор: остаёмся на текущем элементе, перезапуск бегущей строки. */
-	s_wn_ph = PH_IDLE;
-	s_wn_hold_from = 0u;
-	ui_update_warning_header(this);
-}
-
-void mainscreenView::warningShowCurrent()
-{
-	if (s_wn_n == 0u) {
-		return;
-	}
-	s_banner_mode = BANNER_WARNING;
-	ui_set_warning_header_visible(this, true);
-	ui_update_warning_header(this);
-
-	for (uint16_t i = 0; i < TEXTAREA1_SIZE; i++) {
-		textArea1Buffer[i] = 0;
-	}
-	Unicode::fromUTF8(reinterpret_cast<const uint8_t*>(s_wn_titles[s_wn_cur]), textArea1Buffer, TEXTAREA1_SIZE);
-	textArea1Buffer[TEXTAREA1_SIZE - 1] = 0;
+	CustomContainerSrollText.setText(s_fn_names[s_cur[BANNER_FIRE]]);
+	memset(textArea1Buffer, 0, sizeof(textArea1Buffer));
+	Unicode::fromUTF8(reinterpret_cast<const uint8_t*>(s_fire_center_text), textArea1Buffer, TEXTAREA1_SIZE);
+	textArea1Buffer[TEXTAREA1_SIZE - 1u] = 0;
 	textArea1.setWildcard(textArea1Buffer);
 	textArea1.invalidate();
-
-	CustomContainerSrollText.setText(s_wn_details[s_wn_cur]);
-	if (s_warning_manual_select) {
-		s_wn_ph = PH_IDLE;
-		s_wn_hold_from = 0u;
-		return;
+#if GOST_MODE
+	/* ГОСТ: без автопролистывания списка — фаза только для длинной бегущей строки. */
+	ui_clear_phase(BANNER_FIRE);
+	if (!s_manual_browse && !CustomContainerSrollText.isMarqueeFitting()) {
+		s_phase[BANNER_FIRE] = PH_WAIT_LONG_SCROLL;
 	}
-	if (CustomContainerSrollText.isMarqueeFitting()) {
-		s_wn_ph = PH_HOLD_3S;
-		s_wn_hold_from = HAL_GetTick();
+#else
+	if (s_manual_browse) {
+		ui_clear_phase(BANNER_FIRE);
+	} else if (CustomContainerSrollText.isMarqueeFitting()) {
+		s_phase[BANNER_FIRE] = PH_HOLD_3S;
+		s_hold_from[BANNER_FIRE] = HAL_GetTick();
 	} else {
-		s_wn_ph = PH_WAIT_LONG_SCROLL;
-	}
-}
-
-void mainscreenView::SetTime(uint32_t time) {
-
-};
-
-void mainscreenView::handleTickEvent()
-{
-	mainscreenViewBase::handleTickEvent();
-#ifndef SIMULATOR
-	uint32_t now = HAL_GetTick();
-	if (s_fire_manual_select &&
-	    s_fire_nav_last_press_ms != 0u &&
-	    (now - s_fire_nav_last_press_ms) >= MAIN_NAV_AUTO_RETURN_MS) {
-		if (ui_auto_rotate_lists() == 0u) {
-			ui_fire_return_to_actual(this);
-		} else {
-			s_fire_manual_select = 0u;
-			Fire_UiSetManualSelection(0u, 0u);
-			s_fn_ph = PH_IDLE;
-			s_fn_hold_from = 0u;
-			s_fire_nav_last_press_ms = 0u;
-			fireShowCurrentZone();
-		}
-	}
-	if (s_warning_manual_select &&
-	    s_warning_nav_last_press_ms != 0u &&
-	    (now - s_warning_nav_last_press_ms) >= MAIN_NAV_AUTO_RETURN_MS) {
-		if (ui_auto_rotate_lists() == 0u) {
-			ui_warning_return_to_actual(this);
-		} else {
-			s_warning_manual_select = 0u;
-			s_wn_ph = PH_IDLE;
-			s_wn_hold_from = 0u;
-			s_warning_nav_last_press_ms = 0u;
-			warningShowCurrent();
-		}
+		s_phase[BANNER_FIRE] = PH_WAIT_LONG_SCROLL;
 	}
 #endif
 }
 
-void mainscreenView::uiSetWarningHeaderVisible(bool visible)
+void mainscreenView::warningShowCurrent()
 {
-	bool cur = textAreatime_top_bar.isVisible();
-	if (cur == visible) {
+	char (*titles)[WARNING_TITLE_LEN] = (s_banner_mode == BANNER_ATTENTION) ? s_an_titles : s_wn_titles;
+	char (*details)[ZONE_NAME_SIZE + 1] = (s_banner_mode == BANNER_ATTENTION) ? s_an_details : s_wn_details;
+	const uint8_t n = ui_count(s_banner_mode);
+	if (n == 0u) {
 		return;
 	}
-	/* top_bar оставляем видимым: в нём imageMute/imageWifi. */
+	const uint8_t cur = s_cur[s_banner_mode];
+	ui_set_warning_header_visible(this, true);
+	if (s_banner_mode == BANNER_ATTENTION) {
+		char hdr[24];
+		snprintf(hdr, sizeof(hdr), "ВНИМАНИЕ %u/%u", (unsigned)(cur + 1u), (unsigned)n);
+		uiSetTopHeaderText(hdr);
+	} else {
+		uiUpdateWarningHeader((uint8_t)(cur + 1u), n);
+	}
+	memset(textArea1Buffer, 0, sizeof(textArea1Buffer));
+	Unicode::fromUTF8(reinterpret_cast<const uint8_t*>(titles[cur]), textArea1Buffer, TEXTAREA1_SIZE);
+	textArea1Buffer[TEXTAREA1_SIZE - 1u] = 0;
+	textArea1.setWildcard(textArea1Buffer);
+	textArea1.invalidate();
+	CustomContainerSrollText.setText(details[cur]);
+#if GOST_MODE
+	ui_clear_phase(s_banner_mode);
+	if (!s_manual_browse && !CustomContainerSrollText.isMarqueeFitting()) {
+		s_phase[s_banner_mode] = PH_WAIT_LONG_SCROLL;
+	}
+#else
+	if (s_manual_browse) {
+		ui_clear_phase(s_banner_mode);
+	} else if (CustomContainerSrollText.isMarqueeFitting()) {
+		s_phase[s_banner_mode] = PH_HOLD_3S;
+		s_hold_from[s_banner_mode] = HAL_GetTick();
+	} else {
+		s_phase[s_banner_mode] = PH_WAIT_LONG_SCROLL;
+	}
+#endif
+}
+
+void mainscreenView::modeShowCurrent()
+{
+	if (s_mn_n == 0u) {
+		return;
+	}
+	const uint8_t cur = s_cur[BANNER_MODE];
+	s_banner_mode = BANNER_MODE;
+	ui_set_warning_header_visible(this, true);
+	char hdr[24];
+	snprintf(hdr, sizeof(hdr), "РЕЖИМ %u/%u", (unsigned)(cur + 1u), (unsigned)s_mn_n);
+	uiSetTopHeaderText(hdr);
+	memset(textArea1Buffer, 0, sizeof(textArea1Buffer));
+	const char* center = (s_mn_modes[cur] == 2u) ? "РУЧНОЙ" : "ЗАБЛОК.";
+	Unicode::fromUTF8(reinterpret_cast<const uint8_t*>(center), textArea1Buffer, TEXTAREA1_SIZE);
+	textArea1Buffer[TEXTAREA1_SIZE - 1u] = 0;
+	textArea1.setWildcard(textArea1Buffer);
+	textArea1.invalidate();
+	CustomContainerSrollText.setText(s_mn_names[cur]);
+#if GOST_MODE
+	ui_clear_phase(BANNER_MODE);
+	if (!s_manual_browse && !CustomContainerSrollText.isMarqueeFitting()) {
+		s_phase[BANNER_MODE] = PH_WAIT_LONG_SCROLL;
+	}
+#else
+	if (s_manual_browse) {
+		ui_clear_phase(BANNER_MODE);
+	} else if (CustomContainerSrollText.isMarqueeFitting()) {
+		s_phase[BANNER_MODE] = PH_HOLD_3S;
+		s_hold_from[BANNER_MODE] = HAL_GetTick();
+	} else {
+		s_phase[BANNER_MODE] = PH_WAIT_LONG_SCROLL;
+	}
+#endif
+}
+
+void mainscreenView::SetTime(uint32_t time)
+{
+	(void)time;
+}
+
+void mainscreenView::handleTickEvent()
+{
+	mainscreenViewBase::handleTickEvent();
+	const uint32_t now = HAL_GetTick();
+	ui_refresh_mode_list();
+
+	uint8_t changed_zone;
+	if (PPKY_ZoneModeUiConsumeNew(&changed_zone) != 0u) {
+		for (uint8_t i = 0u; i < s_mn_n; ++i) {
+			if (s_mn_zones[i] == changed_zone) {
+				ui_request_new_event(BANNER_MODE, i);
+				break;
+			}
+		}
+	}
+	if (s_manual_browse && s_nav_last_press_ms != 0u &&
+	    (now - s_nav_last_press_ms) >= MAIN_NAV_AUTO_RETURN_MS) {
+		ui_return_to_priority(this);
+		return;
+	}
+#if !GOST_MODE
+	const UiBannerMode desired = ui_desired_banner();
+	if (!s_manual_browse && desired != BANNER_NONE &&
+	    s_phase[desired] == PH_HOLD_3S && s_hold_from[desired] != 0u &&
+	    (now - s_hold_from[desired]) >= FIRE_NAME_HOLD_MS) {
+		s_cur[desired] = (uint8_t)((s_cur[desired] + 1u) % ui_count(desired));
+		ui_clear_phase(desired);
+		s_banner_mode = BANNER_NONE;
+		ui_show_desired(this, true);
+		return;
+	}
+#endif
+	ui_show_desired(this);
+}
+
+void mainscreenView::uiSetWarningHeaderVisible(bool visible)
+{
+	if (textAreatime_top_bar.isVisible() == visible) {
+		return;
+	}
 	customContainerTopBar1.setVisible(true);
 	customContainerTopBar1.invalidate();
 	customContainerScrollTime1.setVisible(!visible);
@@ -352,348 +538,203 @@ void mainscreenView::uiSetWarningHeaderVisible(bool visible)
 void mainscreenView::uiUpdateWarningHeader(uint8_t cur_idx, uint8_t total)
 {
 	char hdr[24];
-	if (s_wn_n > 0u && s_wn_cur < s_wn_n && s_wn_is_attention[s_wn_cur]) {
-		snprintf(hdr, sizeof(hdr), "ВНИМАНИЕ");
-	} else {
-		snprintf(hdr, sizeof(hdr), "АВАРИЯ %u/%u", (unsigned)cur_idx, (unsigned)total);
-	}
+	snprintf(hdr, sizeof(hdr), "АВАРИЯ %u/%u", (unsigned)cur_idx, (unsigned)total);
 	uiSetTopHeaderText(hdr);
 }
 
 void mainscreenView::uiSetTopHeaderText(const char* text)
 {
-	if (text == nullptr) {
-		return;
-	}
-	if (std::strncmp(s_top_header_text, text, sizeof(s_top_header_text)) == 0) {
+	if (text == nullptr || std::strncmp(s_top_header_text, text, sizeof(s_top_header_text)) == 0) {
 		return;
 	}
 	std::strncpy(s_top_header_text, text, sizeof(s_top_header_text) - 1u);
 	s_top_header_text[sizeof(s_top_header_text) - 1u] = '\0';
-	for (uint16_t i = 0; i < TEXTAREATIME_TOP_BAR_SIZE; i++) {
-		textAreatime_top_barBuffer[i] = 0;
-	}
+	memset(textAreatime_top_barBuffer, 0, sizeof(textAreatime_top_barBuffer));
 	Unicode::fromUTF8(reinterpret_cast<const uint8_t*>(s_top_header_text),
 			  textAreatime_top_barBuffer, TEXTAREATIME_TOP_BAR_SIZE);
-	textAreatime_top_barBuffer[TEXTAREATIME_TOP_BAR_SIZE - 1] = 0;
+	textAreatime_top_barBuffer[TEXTAREATIME_TOP_BAR_SIZE - 1u] = 0;
 	textAreatime_top_bar.setWildcard(textAreatime_top_barBuffer);
 	textAreatime_top_bar.invalidate();
 }
 
 void mainscreenView::uiShowNormalStatus()
 {
-	for (uint16_t i = 0; i < TEXTAREA1_SIZE; i++) {
-		textArea1Buffer[i] = 0;
-	}
-	Unicode::fromUTF8(reinterpret_cast<const uint8_t*>("НОРМА"),
-			  textArea1Buffer, TEXTAREA1_SIZE);
-	textArea1Buffer[TEXTAREA1_SIZE - 1] = 0;
+	memset(textArea1Buffer, 0, sizeof(textArea1Buffer));
+	Unicode::fromUTF8(reinterpret_cast<const uint8_t*>("НОРМА"), textArea1Buffer, TEXTAREA1_SIZE);
+	textArea1Buffer[TEXTAREA1_SIZE - 1u] = 0;
 	textArea1.setWildcard(textArea1Buffer);
 	textArea1.invalidate();
 	CustomContainerSrollText.setText("");
 	s_banner_mode = BANNER_NONE;
 }
 
-void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, uint8_t remaining_s, uint8_t nZoneNames,
-				      char (*zoneNames)[ZONE_NAME_SIZE + 1])
+void mainscreenView::uiShowStartAllHoldTimer(const char* center_text)
+{
+	ui_set_warning_header_visible(this, false);
+	memset(textArea1Buffer, 0, sizeof(textArea1Buffer));
+	const char* txt = (center_text != nullptr && center_text[0] != '\0') ? center_text : "3С";
+	Unicode::fromUTF8(reinterpret_cast<const uint8_t*>(txt), textArea1Buffer, TEXTAREA1_SIZE);
+	textArea1Buffer[TEXTAREA1_SIZE - 1u] = 0;
+	textArea1.setWildcard(textArea1Buffer);
+	textArea1.invalidate();
+	CustomContainerSrollText.setText("");
+	s_banner_mode = BANNER_NONE;
+}
+
+void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, uint8_t remaining_s,
+				      uint8_t nZoneNames, char (*zoneNames)[ZONE_NAME_SIZE + 1])
 {
 	(void)zone;
-	uint32_t now = HAL_GetTick();
 	fireUiActive = active;
+	s_fire_active = active ? 1u : 0u;
 	s_fire_mode = mode;
-	if (active) {
-		s_warning_manual_select = 0u;
-		s_warning_nav_last_press_ms = 0u;
-		if (mode == 1u || mode == 5u) {
-			ui_set_warning_header_visible(this, true);
-			uiSetTopHeaderText((mode == 5u) ? "ПАУЗА" : "ДО ПУСКА");
-		} else if (mode == 6u || mode == 8u) {
-			ui_set_warning_header_visible(this, true);
-			uiSetTopHeaderText("");
-		} else if (s_banner_mode != BANNER_WARNING) {
-			ui_set_warning_header_visible(this, false);
+	if (nZoneNames > UI_LIST_CAPACITY) {
+		nZoneNames = UI_LIST_CAPACITY;
+	}
+	bool changed = nZoneNames != s_fn_n;
+	for (uint8_t i = 0u; i < nZoneNames && !changed; ++i) {
+		changed = std::strncmp(s_fn_names[i], zoneNames[i], ZONE_NAME_SIZE + 1) != 0;
+	}
+	const bool first_changed = changed && nZoneNames > 0u &&
+		(s_fn_n == 0u || std::strncmp(s_fn_names[0], zoneNames[0], ZONE_NAME_SIZE + 1) != 0);
+	s_fn_n = active ? nZoneNames : 0u;
+	if (changed && active) {
+		for (uint8_t i = 0u; i < s_fn_n; ++i) {
+			std::strncpy(s_fn_names[i], zoneNames[i], ZONE_NAME_SIZE);
+			s_fn_names[i][ZONE_NAME_SIZE] = '\0';
+		}
+		if (s_cur[BANNER_FIRE] >= s_fn_n) {
+			s_cur[BANNER_FIRE] = 0u;
+		}
+		ui_clear_phase(BANNER_FIRE);
+		if (first_changed) {
+			ui_request_new_event(BANNER_FIRE, 0u);
 		}
 	}
-
-	static uint8_t lastActive = 0xFFu;
-	static uint8_t lastMode = 0xFFu;
-	static uint8_t lastRemaining = 0xFFu;
-	const bool timerDirty = ((uint8_t)active != lastActive || mode != lastMode || remaining_s != lastRemaining);
-
 	if (!active) {
-		s_fire_manual_select = 0u;
-		s_fire_nav_last_press_ms = 0u;
 		Fire_UiSetManualSelection(0u, 0u);
-		lastActive = (uint8_t)active;
-		lastMode = mode;
-		lastRemaining = remaining_s;
-		s_fn_ph = PH_IDLE;
-		s_fn_n = 0u;
-		/* Если сейчас отображается предупреждение, не затираем поля:
-		 * warning-логика использует те же widgets и сама их контролирует. */
-		if (s_banner_mode != BANNER_WARNING) {
-			uiShowNormalStatus();
-			ui_set_warning_header_visible(this, false);
-			s_top_header_text[0] = '\0';
+		if (s_banner_mode == BANNER_FIRE) {
+			s_banner_mode = BANNER_NONE;
 		}
+		s_fire_center_text[0] = '\0';
+		/* force: иначе после таймера ПУСК ОБЩИЙ (оба NONE) early-return оставит старый текст. */
+		ui_show_desired(this, true);
 		return;
 	}
-
-	if (nZoneNames > 0u && !fire_list_equals(nZoneNames, zoneNames)) {
-		fire_copy_list(nZoneNames, zoneNames);
-		s_fn_cur = 0u;
-		s_fn_ph = PH_IDLE;
-		s_fn_hold_from = 0u;
-		if (s_fire_manual_select && s_fn_n > 0u) {
-			Fire_UiSetManualSelection(1u, s_fn_cur);
-		}
-		fireShowCurrentZone();
-	}
-
-	if (timerDirty) {
-		lastActive = (uint8_t)active;
-		lastMode = mode;
-		lastRemaining = remaining_s;
-		for (uint16_t i = 0; i < TEXTAREA1_SIZE; i++) {
-			textArea1Buffer[i] = 0;
-		}
-		// 10 символов
+	static uint8_t last_mode = 0xffu;
+	static uint8_t last_remaining = 0xffu;
+	if (mode != last_mode || remaining_s != last_remaining || s_banner_mode == BANNER_FIRE) {
+		last_mode = mode;
+		last_remaining = remaining_s;
 		char buf[32];
-		if (mode == 1u || mode == 5u) {
-			snprintf(buf, sizeof(buf), "%uС", (unsigned)remaining_s);
-		} else if (mode == 6u) {
-			snprintf(buf, sizeof(buf), "ПОЖАР1");
-		} else if (mode == 8u) {
-			snprintf(buf, sizeof(buf), "ПУСК ЗАБЛ.");
-		} else if (mode == 2u) {
-			snprintf(buf, sizeof(buf), "ТУШЕНИЕ");
-									//  1234567890
-		} else if (mode == 3u) {
-			snprintf(buf, sizeof(buf), "ТУШ.ВЫП.");
-									//  1234567890
-		} else if (mode == 7u) {
-			snprintf(buf, sizeof(buf), "ТУШ.ОШ.");
-									//  1234567890
-		} else if (mode == 4u) {
-			snprintf(buf, sizeof(buf), "ПОЖАР/ОСТ.");
-									//  1234567890
-		} else if (remaining_s > 0u) {
-			snprintf(buf, sizeof(buf), "%u", (unsigned)remaining_s);
-		} else {
-			buf[0] = '\0';
-		}
-		Unicode::fromUTF8(reinterpret_cast<const uint8_t*>(buf), textArea1Buffer, TEXTAREA1_SIZE);
-		textArea1Buffer[TEXTAREA1_SIZE - 1] = 0;
-		textArea1.setWildcard(textArea1Buffer);
-		textArea1.invalidate();
-	}
-
-	if (nZoneNames == 0u) {
-		/* Не затираем бегущую строку при active: Model может ещё не получить список зон,
-		 * а тики TouchGFX с n==0 иначе держат пустоту до смены секунды таймера. */
-		if (!active) {
-			CustomContainerSrollText.setText("");
-		}
-		return;
-	}
-
-	if (!s_fire_manual_select &&
-	    s_fn_ph == PH_HOLD_3S && s_fn_hold_from != 0u &&
-	    (now - s_fn_hold_from) >= FIRE_NAME_HOLD_MS) {
-		if (ui_auto_rotate_lists() != 0u) {
-			s_fn_cur = (uint8_t)((s_fn_cur + 1u) % s_fn_n);
-			s_fn_ph = PH_IDLE;
-			s_fn_hold_from = 0u;
-		} else {
-			/* ГОСТ: не листаем, не мигаем перезапуском — держим актуальный. */
-			s_fn_cur = 0u;
-			s_fn_hold_from = now;
+		if (mode == 1u || mode == 5u) snprintf(buf, sizeof(buf), "%uС", (unsigned)remaining_s);
+		else if (mode == 2u) snprintf(buf, sizeof(buf), "ТУШЕНИЕ");
+		else if (mode == 3u) snprintf(buf, sizeof(buf), "ТУШ.ВЫП.");
+		else if (mode == 4u) snprintf(buf, sizeof(buf), "ПОЖАР/ОСТ.");
+		else if (mode == 6u) snprintf(buf, sizeof(buf), "ПОЖАР1");
+		else if (mode == 7u) snprintf(buf, sizeof(buf), "ТУШ.ОШ.");
+		else if (mode == 8u) snprintf(buf, sizeof(buf), "ПУСК ЗАБЛ.");
+		else if (mode == 9u) snprintf(buf, sizeof(buf), "ТУШ.ОСТ.");
+		else if (remaining_s > 0u) snprintf(buf, sizeof(buf), "%u", (unsigned)remaining_s);
+		else buf[0] = '\0';
+		std::strncpy(s_fire_center_text, buf, sizeof(s_fire_center_text) - 1u);
+		s_fire_center_text[sizeof(s_fire_center_text) - 1u] = '\0';
+		if (s_banner_mode == BANNER_FIRE) {
+			memset(textArea1Buffer, 0, sizeof(textArea1Buffer));
+			Unicode::fromUTF8(reinterpret_cast<const uint8_t*>(s_fire_center_text), textArea1Buffer, TEXTAREA1_SIZE);
+			textArea1Buffer[TEXTAREA1_SIZE - 1u] = 0;
+			textArea1.setWildcard(textArea1Buffer);
+			textArea1.invalidate();
 		}
 	}
-
-	if (!s_fire_manual_select && s_fn_ph == PH_IDLE) {
-		if (ui_auto_rotate_lists() == 0u) {
-			s_fn_cur = 0u;
-		}
-		fireShowCurrentZone();
-	}
+	ui_show_desired(this);
 }
 
 void mainscreenView::updateWarningStatus(bool active, uint8_t nItems, char (*bigTitles)[WARNING_TITLE_LEN],
 					 char (*details)[ZONE_NAME_SIZE + 1])
 {
-	if (fireUiActive) {
-		s_warning_manual_select = 0u;
-		s_warning_nav_last_press_ms = 0u;
-		return;
-	}
-	uint32_t now = HAL_GetTick();
-
-	if (!active || nItems == 0u) {
-		s_warning_manual_select = 0u;
-		s_warning_nav_last_press_ms = 0u;
-		s_wn_n = 0u;
-		memset(s_wn_is_attention, 0, sizeof(s_wn_is_attention));
-		s_wn_ph = PH_IDLE;
-		s_wn_hold_from = 0u;
-		if (s_banner_mode == BANNER_WARNING || s_banner_mode == BANNER_NONE) {
-			uiShowNormalStatus();
-		}
-		ui_set_warning_header_visible(this, false);
-		s_top_header_text[0] = '\0';
-		return;
-	}
-
-	if (nItems > 16u) {
-		nItems = 16u;
-	}
-
-	bool changed = (nItems != s_wn_n);
-	if (!changed) {
-		for (uint8_t i = 0u; i < nItems && !changed; i++) {
-			const char* src_title = bigTitles[i];
-			if (((uint8_t)bigTitles[i][0]) == 0x01u) {
-				src_title = &bigTitles[i][1];
-			}
-			if (std::strncmp(s_wn_titles[i], src_title, WARNING_TITLE_LEN) != 0 ||
-			    std::strncmp(s_wn_details[i], details[i], ZONE_NAME_SIZE + 1) != 0) {
-				changed = true;
-			}
+	char attention_titles[UI_LIST_CAPACITY][WARNING_TITLE_LEN] = {};
+	char attention_details[UI_LIST_CAPACITY][ZONE_NAME_SIZE + 1] = {};
+	char fault_titles[UI_LIST_CAPACITY][WARNING_TITLE_LEN] = {};
+	char fault_details[UI_LIST_CAPACITY][ZONE_NAME_SIZE + 1] = {};
+	uint8_t attention_n = 0u;
+	uint8_t fault_n = 0u;
+	if (active) {
+		for (uint8_t i = 0u; i < nItems && (attention_n + fault_n) < UI_LIST_CAPACITY; ++i) {
+			const bool attention = ((uint8_t)bigTitles[i][0] == 0x01u);
+			const char* title = attention ? &bigTitles[i][1] : bigTitles[i];
+			char (*titles)[WARNING_TITLE_LEN] = attention ? attention_titles : fault_titles;
+			char (*list_details)[ZONE_NAME_SIZE + 1] = attention ? attention_details : fault_details;
+			uint8_t& count = attention ? attention_n : fault_n;
+			std::strncpy(titles[count], title, WARNING_TITLE_LEN - 1u);
+			titles[count][WARNING_TITLE_LEN - 1u] = '\0';
+			std::strncpy(list_details[count], details[i], ZONE_NAME_SIZE);
+			list_details[count][ZONE_NAME_SIZE] = '\0';
+			++count;
 		}
 	}
-
-	if (changed) {
-		/* Пытаемся сохранить текущую позицию ротации, если текущая строка
-		 * присутствует и в новом списке (это устраняет визуальное "смаргивание"). */
-		uint8_t keep_idx = 0u;
-		uint8_t keep_found = 0u;
-		if (s_wn_n > 0u && s_wn_cur < s_wn_n) {
-			for (uint8_t i = 0u; i < nItems; i++) {
-				const char* src_title = bigTitles[i];
-				if (((uint8_t)bigTitles[i][0]) == 0x01u) {
-					src_title = &bigTitles[i][1];
-				}
-				if (std::strncmp(s_wn_titles[s_wn_cur], src_title, WARNING_TITLE_LEN) == 0 &&
-				    std::strncmp(s_wn_details[s_wn_cur], details[i], ZONE_NAME_SIZE + 1) == 0) {
-					keep_idx = i;
-					keep_found = 1u;
-					break;
-				}
-			}
-		}
-		s_wn_n = nItems;
-		for (uint8_t i = 0u; i < s_wn_n; i++) {
-			const char* src_title = bigTitles[i];
-			s_wn_is_attention[i] = 0u;
-			if (((uint8_t)bigTitles[i][0]) == 0x01u) {
-				s_wn_is_attention[i] = 1u;
-				src_title = &bigTitles[i][1];
-			}
-			std::strncpy(s_wn_titles[i], src_title, WARNING_TITLE_LEN - 1u);
-			s_wn_titles[i][WARNING_TITLE_LEN - 1u] = '\0';
-			std::strncpy(s_wn_details[i], details[i], ZONE_NAME_SIZE);
-			s_wn_details[i][ZONE_NAME_SIZE] = '\0';
-		}
-		if (s_warning_manual_select && keep_found) {
-			s_wn_cur = keep_idx;
-		} else if (ui_auto_rotate_lists() == 0u) {
-			/* ГОСТ: вне ручного листания — всегда актуальный (первый). */
-			s_wn_cur = 0u;
-		} else {
-			s_wn_cur = keep_found ? keep_idx : 0u;
-		}
-		s_wn_ph = PH_IDLE;
-		s_wn_hold_from = 0u;
-		warningShowCurrent();
+	const bool attention_changed = !ui_attention_list_equals(attention_n, attention_titles, attention_details);
+	const bool fault_changed = !ui_warning_list_equals(fault_n, fault_titles, fault_details);
+	const bool attention_first_changed = attention_changed && attention_n > 0u &&
+		(s_an_n == 0u || std::strncmp(s_an_titles[0], attention_titles[0], WARNING_TITLE_LEN) != 0);
+	const bool fault_first_changed = fault_changed && fault_n > 0u &&
+		(s_wn_n == 0u || std::strncmp(s_wn_titles[0], fault_titles[0], WARNING_TITLE_LEN) != 0);
+	if (attention_changed) {
+		s_an_n = attention_n;
+		memcpy(s_an_titles, attention_titles, sizeof(s_an_titles));
+		memcpy(s_an_details, attention_details, sizeof(s_an_details));
+		if (s_cur[BANNER_ATTENTION] >= s_an_n) s_cur[BANNER_ATTENTION] = 0u;
+		ui_clear_phase(BANNER_ATTENTION);
 	}
-
-	if (s_wn_n == 0u) {
-		return;
+	if (fault_changed) {
+		s_wn_n = fault_n;
+		memcpy(s_wn_titles, fault_titles, sizeof(s_wn_titles));
+		memcpy(s_wn_details, fault_details, sizeof(s_wn_details));
+		if (s_cur[BANNER_FAULT] >= s_wn_n) s_cur[BANNER_FAULT] = 0u;
+		ui_clear_phase(BANNER_FAULT);
 	}
-
-	if (!s_warning_manual_select &&
-	    s_wn_ph == PH_HOLD_3S && s_wn_hold_from != 0u &&
-	    (now - s_wn_hold_from) >= FIRE_NAME_HOLD_MS) {
-		if (ui_auto_rotate_lists() != 0u) {
-			s_wn_cur = (uint8_t)((s_wn_cur + 1u) % s_wn_n);
-			s_wn_ph = PH_IDLE;
-			s_wn_hold_from = 0u;
-			ui_update_warning_header(this);
-		} else {
-			s_wn_cur = 0u;
-			s_wn_hold_from = now;
-		}
-	}
-
-	if (!s_warning_manual_select && s_wn_ph == PH_IDLE) {
-		if (ui_auto_rotate_lists() == 0u) {
-			s_wn_cur = 0u;
-		}
-		warningShowCurrent();
-	}
+	if (attention_first_changed) ui_request_new_event(BANNER_ATTENTION, 0u);
+	if (fault_first_changed) ui_request_new_event(BANNER_FAULT, 0u);
+	/* Списки обновлены даже при пожаре; выбор дисплея делает ui_desired_banner(). */
+	ui_show_desired(this, attention_changed || fault_changed);
 }
 
 void mainscreenView::handleMainNavButton(uint8_t but)
 {
 	if (but == BUT_ESC) {
-		if (s_fire_manual_select) {
-			if (ui_auto_rotate_lists() == 0u) {
-				ui_fire_return_to_actual(this);
-			} else {
-				s_fire_manual_select = 0u;
-				Fire_UiSetManualSelection(0u, 0u);
-				s_fn_ph = PH_IDLE;
-				s_fn_hold_from = 0u;
-				s_fire_nav_last_press_ms = 0u;
-				fireShowCurrentZone();
-			}
-			return;
-		}
-		if (s_warning_manual_select) {
-			if (ui_auto_rotate_lists() == 0u) {
-				ui_warning_return_to_actual(this);
-			} else {
-				s_warning_manual_select = 0u;
-				s_wn_ph = PH_IDLE;
-				s_wn_hold_from = 0u;
-				s_warning_nav_last_press_ms = 0u;
-				warningShowCurrent();
-			}
-			return;
+		if (s_manual_browse) {
+			ui_return_to_priority(this);
 		}
 		return;
 	}
-
-	if (but != BUT_UP && but != BUT_DOWN) {
+	if (but != BUT_UP && but != BUT_DOWN || ui_highest_nonempty() == BANNER_NONE) {
 		return;
 	}
-
-	if (fireUiActive && s_fn_n > 0u) {
-		if (!s_fire_manual_select) {
-			s_fire_manual_select = 1u;
-			s_fn_cur = 0u;
-		} else if (but == BUT_UP) {
-			s_fn_cur = (uint8_t)((s_fn_cur + 1u) % s_fn_n);
-		} else {
-			s_fn_cur = (uint8_t)((s_fn_cur == 0u) ? (s_fn_n - 1u) : (s_fn_cur - 1u));
-		}
-		s_fire_nav_last_press_ms = HAL_GetTick();
-		Fire_UiSetManualSelection(1u, s_fn_cur);
-		fireShowCurrentZone();
-		return;
+	if (!s_manual_browse) {
+		s_manual_browse = 1u;
+		s_banner_mode = ui_desired_banner();
+		if (s_banner_mode == BANNER_NONE) s_banner_mode = ui_highest_nonempty();
 	}
-
-	if (s_wn_n > 0u) {
-		if (!s_warning_manual_select) {
-			s_warning_manual_select = 1u;
-			s_wn_cur = 0u;
-		} else if (but == BUT_UP) {
-			s_wn_cur = (uint8_t)((s_wn_cur + 1u) % s_wn_n);
-		} else {
-			s_wn_cur = (uint8_t)((s_wn_cur == 0u) ? (s_wn_n - 1u) : (s_wn_cur - 1u));
-		}
-		s_warning_nav_last_press_ms = HAL_GetTick();
-		warningShowCurrent();
+	const int8_t direction = (but == BUT_UP) ? 1 : -1;
+	const uint8_t count = ui_count(s_banner_mode);
+	const uint8_t cur = s_cur[s_banner_mode];
+	if ((direction > 0 && cur + 1u < count) || (direction < 0 && cur > 0u)) {
+		s_cur[s_banner_mode] = (uint8_t)(cur + direction);
+	} else {
+		UiBannerMode next = s_banner_mode;
+		do {
+			next = (direction > 0) ? (next == BANNER_MODE ? BANNER_FIRE : (UiBannerMode)(next + 1u))
+					       : (next == BANNER_FIRE ? BANNER_MODE : (UiBannerMode)(next - 1u));
+		} while (ui_count(next) == 0u && next != s_banner_mode);
+		s_banner_mode = next;
+		s_cur[next] = (direction > 0) ? 0u : (uint8_t)(ui_count(next) - 1u);
 	}
+	s_nav_last_press_ms = HAL_GetTick();
+	if (s_banner_mode == BANNER_FIRE) {
+		Fire_UiSetManualSelection(1u, s_cur[BANNER_FIRE]);
+	} else {
+		Fire_UiSetManualSelection(0u, 0u);
+	}
+	ui_show_desired(this, true);
 }
 #endif

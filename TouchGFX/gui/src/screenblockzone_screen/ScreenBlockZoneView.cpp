@@ -50,6 +50,19 @@ static void trimZoneName(char *dst, size_t dst_sz, const int8_t *src)
     }
 }
 
+static const char *zoneModeStatusText(uint8_t mode)
+{
+    switch (mode) {
+    case 2u:
+        return "РУЧНОЙ";
+    case 3u:
+        return "ЗАБЛОК.";
+    case 0u:
+    default:
+        return "АВТОМАТ.";
+    }
+}
+
 void ScreenBlockZoneView::refreshZoneUi()
 {
     activeZoneCount_ = 0u;
@@ -84,7 +97,8 @@ void ScreenBlockZoneView::refreshZoneUi()
     trimZoneName(zone_name, sizeof(zone_name), PPKYConfig.zone_name[zone_idx]);
     CustomContainerSrollText.setText(zone_name);
 
-    const char *status = PPKY_ZoneBlockGet(PPKYConfig.zone_block, zone_idx) ? "ЗАБЛОК." : "НЕ ЗАБЛОК.";
+    const uint8_t mode = PPKY_ZoneFireModeGet(zone_idx);
+    const char *status = zoneModeStatusText(mode);
     for (uint16_t i = 0u; i < TEXTAREATIME_ON_OFF_SIZE; i++) {
         textAreatime_on_offBuffer[i] = 0u;
     }
@@ -113,14 +127,23 @@ void ScreenBlockZoneView::prevActiveZone()
     refreshZoneUi();
 }
 
-void ScreenBlockZoneView::toggleSelectedZoneBlock()
+void ScreenBlockZoneView::cycleSelectedZoneMode()
 {
     if (activeZoneCount_ == 0u) {
         return;
     }
     const uint8_t zone_idx = activeZoneIdx_[selectedPos_];
-    const uint8_t blocked = PPKY_ZoneBlockGet(PPKYConfig.zone_block, zone_idx);
-    PPKY_ZoneBlockSet(PPKYConfig.zone_block, zone_idx, blocked ? 0u : 1u);
+    uint8_t mode = PPKY_ZoneFireModeGet(zone_idx);
+    /* 0 → 2 → 3 → 0 (пропуск автономного 1) */
+    if (mode == 0u) {
+        mode = 2u;
+    } else if (mode == 2u) {
+        mode = 3u;
+    } else {
+        mode = 0u;
+    }
+    PPKY_ZoneFireModeSet(zone_idx, mode);
+    PPKY_ZoneModeUiNotify(zone_idx);
     refreshZoneUi();
 }
 

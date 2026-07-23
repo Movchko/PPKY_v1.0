@@ -7,6 +7,7 @@
 #include "backend.h"
 #include "event_log.h"
 #include "fire.h"
+#include "gost_mode.h"
 #include "led.h"
 #include "beeper.h"
 #include "can_bus.h"
@@ -217,6 +218,16 @@ enum : uint8_t {
 static uint8_t IsAttentionKind(uint8_t kind)
 {
 	return (kind == WARN_KIND_LSWITCH_OPEN_ATTN || kind == WARN_KIND_DPT_WARNING_ATTN) ? 1u : 0u;
+}
+
+/* В ГОСТ режим ВНИМАНИЕ (концевик/ДПТ Warning) не используем: ни список, ни звук, ни LED. */
+static uint8_t AttentionEventsEnabled(void)
+{
+#if GOST_MODE
+	return 0u;
+#else
+	return 1u;
+#endif
 }
 
 static uint8_t IsFaultKind(uint8_t kind)
@@ -566,22 +577,24 @@ static void ConsumeChangedStatuses(uint32_t now_ms)
 				MarkRecovered(WARN_KIND_VDEV_FAULT, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type, v->v_d_type, 0u, now_ms);
 			}
 
-			if (v->v_d_type == DEVICE_LSWITCH_TYPE) {
-				if (v->line_state == 4u) {
-					UpsertItem(WARN_KIND_LSWITCH_OPEN_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
-						   v->v_d_type, v->line_state, 0u, 0u, now_ms);
-				} else {
-					MarkRecovered(WARN_KIND_LSWITCH_OPEN_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
-						      v->v_d_type, 0u, now_ms);
+			if (AttentionEventsEnabled() != 0u) {
+				if (v->v_d_type == DEVICE_LSWITCH_TYPE) {
+					if (v->line_state == 4u) {
+						UpsertItem(WARN_KIND_LSWITCH_OPEN_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
+							   v->v_d_type, v->line_state, 0u, 0u, now_ms);
+					} else {
+						MarkRecovered(WARN_KIND_LSWITCH_OPEN_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
+							      v->v_d_type, 0u, now_ms);
+					}
 				}
-			}
-			if (v->v_d_type == DEVICE_DPT_TYPE) {
-				if (v->status_cmd == (uint8_t)DeviceDPTStatus_Warning) {
-					UpsertItem(WARN_KIND_DPT_WARNING_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
-						   v->v_d_type, 0u, 0u, v->max_temp_c, now_ms);
-				} else {
-					MarkRecovered(WARN_KIND_DPT_WARNING_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
-						      v->v_d_type, 0u, now_ms);
+				if (v->v_d_type == DEVICE_DPT_TYPE) {
+					if (v->status_cmd == (uint8_t)DeviceDPTStatus_Warning) {
+						UpsertItem(WARN_KIND_DPT_WARNING_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
+							   v->v_d_type, 0u, 0u, v->max_temp_c, now_ms);
+					} else {
+						MarkRecovered(WARN_KIND_DPT_WARNING_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
+							      v->v_d_type, 0u, now_ms);
+					}
 				}
 			}
 			v->status_changed = 0u;
@@ -594,6 +607,11 @@ static void PruneInactiveItems(uint32_t now_ms)
 {
 	for (uint8_t i = 0u; i < WARN_MAX_ITEMS; i++) {
 		if (!g_items[i].used) {
+			continue;
+		}
+		/* ГОСТ: ВНИМАНИЕ не ведём — сразу вычищаем старые attention-записи. */
+		if (AttentionEventsEnabled() == 0u && IsAttentionKind(g_items[i].kind)) {
+			RemoveItemAt(i);
 			continue;
 		}
 
@@ -646,22 +664,24 @@ static void SyncMissingFaultItems(uint32_t now_ms)
 				UpsertItem(WARN_KIND_VDEV_FAULT, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type, v->v_d_type,
 					   v->line_state, 0u, 0u, now_ms);
 			}
-			if (v->v_d_type == DEVICE_LSWITCH_TYPE) {
-				if (v->line_state == 4u) {
-					UpsertItem(WARN_KIND_LSWITCH_OPEN_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
-						   v->v_d_type, v->line_state, 0u, 0u, now_ms);
-				} else {
-					MarkRecovered(WARN_KIND_LSWITCH_OPEN_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
-						      v->v_d_type, 0u, now_ms);
+			if (AttentionEventsEnabled() != 0u) {
+				if (v->v_d_type == DEVICE_LSWITCH_TYPE) {
+					if (v->line_state == 4u) {
+						UpsertItem(WARN_KIND_LSWITCH_OPEN_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
+							   v->v_d_type, v->line_state, 0u, 0u, now_ms);
+					} else {
+						MarkRecovered(WARN_KIND_LSWITCH_OPEN_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
+							      v->v_d_type, 0u, now_ms);
+					}
 				}
-			}
-			if (v->v_d_type == DEVICE_DPT_TYPE) {
-				if (v->status_cmd == (uint8_t)DeviceDPTStatus_Warning) {
-					UpsertItem(WARN_KIND_DPT_WARNING_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
-						   v->v_d_type, 0u, 0u, v->max_temp_c, now_ms);
-				} else {
-					MarkRecovered(WARN_KIND_DPT_WARNING_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
-						      v->v_d_type, 0u, now_ms);
+				if (v->v_d_type == DEVICE_DPT_TYPE) {
+					if (v->status_cmd == (uint8_t)DeviceDPTStatus_Warning) {
+						UpsertItem(WARN_KIND_DPT_WARNING_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
+							   v->v_d_type, 0u, 0u, v->max_temp_c, now_ms);
+					} else {
+						MarkRecovered(WARN_KIND_DPT_WARNING_ATTN, m->dev.zone, m->dev.h_adr, v->v_l_adr, m->dev.d_type,
+							      v->v_d_type, 0u, now_ms);
+					}
 				}
 			}
 		}
@@ -867,20 +887,22 @@ static uint8_t BuildUiPayload(char (*big_titles)[WARN_TITLE_LEN], char (*details
 	}
 
 	/* Сначала ВНИМАНИЕ, затем НЕИСПРАВНОСТИ (без перемешивания). */
-	for (uint8_t i = 0u; i < on && count < WARN_MAX_ITEMS; i++) {
-		const WarningItem& it = g_items[order[i]];
-		if (!IsAttentionKind(it.kind)) {
-			continue;
+	if (AttentionEventsEnabled() != 0u) {
+		for (uint8_t i = 0u; i < on && count < WARN_MAX_ITEMS; i++) {
+			const WarningItem& it = g_items[order[i]];
+			if (!IsAttentionKind(it.kind)) {
+				continue;
+			}
+			if (it.kind == WARN_KIND_LSWITCH_OPEN_ATTN) {
+				snprintf(big_titles[count], WARN_TITLE_LEN, "%cОТКРЫТИЕ", (char)WARN_TITLE_MARK_ATTN);
+				Warning_FormatMkuAndSerial(details[count], ZONE_NAME_SIZE + 1, it);
+			} else if (it.kind == WARN_KIND_DPT_WARNING_ATTN) {
+				int temp_c = (int)it.extra;
+				snprintf(big_titles[count], WARN_TITLE_LEN, "%cТЕМП. %d", (char)WARN_TITLE_MARK_ATTN, temp_c);
+				Warning_FormatMkuAndSerial(details[count], ZONE_NAME_SIZE + 1, it);
+			}
+			count++;
 		}
-		if (it.kind == WARN_KIND_LSWITCH_OPEN_ATTN) {
-			snprintf(big_titles[count], WARN_TITLE_LEN, "%cОТКРЫТИЕ", (char)WARN_TITLE_MARK_ATTN);
-			Warning_FormatMkuAndSerial(details[count], ZONE_NAME_SIZE + 1, it);
-		} else if (it.kind == WARN_KIND_DPT_WARNING_ATTN) {
-			int temp_c = (int)it.extra;
-			snprintf(big_titles[count], WARN_TITLE_LEN, "%cТЕМП. %d", (char)WARN_TITLE_MARK_ATTN, temp_c);
-			Warning_FormatMkuAndSerial(details[count], ZONE_NAME_SIZE + 1, it);
-		}
-		count++;
 	}
 
 	/* Далее системные неисправности питания ППКУ. */
@@ -986,6 +1008,9 @@ static uint8_t CountActiveFaultNow(void)
 
 static uint8_t CountActiveAttentionNow(void)
 {
+	if (AttentionEventsEnabled() == 0u) {
+		return 0u;
+	}
 	uint8_t count = 0u;
 	for (uint8_t i = 0u; i < WARN_MAX_ITEMS; i++) {
 		if (g_items[i].used && g_items[i].fault_now && IsAttentionKind(g_items[i].kind) && count < 0xFFu) {
@@ -1095,7 +1120,7 @@ static void UpdateErrorLed(uint32_t now_ms)
 	g_prev_active_fault_count = active_count;
 	(void)now_ms;
 
-	if (fault_count > 0u) {
+	if (fault_count > 0u || Fire_HasExtinguishIncomplete()) {
 		Led_Set(LED_ERR, 1u);
 		g_led_err_on = 1u;
 		return;
@@ -1153,12 +1178,7 @@ extern "C" void WarningProcess1ms(void)
 	UpdateErrorLed(now_ms);
 	UpdateFaultSound(now_ms);
 
-	/* Во время пожара предупреждения не отображаем (но список поддерживаем актуальным). */
-	if (Fire_IsActive()) {
-		PushUiIfChanged(0u, 0u, big_titles, details);
-		return;
-	}
-
+	/* Список поддерживаем всегда (в т.ч. во время пожара) — приоритет показа на UI. */
 	uint8_t count = BuildUiPayload(big_titles, details);
 	PushUiIfChanged((count > 0u) ? 1u : 0u, count, big_titles, details);
 }
@@ -1180,7 +1200,7 @@ extern "C" void Warning_SetMkuPositionFaultMask(uint32_t mask)
 
 extern "C" uint8_t Warning_HasActiveFault(void)
 {
-	return HasActiveFaultNow();
+	return (HasActiveFaultNow() || Fire_HasExtinguishIncomplete()) ? 1u : 0u;
 }
 
 extern "C" uint8_t Warning_HasActiveAttention(void)

@@ -118,8 +118,8 @@ static uint32_t pending_timeout[CAN_MAX_DEVICES];
 uint8_t can_bus_error_flags = 0;
 uint8_t device_can_error[CAN_MAX_DEVICES] = {0};
 
-extern UART_HandleTypeDef hfdcan1;
-extern UART_HandleTypeDef hfdcan2;
+extern FDCAN_HandleTypeDef hfdcan1;
+extern FDCAN_HandleTypeDef hfdcan2;
 extern UART_HandleTypeDef huart2;
 extern UART_HandleTypeDef huart4;
 extern uint8_t isMainInit;

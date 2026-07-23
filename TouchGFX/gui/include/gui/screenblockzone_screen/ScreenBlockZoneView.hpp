@@ -16,7 +16,7 @@ public:
     void refreshZoneUi();
     void nextActiveZone();
     void prevActiveZone();
-    void toggleSelectedZoneBlock();
+    void cycleSelectedZoneMode();
     uint8_t hasActiveZones() const;
 #endif
 

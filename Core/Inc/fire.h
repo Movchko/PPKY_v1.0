@@ -39,11 +39,17 @@ void Fire_OnReplyResumeExtinguishmentTimer(uint32_t msg_id);
 /* Текущий статус сценария пожара (для подавления вторичных индикаций). */
 uint8_t Fire_IsActive(void);
 
+/* Есть активный слот с неуспешным тушением (ТУШ.ОШ.) — для LED_ERR. */
+uint8_t Fire_HasExtinguishIncomplete(void);
+
 /* Идёт удержание ПУСК ОБЩИЙ (3с) — нужен главный экран со счётчиком. */
 uint8_t Fire_IsStartAllHoldActive(void);
 
 /* Ручной выбор пожара на главном экране (индекс в текущем UI-списке). */
 void Fire_UiSetManualSelection(uint8_t enabled, uint8_t selected_ui_index);
+
+/* Смена zone_fire_mode[] (меню РЕЖИМ ЗОН) — обновить LED_AUTO_OFF. */
+void Fire_NotifyZoneModeChanged(void);
 
 #ifdef __cplusplus
 }

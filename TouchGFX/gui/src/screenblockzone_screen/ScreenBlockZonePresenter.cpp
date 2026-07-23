@@ -53,7 +53,7 @@ void ScreenBlockZonePresenter::handleButton(uint8_t but, uint8_t state)
         if (view.hasActiveZones() == 0u) {
             return;
         }
-        view.toggleSelectedZoneBlock();
+        view.cycleSelectedZoneMode();
         SaveConfig();
         ConfigIgnBlockSync_Request();
     }
