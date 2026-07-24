@@ -10,6 +10,8 @@ extern "C" {
 void ConfigIgnBlockSync_Init(void);
 void ConfigIgnBlockSync_Process1ms(uint32_t now_ms);
 void ConfigIgnBlockSync_Request(void);
+/* 1 = пока нельзя латчить CONFIG_MISMATCH (ждём/идёт boot IgnBlockSync). */
+uint8_t ConfigIgnBlockSync_ShouldDeferCrc(void);
 
 #ifdef __cplusplus
 }

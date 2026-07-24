@@ -7,9 +7,10 @@
  * Событие 4 DEVICE_MISSING: слот CfgDevices не online (5 с таймаут RefreshActiveDevices).
  *   Сопоставление МКУ: d_type+h_adr (zone/l_adr на шине могут отличаться от образа в PPKYConfig).
  *   Виртуальные каналы VDtype[] не проверяются.
- * Событие 5 DEVICE_FOUND: online МКУ или vdev не в конфиге; debounce ≥3 с и ≥3 кадра.
+ * Событие 5 DEVICE_FOUND: online МКУ не в конфиге; debounce ≥3 с и ≥3 кадра.
+ *   Виртуальные каналы (Спичка/ДПТ/кнопка/…) не учитываются — как и в DEVICE_MISSING.
  * Событие 6 CONFIG_MISMATCH: CRC MKUCfg через ConfigSync, round-robin 1 online слот / 5 с.
- *   Не проверяется для missing/new МКУ.
+ *   Не проверяется для missing/new МКУ; откладывается до завершения boot IgnBlockSync.
  *
  * UI: warning.cpp SyncConfigMonitorItems → ОТСУСТВ. / НОВОЕ / ОШ. КОНФ.
  * Серийник «НОВОЕ»: чтение UniqId с МКУ (ConfigSync READ_MCU_UID).
@@ -17,8 +18,10 @@
 #include "config_monitor.h"
 
 #include "backend.h"
+#include "config_ign_block_sync.h"
 #include "config_sync.hpp"
 #include "event_log.h"
+#include "tick_time.h"
 
 #include <string.h>
 
@@ -76,14 +79,6 @@ static uint8_t IsMcuType(uint8_t d_type)
 	        d_type == DEVICE_MCU_K3 ||
 	        d_type == DEVICE_MCU_KR ||
 	        d_type == DEVICE_MCU_TC_TYPE) ? 1u : 0u;
-}
-
-static uint8_t IsTrackedVdevType(uint8_t v_d_type)
-{
-	return (v_d_type == DEVICE_IGNITER_TYPE ||
-	        v_d_type == DEVICE_DPT_TYPE ||
-	        v_d_type == DEVICE_BUTTON_TYPE ||
-	        v_d_type == DEVICE_LSWITCH_TYPE) ? 1u : 0u;
 }
 
 static uint8_t CmCanRun(uint32_t now_ms)
@@ -205,18 +200,6 @@ static uint8_t CmIsMcuMissingOrNewSlot(uint8_t slot)
 	return CmIsMcuNew(dv);
 }
 
-static uint8_t CmVdevConfigured(const MKUCfg *cfg, uint8_t slot, uint8_t *out_type)
-{
-	uint8_t t = (uint8_t)(cfg->VDtype[slot] & 0xFFu);
-	if (t == 0u) {
-		return 0u;
-	}
-	if (out_type != nullptr) {
-		*out_type = t;
-	}
-	return 1u;
-}
-
 static uint32_t CmBuildCanHeader(uint8_t d_type, uint8_t h_adr, uint8_t l_adr, uint8_t zone)
 {
 	can_ext_id_t id;
@@ -317,7 +300,7 @@ static uint8_t CmFoundPhaseDone(const CmFoundDebounce *db, uint32_t now_ms)
 	if (db->phase_since_ms == 0u) {
 		return 0u;
 	}
-	if ((now_ms - db->phase_since_ms) < CM_FOUND_CONFIRM_MS) {
+	if (!TickAgeExpiredMs(now_ms, db->phase_since_ms, CM_FOUND_CONFIRM_MS)) {
 		return 0u;
 	}
 	return (db->rx_cnt >= CM_FOUND_CONFIRM_RX) ? 1u : 0u;
@@ -424,55 +407,6 @@ static void CmUpdateFound(uint32_t now_ms)
 				}
 			}
 		}
-
-		for (uint8_t vi = 0u; vi < ad->vdev_count; vi++) {
-			const auto *v = &ad->vdevs[vi];
-			if (!v->online || !IsTrackedVdevType(v->v_d_type)) {
-				continue;
-			}
-			int cfg_slot = CmFindCfgSlotForActive(&ad->dev);
-			uint8_t cfg_ok = 0u;
-			if (cfg_slot >= 0) {
-				uint8_t slot_idx = (uint8_t)(v->v_l_adr > 0u ? (v->v_l_adr - 1u) : 0u);
-				uint8_t expected = 0u;
-				if (slot_idx < NUM_DEV_IN_MCU &&
-				    CmVdevConfigured(&PPKYConfig.CfgDevices[(uint8_t)cfg_slot], slot_idx, &expected) &&
-				    expected == v->v_d_type) {
-					cfg_ok = 1u;
-				}
-			}
-			if (cfg_ok) {
-				continue;
-			}
-
-			CmDevKey vk = mcu_key;
-			vk.v_l_adr = v->v_l_adr;
-			vk.v_d_type = v->v_d_type;
-			CmFoundDebounce *db = CmAllocFoundDb(&vk);
-			if (db == nullptr) {
-				continue;
-			}
-			if (db->latched == 0u) {
-				if (db->phase_since_ms == 0u) {
-					CmStartFoundPhase(db, v->last_seen_ms, now_ms);
-				} else {
-					CmCountFoundRx(db, v->last_seen_ms);
-				}
-				if (CmFoundPhaseDone(db, now_ms)) {
-					db->latched = 1u;
-					CmResetFoundDb(db);
-					Device vdev_id = ad->dev;
-					vdev_id.d_type = v->v_d_type;
-					vdev_id.l_adr = v->v_l_adr;
-					CmPostFoundEvent(&vdev_id, 0u);
-				}
-			}
-			for (uint8_t i = 0u; i < s_found_latched_count; i++) {
-				if (CmKeysEqual(&s_found_db[i].key, &vk)) {
-					seen[i] = 1u;
-				}
-			}
-		}
 	}
 
 	for (uint8_t i = 0u; i < s_found_latched_count; i++) {
@@ -493,10 +427,6 @@ static void CmUpdateFound(uint32_t now_ms)
 		dev.h_adr = db->key.h_adr;
 		dev.l_adr = db->key.l_adr;
 		dev.d_type = db->key.d_type;
-		if (db->key.v_d_type != 0u) {
-			dev.l_adr = db->key.v_l_adr;
-			dev.d_type = db->key.v_d_type;
-		}
 		CmPostFoundEvent(&dev, 1u);
 	}
 }
@@ -527,7 +457,11 @@ static void CmSchedulePeriodicCrc(uint32_t now_ms)
 	if (ConfigSync_IsBusy()) {
 		return;
 	}
-	if ((now_ms - s_last_crc_ms) < CM_CRC_PERIOD_MS) {
+	/* Пока boot-синк блоков спичек читает/патчит CfgDevices — CRC даёт ложные ОШ.КОНФ. */
+	if (ConfigIgnBlockSync_ShouldDeferCrc() != 0u) {
+		return;
+	}
+	if (!TickAgeExpiredMs(now_ms, s_last_crc_ms, CM_CRC_PERIOD_MS)) {
 		return;
 	}
 

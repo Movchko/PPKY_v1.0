@@ -10,6 +10,7 @@
 #include "button.h"
 #include "fire.h"
 #include "led.h"
+#include "tick_time.h"
 
 extern PPKYCfg PPKYConfig;
 
@@ -67,6 +68,20 @@ uint8_t s_fire_mode = 0u;
 uint8_t s_fire_active = 0u;
 char s_fire_center_text[32] = {0};
 uint8_t s_start_all_hold_shown = 0u;
+#if GOST_MODE
+uint8_t s_gost_force_fire_redraw = 0u;
+#endif
+/* Кэш текста бегущей неисправностей — не вызывать setText() на каждый Model::tick. */
+UiBannerMode s_warn_marquee_banner = BANNER_NONE;
+uint8_t s_warn_marquee_idx = 0xFFu;
+char s_warn_marquee_text[ZONE_NAME_SIZE + 1] = {};
+
+static void ui_invalidate_warn_marquee_cache(void)
+{
+	s_warn_marquee_banner = BANNER_NONE;
+	s_warn_marquee_idx = 0xFFu;
+	s_warn_marquee_text[0] = '\0';
+}
 
 static bool ui_fire_blocks_events(void)
 {
@@ -161,7 +176,14 @@ static UiBannerMode ui_desired_banner(void)
 		return s_banner_mode;
 	}
 	if (s_pending_banner != BANNER_NONE) {
-		if ((HAL_GetTick() - s_pending_from) >= NEW_EVENT_HOLD_MS) {
+		if (TickAgeExpiredMs(HAL_GetTick(), s_pending_from, NEW_EVENT_HOLD_MS) != 0u) {
+#if GOST_MODE
+			/* После 5 с вспышки нового пожара — снова первый пришедший. */
+			if (s_pending_banner == BANNER_FIRE && s_fn_n > 0u && !s_manual_browse) {
+				s_cur[BANNER_FIRE] = 0u;
+				s_gost_force_fire_redraw = 1u;
+			}
+#endif
 			s_pending_banner = BANNER_NONE;
 		} else if (!ui_fire_blocks_events() && ui_count(s_pending_banner) > 0u) {
 			return s_pending_banner;
@@ -209,6 +231,12 @@ static void ui_show_desired(mainscreenView* view, bool force = false)
 		force = true;
 	}
 	const UiBannerMode desired = ui_desired_banner();
+#if GOST_MODE
+	if (s_gost_force_fire_redraw != 0u) {
+		s_gost_force_fire_redraw = 0u;
+		force = true;
+	}
+#endif
 	if (!force && desired == s_banner_mode) {
 		return;
 	}
@@ -333,8 +361,10 @@ void mainscreenView::setDateTime(uint8_t hour, uint8_t min, uint8_t sec, uint8_t
 void mainscreenView::fireOnMarqueeOnePassDone()
 {
 #if GOST_MODE
-	/* ГОСТ: без автосмены элемента — только ручная прокрутка. */
-	(void)0;
+	/* ГОСТ: без автосмены элемента — повторяем ту же бегущую строку. */
+	if (s_banner_mode == BANNER_FIRE) {
+		CustomContainerSrollText.restart();
+	}
 #else
 	if (s_phase[BANNER_FIRE] == PH_WAIT_LONG_SCROLL) {
 		s_phase[BANNER_FIRE] = PH_HOLD_3S;
@@ -346,7 +376,10 @@ void mainscreenView::fireOnMarqueeOnePassDone()
 void mainscreenView::warningOnMarqueeOnePassDone()
 {
 #if GOST_MODE
-	(void)0;
+	if (s_banner_mode == BANNER_ATTENTION || s_banner_mode == BANNER_FAULT ||
+	    s_banner_mode == BANNER_MODE) {
+		CustomContainerSrollText.restart();
+	}
 #else
 	if (s_banner_mode >= BANNER_ATTENTION && s_banner_mode <= BANNER_MODE &&
 	    s_phase[s_banner_mode] == PH_WAIT_LONG_SCROLL) {
@@ -362,6 +395,37 @@ void mainscreenView::fireShowCurrentZone()
 		return;
 	}
 	s_banner_mode = BANNER_FIRE;
+#if GOST_MODE
+	/* ГОСТ: статус центра привязан к показываемой зоне (домашняя = первая пришедшая). */
+	if (!s_manual_browse &&
+	    !(s_pending_banner == BANNER_FIRE &&
+	      !TickAgeExpiredMs(HAL_GetTick(), s_pending_from, NEW_EVENT_HOLD_MS))) {
+		s_cur[BANNER_FIRE] = 0u;
+	}
+	Fire_UiSetManualSelection(1u, s_cur[BANNER_FIRE]);
+	const bool multi = (s_fn_n > 1u);
+	const bool show_hdr = (multi || s_fire_mode == 1u || s_fire_mode == 5u ||
+			       s_fire_mode == 6u || s_fire_mode == 8u || s_manual_browse);
+	ui_set_warning_header_visible(this, show_hdr);
+	char hdr[24];
+	const char *base = "";
+	if (s_fire_mode == 1u) {
+		base = "ДО ПУСКА";
+	} else if (s_fire_mode == 5u) {
+		base = "ПАУЗА";
+	} else {
+		base = "ПОЖАР";
+	}
+	if (multi || s_manual_browse) {
+		snprintf(hdr, sizeof(hdr), "%s %u/%u", base,
+			 (unsigned)(s_cur[BANNER_FIRE] + 1u), (unsigned)s_fn_n);
+		uiSetTopHeaderText(hdr);
+	} else if (s_fire_mode == 1u || s_fire_mode == 5u) {
+		uiSetTopHeaderText(base);
+	} else if (s_fire_mode == 6u || s_fire_mode == 8u) {
+		uiSetTopHeaderText("");
+	}
+#else
 	const bool show_hdr = (s_fire_mode == 1u || s_fire_mode == 5u ||
 			       s_fire_mode == 6u || s_fire_mode == 8u || s_manual_browse);
 	ui_set_warning_header_visible(this, show_hdr);
@@ -383,7 +447,9 @@ void mainscreenView::fireShowCurrentZone()
 	} else if (s_fire_mode == 6u || s_fire_mode == 8u) {
 		uiSetTopHeaderText("");
 	}
+#endif
 	CustomContainerSrollText.setText(s_fn_names[s_cur[BANNER_FIRE]]);
+	ui_invalidate_warn_marquee_cache();
 	memset(textArea1Buffer, 0, sizeof(textArea1Buffer));
 	Unicode::fromUTF8(reinterpret_cast<const uint8_t*>(s_fire_center_text), textArea1Buffer, TEXTAREA1_SIZE);
 	textArea1Buffer[TEXTAREA1_SIZE - 1u] = 0;
@@ -429,7 +495,17 @@ void mainscreenView::warningShowCurrent()
 	textArea1Buffer[TEXTAREA1_SIZE - 1u] = 0;
 	textArea1.setWildcard(textArea1Buffer);
 	textArea1.invalidate();
-	CustomContainerSrollText.setText(details[cur]);
+	/* Не перезапускать бегущую строку, если текст тот же (иначе Model::tick сбрасывает прокрутку). */
+	const bool same_marquee =
+		(s_warn_marquee_banner == s_banner_mode && s_warn_marquee_idx == cur &&
+		 std::strncmp(s_warn_marquee_text, details[cur], ZONE_NAME_SIZE + 1) == 0);
+	if (!same_marquee) {
+		s_warn_marquee_banner = s_banner_mode;
+		s_warn_marquee_idx = cur;
+		std::strncpy(s_warn_marquee_text, details[cur], ZONE_NAME_SIZE);
+		s_warn_marquee_text[ZONE_NAME_SIZE] = '\0';
+		CustomContainerSrollText.setText(details[cur]);
+	}
 #if GOST_MODE
 	ui_clear_phase(s_banner_mode);
 	if (!s_manual_browse && !CustomContainerSrollText.isMarqueeFitting()) {
@@ -465,6 +541,7 @@ void mainscreenView::modeShowCurrent()
 	textArea1.setWildcard(textArea1Buffer);
 	textArea1.invalidate();
 	CustomContainerSrollText.setText(s_mn_names[cur]);
+	ui_invalidate_warn_marquee_cache();
 #if GOST_MODE
 	ui_clear_phase(BANNER_MODE);
 	if (!s_manual_browse && !CustomContainerSrollText.isMarqueeFitting()) {
@@ -503,7 +580,7 @@ void mainscreenView::handleTickEvent()
 		}
 	}
 	if (s_manual_browse && s_nav_last_press_ms != 0u &&
-	    (now - s_nav_last_press_ms) >= MAIN_NAV_AUTO_RETURN_MS) {
+	    TickAgeExpiredMs(now, s_nav_last_press_ms, MAIN_NAV_AUTO_RETURN_MS) != 0u) {
 		ui_return_to_priority(this);
 		return;
 	}
@@ -565,6 +642,7 @@ void mainscreenView::uiShowNormalStatus()
 	textArea1.setWildcard(textArea1Buffer);
 	textArea1.invalidate();
 	CustomContainerSrollText.setText("");
+	ui_invalidate_warn_marquee_cache();
 	s_banner_mode = BANNER_NONE;
 }
 
@@ -578,6 +656,7 @@ void mainscreenView::uiShowStartAllHoldTimer(const char* center_text)
 	textArea1.setWildcard(textArea1Buffer);
 	textArea1.invalidate();
 	CustomContainerSrollText.setText("");
+	ui_invalidate_warn_marquee_cache();
 	s_banner_mode = BANNER_NONE;
 }
 
@@ -585,19 +664,52 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 				      uint8_t nZoneNames, char (*zoneNames)[ZONE_NAME_SIZE + 1])
 {
 	(void)zone;
+	/* Model::tick шлёт статус каждый кадр — force только при реальном уходе с пожара,
+	 * иначе warningShowCurrent()/setText каждый tick сбрасывает бегущую неисправностей. */
+	const bool prev_active = (s_fire_active != 0u);
 	fireUiActive = active;
 	s_fire_active = active ? 1u : 0u;
 	s_fire_mode = mode;
 	if (nZoneNames > UI_LIST_CAPACITY) {
 		nZoneNames = UI_LIST_CAPACITY;
 	}
+	const uint8_t old_n = s_fn_n;
 	bool changed = nZoneNames != s_fn_n;
 	for (uint8_t i = 0u; i < nZoneNames && !changed; ++i) {
 		changed = std::strncmp(s_fn_names[i], zoneNames[i], ZONE_NAME_SIZE + 1) != 0;
 	}
+#if GOST_MODE
+	/* ГОСТ: вспышка 5 с — новый элемент (обычно снизу) или смена статуса пожара. */
+	uint8_t flash_idx = 0u;
+	bool need_flash = false;
+	if (changed && active && nZoneNames > 0u) {
+		if (nZoneNames > old_n) {
+			flash_idx = (uint8_t)(nZoneNames - 1u);
+			need_flash = true;
+		} else if (old_n == 0u) {
+			flash_idx = 0u;
+			need_flash = true;
+		} else {
+			/* Тот же размер, но состав/порядок изменился — вспышка снизу. */
+			for (uint8_t i = nZoneNames; i > 0u; --i) {
+				const uint8_t idx = (uint8_t)(i - 1u);
+				if (idx >= old_n ||
+				    std::strncmp(s_fn_names[idx], zoneNames[idx], ZONE_NAME_SIZE + 1) != 0) {
+					flash_idx = idx;
+					need_flash = true;
+					break;
+				}
+			}
+		}
+	}
+#else
+	(void)old_n;
 	const bool first_changed = changed && nZoneNames > 0u &&
 		(s_fn_n == 0u || std::strncmp(s_fn_names[0], zoneNames[0], ZONE_NAME_SIZE + 1) != 0);
+#endif
 	s_fn_n = active ? nZoneNames : 0u;
+	static uint8_t last_mode = 0xffu;
+	static uint8_t last_remaining = 0xffu;
 	if (changed && active) {
 		for (uint8_t i = 0u; i < s_fn_n; ++i) {
 			std::strncpy(s_fn_names[i], zoneNames[i], ZONE_NAME_SIZE);
@@ -607,22 +719,33 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 			s_cur[BANNER_FIRE] = 0u;
 		}
 		ui_clear_phase(BANNER_FIRE);
+#if GOST_MODE
+		if (need_flash) {
+			ui_request_new_event(BANNER_FIRE, flash_idx);
+		}
+#else
 		if (first_changed) {
 			ui_request_new_event(BANNER_FIRE, 0u);
 		}
+#endif
 	}
 	if (!active) {
 		Fire_UiSetManualSelection(0u, 0u);
+		const bool leaving_fire = prev_active || (s_banner_mode == BANNER_FIRE);
 		if (s_banner_mode == BANNER_FIRE) {
 			s_banner_mode = BANNER_NONE;
 		}
 		s_fire_center_text[0] = '\0';
-		/* force: иначе после таймера ПУСК ОБЩИЙ (оба NONE) early-return оставит старый текст. */
-		ui_show_desired(this, true);
+		if (leaving_fire) {
+			last_mode = 0xffu;
+			last_remaining = 0xffu;
+		}
+		ui_show_desired(this, leaving_fire);
 		return;
 	}
-	static uint8_t last_mode = 0xffu;
-	static uint8_t last_remaining = 0xffu;
+#if GOST_MODE
+	const bool mode_changed = (mode != last_mode);
+#endif
 	if (mode != last_mode || remaining_s != last_remaining || s_banner_mode == BANNER_FIRE) {
 		last_mode = mode;
 		last_remaining = remaining_s;
@@ -647,7 +770,21 @@ void mainscreenView::updateFireStatus(bool active, uint8_t mode, uint8_t zone, u
 			textArea1.invalidate();
 		}
 	}
+#if GOST_MODE
+	/* Смена статуса (тушение/останов/…) — тоже новое сообщение на 5 с. */
+	bool status_flash = false;
+	if (mode_changed && mode != 0u && !need_flash) {
+		uint8_t idx = s_cur[BANNER_FIRE];
+		if (idx >= s_fn_n) {
+			idx = 0u;
+		}
+		ui_request_new_event(BANNER_FIRE, idx);
+		status_flash = true;
+	}
+	ui_show_desired(this, need_flash || status_flash);
+#else
 	ui_show_desired(this);
+#endif
 }
 
 void mainscreenView::updateWarningStatus(bool active, uint8_t nItems, char (*bigTitles)[WARNING_TITLE_LEN],

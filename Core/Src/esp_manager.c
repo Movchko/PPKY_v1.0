@@ -6,6 +6,7 @@
 #include "esp_protocol.h"
 #include "menu_ui.h"
 #include "main.h"
+#include "tick_time.h"
 
 #include <string.h>
 
@@ -150,7 +151,7 @@ void EspManager_Process(uint32_t now_ms)
 	}
 
 	if (s_last_activity_ms != 0u &&
-	    (now_ms - s_last_activity_ms) > ESP_ONLINE_TIMEOUT_MS) {
+	    TickAgeExpiredMs(now_ms, s_last_activity_ms, ESP_ONLINE_TIMEOUT_MS) != 0u) {
 		s_online = 0u;
 		s_wifi_enabled = 0u;
 		s_tcp_connected = 0u;

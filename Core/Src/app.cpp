@@ -21,6 +21,7 @@
 #include "event_log.h"
 #include "log_transport.h"
 #include "esp_manager.h"
+#include "tick_time.h"
 
 
 
@@ -155,7 +156,7 @@ static void AddrAuto_Process(uint32_t now_ms) {
 		break;
 	case ADDR_AUTO_WAIT_AFTER_STOP:
 		// ждём  после остановки ретрансляции, затем шлём CircSetAdr
-		if ((now_ms - g_addr_auto_phase_start_ms) >= 2000u) {
+		if (TickAgeExpiredMs(now_ms, g_addr_auto_phase_start_ms, 2000u) != 0u) {
 			uint8_t data[7] = {0};
 			data[0] = 1u; // новый адрес = 1
 			SendAllMessage(ServiceCmd_CircSetAdr, data, SEND_NOW, BUS_CAN0);
@@ -167,7 +168,7 @@ static void AddrAuto_Process(uint32_t now_ms) {
 	case ADDR_AUTO_WAIT_AFTER_SET:
 		// ещё 100 мс, потом включаем ретрансляцию, очищаем список устройств
 		// и перезапускаем питание на обоих каналах
-		if ((now_ms - g_addr_auto_phase_start_ms) >= 5000u) {
+		if (TickAgeExpiredMs(now_ms, g_addr_auto_phase_start_ms, 5000u) != 0u) {
 			//uint8_t data[7] = {0};
 			//data[0] = 0u; // 0 = старт ретрансляции
 			//SendAllMessage(ServiceCmd_StopStartReTranslate, data, SEND_NOW, BUS_CAN12);
@@ -448,7 +449,7 @@ static void UpdateActiveDeviceList(uint32_t msg_id, uint32_t now_ms) {
 static void RefreshActiveDevices(uint32_t now_ms) {
 	for (uint8_t i = 0; i < g_active_devices_count; i++) {
 		if (g_active_devices[i].online &&
-		    (now_ms - g_active_devices[i].last_seen_ms) > 5000u) {
+		    TickAgeExpiredMs(now_ms, g_active_devices[i].last_seen_ms, 5000u) != 0u) {
 			g_active_devices[i].online = 0;
 			g_active_devices[i].can_status_mask = 0u;
 			g_active_devices[i].can_state_mask = 0u;
@@ -814,16 +815,16 @@ static uint8_t Position_RxReady(const PositionRxInfo *rx, uint8_t can1_ok, uint8
 {
 	if (can1_ok && can2_ok) {
 		return (rx->has_can1 != 0u && rx->has_can2 != 0u &&
-			(now_ms - rx->last_can1_ms) <= POSITION_RX_TIMEOUT_MS &&
-			(now_ms - rx->last_can2_ms) <= POSITION_RX_TIMEOUT_MS) ? 1u : 0u;
+			TickAgeWithinMs(now_ms, rx->last_can1_ms, POSITION_RX_TIMEOUT_MS) != 0u &&
+			TickAgeWithinMs(now_ms, rx->last_can2_ms, POSITION_RX_TIMEOUT_MS) != 0u) ? 1u : 0u;
 	}
 	if (can1_ok) {
 		return (rx->has_can1 != 0u &&
-			(now_ms - rx->last_can1_ms) <= POSITION_RX_TIMEOUT_MS) ? 1u : 0u;
+			TickAgeWithinMs(now_ms, rx->last_can1_ms, POSITION_RX_TIMEOUT_MS) != 0u) ? 1u : 0u;
 	}
 	if (can2_ok) {
 		return (rx->has_can2 != 0u &&
-			(now_ms - rx->last_can2_ms) <= POSITION_RX_TIMEOUT_MS) ? 1u : 0u;
+			TickAgeWithinMs(now_ms, rx->last_can2_ms, POSITION_RX_TIMEOUT_MS) != 0u) ? 1u : 0u;
 	}
 	return 0u;
 }
@@ -958,7 +959,7 @@ static uint8_t PositionDebounce_PhaseDone(const PositionFaultDebounce *db, uint3
 	if (db->phase_since_ms == 0u) {
 		return 0u;
 	}
-	if ((now_ms - db->phase_since_ms) < need_ms) {
+	if (!TickAgeExpiredMs(now_ms, db->phase_since_ms, need_ms)) {
 		return 0u;
 	}
 	return PositionDebounce_RxEnough(db, can1_ok, can2_ok, need_rx);
@@ -1452,31 +1453,18 @@ static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 void AppTimer1ms() {
 	uint32_t now = HAL_GetTick();
 	ConfigSync_Process1ms(now);
-	ConfigIgnBlockSync_Process1ms(now);
-	ConfigMonitor_Process1ms(now);
 	AppProcess(now);
-	RefreshActiveDevices(now);
-	Position_EvaluateMismatch(now);
-	Warning_SetMkuPositionFaultMask(g_position_fault_mask);
-	App_UpdatePowerFaultIndication(now);
 	Fire_Timer1ms();
-
-	EventLog_ProcessTelemetrySample(now);
-
-
 	BackendProcess();
-	EspManager_Process(now);
-	if(warning_process_delay)
+
+	/* Grace перед warning/relay/log: счётчик в мс остаётся здесь. */
+	if (warning_process_delay) {
 		warning_process_delay--;
-	else {
-		//WarningProcess1ms();
-		RelayAuto_Process();
-		LogTransport_Process();
 	}
 
 	counter1s++;
 
-	if(counter1s >= 1000) {
+	if (counter1s >= 1000) {
 		counter1s = 0;
 		RtcCache_Tick1s();
 		AppSetStatus();
@@ -1485,6 +1473,8 @@ void AppTimer1ms() {
 }
 
 void AppTimer10ms() {
+	uint32_t now = HAL_GetTick();
+
 	/* Чтение кнопок делаем реже, чтобы не перегружать I2C.
 	 * Теперь Button_Process вызывается раз в ~с (при шаге AppTimer10ms ~10 мс). */
 	static uint8_t button_acc = 0;
@@ -1494,8 +1484,20 @@ void AppTimer10ms() {
 		Button_Process();
 	}
 
-	if(warning_process_delay == 0)
+	ConfigIgnBlockSync_Process1ms(now);
+	ConfigMonitor_Process1ms(now);
+	RefreshActiveDevices(now);
+	Position_EvaluateMismatch(now);
+	Warning_SetMkuPositionFaultMask(g_position_fault_mask);
+	App_UpdatePowerFaultIndication(now);
+	EventLog_ProcessTelemetrySample(now);
+	EspManager_Process(now);
+
+	if (warning_process_delay == 0) {
 		WarningProcess1ms();
+		RelayAuto_Process();
+		LogTransport_Process();
+	}
 
 	Fire_Timer10ms();
 	Beeper_Process();

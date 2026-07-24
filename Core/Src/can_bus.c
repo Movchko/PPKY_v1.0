@@ -15,6 +15,7 @@
 #include "event_log.h"
 #include "menu_ui.h"
 #include "app.hpp"
+#include "tick_time.h"
 #include "stm32h5xx_hal.h"
 #include <string.h>
 
@@ -616,7 +617,7 @@ static void App_CanTxProcessBus(FDCAN_HandleTypeDef *hfdcan,
 static void App_CanWatchdog(void)
 {
 	uint32_t now = HAL_GetTick();
-	if ((now - can_watchdog_last_ms) < CAN_WATCHDOG_PERIOD_MS) {
+	if (!TickAgeExpiredMs(now, can_watchdog_last_ms, CAN_WATCHDOG_PERIOD_MS)) {
 		return;
 	}
 	can_watchdog_last_ms = now;
@@ -633,13 +634,13 @@ static void App_CanWatchdog(void)
 
 	if (can1_tx_head != can1_tx_tail &&
 	    can1_tx_stall_since_ms != 0u &&
-	    (now - can1_tx_stall_since_ms) >= CAN_TX_STALL_RECOVERY_MS) {
+	    TickAgeExpiredMs(now, can1_tx_stall_since_ms, CAN_TX_STALL_RECOVERY_MS) != 0u) {
 		App_CanRecoverBus(&hfdcan1);
 		can1_tx_stall_since_ms = 0u;
 	}
 	if (can2_tx_head != can2_tx_tail &&
 	    can2_tx_stall_since_ms != 0u &&
-	    (now - can2_tx_stall_since_ms) >= CAN_TX_STALL_RECOVERY_MS) {
+	    TickAgeExpiredMs(now, can2_tx_stall_since_ms, CAN_TX_STALL_RECOVERY_MS) != 0u) {
 		App_CanRecoverBus(&hfdcan2);
 		can2_tx_stall_since_ms = 0u;
 	}
@@ -683,17 +684,21 @@ void CanProcess(void)
 		CanInit();
 	}
 
-	/* Флаги «нет приёма по шине» */
-	if (now - last_rx_tick_can1 <= CAN_NO_RX_TIMEOUT_MS) {
-		can_bus_error_flags &= ~(uint8_t)1;
-	} else {
-		can_bus_error_flags |= 1;
-	}
-
-	if (now - last_rx_tick_can2 <= CAN_NO_RX_TIMEOUT_MS) {
-		can_bus_error_flags &= ~(uint8_t)2;
-	} else {
-		can_bus_error_flags |= 2;
+	/* Флаги «нет приёма по шине».
+	 * last_rx_* пишется из RX IRQ — только знаковое сравнение (см. tick_time.h). */
+	{
+		uint32_t last1 = last_rx_tick_can1;
+		uint32_t last2 = last_rx_tick_can2;
+		if (TickAgeWithinMs(now, last1, CAN_NO_RX_TIMEOUT_MS) != 0u) {
+			can_bus_error_flags &= ~(uint8_t)1;
+		} else {
+			can_bus_error_flags |= 1;
+		}
+		if (TickAgeWithinMs(now, last2, CAN_NO_RX_TIMEOUT_MS) != 0u) {
+			can_bus_error_flags &= ~(uint8_t)2;
+		} else {
+			can_bus_error_flags |= 2;
+		}
 	}
 
 	/* Таймауты ожидания дубликата по каждому устройству */

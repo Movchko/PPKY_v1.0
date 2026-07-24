@@ -3,6 +3,7 @@
 #include "config_sync.hpp"
 #include "app.hpp"
 #include "device_config.h"
+#include "tick_time.h"
 
 extern ActiveDeviceInfo g_active_devices[NUM_ACTIVE_DEVICE];
 extern uint8_t g_active_devices_count;
@@ -10,6 +11,7 @@ extern uint8_t g_active_devices_count;
 #define IGN_BLOCK_START_DELAY_MS 5000u
 
 static uint8_t g_boot_sync_done;
+static uint8_t g_boot_sync_started;
 static uint8_t g_pending_request;
 static uint8_t g_igniter_mcu_seen;
 static uint32_t g_igniter_mcu_seen_ms;
@@ -55,6 +57,7 @@ static void IgnBlockSync_TryStart(void)
 void ConfigIgnBlockSync_Init(void)
 {
 	g_boot_sync_done = 0u;
+	g_boot_sync_started = 0u;
 	g_pending_request = 0u;
 	g_igniter_mcu_seen = 0u;
 	g_igniter_mcu_seen_ms = 0u;
@@ -64,6 +67,19 @@ void ConfigIgnBlockSync_Request(void)
 {
 	g_pending_request = 1u;
 	IgnBlockSync_TryStart();
+}
+
+uint8_t ConfigIgnBlockSync_ShouldDeferCrc(void)
+{
+	/* Нет спичек — boot-синк не нужен, CRC можно сразу. */
+	if (g_igniter_mcu_seen == 0u) {
+		return 0u;
+	}
+	/* Ждём старта или завершения первой синхронизации блоков. */
+	if (g_boot_sync_done == 0u) {
+		return 1u;
+	}
+	return 0u;
 }
 
 void ConfigIgnBlockSync_Process1ms(uint32_t now_ms)
@@ -82,16 +98,29 @@ void ConfigIgnBlockSync_Process1ms(uint32_t now_ms)
 	if (g_boot_sync_done != 0u) {
 		return;
 	}
+
+	if (g_boot_sync_started != 0u) {
+		/* Старт уже был: ждём освобождения ConfigSync. */
+		if (!ConfigSync_IsBusy()) {
+			g_boot_sync_done = 1u;
+		}
+		return;
+	}
+
 	if (g_igniter_mcu_seen == 0u) {
 		return;
 	}
-	if ((now_ms - g_igniter_mcu_seen_ms) < IGN_BLOCK_START_DELAY_MS) {
+	if (!TickAgeExpiredMs(now_ms, g_igniter_mcu_seen_ms, IGN_BLOCK_START_DELAY_MS)) {
 		return;
 	}
 	if (ConfigSync_IsBusy()) {
 		return;
 	}
 
-	g_boot_sync_done = 1u;
+	g_boot_sync_started = 1u;
 	ConfigSync_StartIgnBlockSync();
+	if (!ConfigSync_IsBusy()) {
+		/* Нет eligible-слотов / мгновенный finish — boot-синк не нужен. */
+		g_boot_sync_done = 1u;
+	}
 }

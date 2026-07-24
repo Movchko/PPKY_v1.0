@@ -136,7 +136,12 @@ static void Warning_GetZoneName(const WarningItem& it, char *out, size_t out_sz)
 	out[0] = '\0';
 	if (it.zone > 0u && it.zone <= ZONE_NUMBER) {
 		strncpy(out, reinterpret_cast<const char*>(PPKYConfig.zone_name[it.zone - 1u]), ZONE_NAME_SIZE);
-		out[ZONE_NAME_SIZE] = '\0';
+		out[(out_sz - 1u) < ZONE_NAME_SIZE ? (out_sz - 1u) : ZONE_NAME_SIZE] = '\0';
+		/* Убрать хвостовые пробелы из фиксированного поля имени зоны. */
+		size_t n = strlen(out);
+		while (n > 0u && out[n - 1u] == ' ') {
+			out[--n] = '\0';
+		}
 	}
 	if (out[0] == '\0') {
 		snprintf(out, out_sz, "ЗОНА %u", (unsigned)it.zone);

@@ -33,6 +33,7 @@ typedef enum {
 	CFGSYNC_STEP_WAIT_CFG_WORD,
 	CFGSYNC_STEP_WAIT_CFG_CRC,
 	CFGSYNC_STEP_WAIT_SET_CFG_WORD,
+	CFGSYNC_STEP_WAIT_SAVE,
 	CFGSYNC_STEP_WAIT_SAVE_AND_READBACK_CRC
 } CfgSyncStep;
 
@@ -76,8 +77,10 @@ static void (*g_save_config_cb)(void) = nullptr;
 static void (*g_apply_success_cb)(void) = nullptr;
 static uint8_t *g_crc_mismatch_flag = nullptr;
 
-#define CFGSYNC_REQ_TIMEOUT_MS   150u
-#define CFGSYNC_REQ_MAX_RETRIES  5u
+#define CFGSYNC_REQ_TIMEOUT_MS    150u
+#define CFGSYNC_REQ_MAX_RETRIES   5u
+#define CFGSYNC_SAVE_TIMEOUT_MS   2500u
+#define CFGSYNC_SAVE_MAX_RETRIES  3u
 
 static void ResolveRuntimeDevForSlot(uint8_t slot, Device *out_dev);
 static void CfgSync_SendReq(const Device *dev, uint8_t cmd, const uint8_t *params, uint32_t now_ms);
@@ -641,18 +644,17 @@ static void CfgSync_HandleSetCfgWordReply(const uint8_t *MsgData, uint32_t now_m
 		return;
 	}
 
-	/* Все слова записали: SaveConfig на МКУ, затем читаем CRC назад. */
-	can_ext_id_t can_id;
-	uint8_t data[8] = {0u};
-	can_id.ID = 0u;
-	can_id.field.dir = 0u;
-	can_id.field.d_type = g_cfg_sync.current_dev.d_type & 0x7Fu;
-	can_id.field.h_adr = g_cfg_sync.current_dev.h_adr;
-	can_id.field.l_adr = g_cfg_sync.current_dev.l_adr & 0x3Fu;
-	can_id.field.zone = g_cfg_sync.current_dev.zone & 0x7Fu;
-	data[0] = ServiceCmd_SaveConfig;
-	SendMessageFull(can_id, data, SEND_NOW, BUS_CAN12);
+	/* Все слова записали: SaveConfig на МКУ, дождаться ACK, затем CRC. */
+	uint8_t p_save[7] = {0u};
+	CfgSync_SendReq(&g_cfg_sync.current_dev, ServiceCmd_SaveConfig, p_save, now_ms);
+	g_cfg_sync.deadline_ms = now_ms + CFGSYNC_SAVE_TIMEOUT_MS;
+	g_cfg_sync.retries = 0u;
+	g_cfg_sync.step = CFGSYNC_STEP_WAIT_SAVE;
+}
 
+static void CfgSync_HandleSaveReply(uint32_t now_ms)
+{
+	g_cfg_sync.waiting_reply = 0u;
 	g_cfg_sync.expected_crc = crc32(POLYNOM, &g_cfg->CfgDevices[g_cfg_sync.current_slot], sizeof(MKUCfg));
 	uint8_t p_crc[7] = {0u};
 	CfgSync_SendReq(&g_cfg_sync.current_dev, ServiceCmd_GetConfigCRC, p_crc, now_ms);
@@ -694,9 +696,14 @@ extern "C" void ConfigSync_Process1ms(uint32_t now_ms) {
 		return;
 	}
 
-	if (g_cfg_sync.retries < CFGSYNC_REQ_MAX_RETRIES) {
+	const uint8_t max_retries = (g_cfg_sync.step == CFGSYNC_STEP_WAIT_SAVE) ?
+	                            CFGSYNC_SAVE_MAX_RETRIES : CFGSYNC_REQ_MAX_RETRIES;
+	if (g_cfg_sync.retries < max_retries) {
 		g_cfg_sync.retries++;
 		CfgSync_ResendReq(now_ms);
+		if (g_cfg_sync.step == CFGSYNC_STEP_WAIT_SAVE) {
+			g_cfg_sync.deadline_ms = now_ms + CFGSYNC_SAVE_TIMEOUT_MS;
+		}
 		return;
 	}
 
@@ -737,6 +744,9 @@ extern "C" void ConfigSync_OnListenerMessage(uint32_t msg_id, const uint8_t *msg
 		break;
 	case CFGSYNC_STEP_WAIT_SET_CFG_WORD:
 		CfgSync_HandleSetCfgWordReply(msg_data, now_ms);
+		break;
+	case CFGSYNC_STEP_WAIT_SAVE:
+		CfgSync_HandleSaveReply(now_ms);
 		break;
 	case CFGSYNC_STEP_WAIT_SAVE_AND_READBACK_CRC:
 		CfgSync_HandleCfgCrcReply(msg_data, now_ms);

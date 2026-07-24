@@ -428,6 +428,26 @@ static void FormatTitle(const EventLogRecord_t *rec, char *title, size_t title_s
 		snprintf(title, title_sz, "СОХР.МКУ");
 		break;
 
+	case EVENT_LOG_PANEL_BTN_PRESS:
+		if (a[0] == 0u) {
+			snprintf(title, title_sz, "НАЖ.ОБЩ");
+		} else if (a[0] == 1u) {
+			snprintf(title, title_sz, "НАЖ.СП");
+		} else if (a[0] == 2u) {
+			snprintf(title, title_sz, "НАЖ.ОСТ");
+		} else {
+			snprintf(title, title_sz, "НАЖАТИЕ");
+		}
+		break;
+
+	case EVENT_LOG_COUNTDOWN_PAUSE:
+		snprintf(title, title_sz, "ПАУЗА");
+		break;
+
+	case EVENT_LOG_COUNTDOWN_RESUME:
+		snprintf(title, title_sz, "СНЯТ.ПАУЗ");
+		break;
+
 	default:
 		snprintf(title, title_sz, "СОБ.%u", (unsigned)rec->event_code);
 		break;
@@ -504,11 +524,17 @@ static void FormatDetail(const EventLogRecord_t *rec, char *detail, size_t detai
 	}
 
 	case EVENT_LOG_PANEL_BUTTON:
+	case EVENT_LOG_PANEL_BTN_PRESS:
 		if (a[1] != 0u) {
 			FormatZoneOnlyDetail(detail, detail_sz, a[1]);
 		} else {
 			FormatPpkyDetail(detail, detail_sz);
 		}
+		break;
+
+	case EVENT_LOG_COUNTDOWN_PAUSE:
+	case EVENT_LOG_COUNTDOWN_RESUME:
+		FormatZoneOnlyDetail(detail, detail_sz, a[0]);
 		break;
 
 	case EVENT_LOG_MASTER_START:

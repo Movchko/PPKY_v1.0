@@ -6,6 +6,7 @@
  */
 
 #include "power_control.h"
+#include "tick_time.h"
 
 PControl::PControl(uint8_t ch) {
 	Num = ch;
@@ -113,7 +114,7 @@ void PControl::Process(uint32_t now_ms) {
 		}
 
 		// Окно времени M=1000 мс с момента первой ошибки
-		if ((now_ms - fault_time_ms) >= 1000u) {
+		if (TickAgeExpiredMs(now_ms, fault_time_ms, 1000u) != 0u) {
 			// Больше не пытаемся включаться, фиксируем ошибку питания
 			error_flag = true;
 			PControlSetOut(Num, 0);
@@ -122,7 +123,7 @@ void PControl::Process(uint32_t now_ms) {
 		}
 
 		// Одна повторная попытка включения в окне
-		if (retry_count == 0 && now_ms >= next_retry_ms) {
+		if (retry_count == 0 && TickDeltaMs(now_ms, next_retry_ms) >= 0) {
 			retry_count = 1;
 			PControlSetOut(Num, 1);
 			// Если снова будет ST=1, OnStatusFault переведёт нас обратно в Fault без изменения окна

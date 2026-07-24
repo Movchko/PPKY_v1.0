@@ -1083,6 +1083,122 @@
           }
         ]
       }
+    },
+    {
+      "code": 23,
+      "symbol": "EVENT_LOG_PANEL_BTN_PRESS",
+      "name": "Физическое нажатие большой кнопки",
+      "level": "critical",
+      "debug_only": false,
+      "status": "implemented",
+      "description": "Сырое нажатие ПУСК ОБЩИЙ / ПУСК СП / ОСТАНОВ ПУСКА. Пишется всегда при касании, независимо от состояния FSM. Для ПУСК ОБЩИЙ — в момент первого касания (до удержания 3 с). Логическое действие после принятия — код 14.",
+      "uses": {
+        "can_header": "unused",
+        "can_data": "unused",
+        "additional": "required"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "button",
+            "type": "uint8",
+            "required": true,
+            "enum": {
+              "0": "start_all",
+              "1": "start_sp",
+              "2": "stop_launch"
+            }
+          },
+          {
+            "offset": 1,
+            "name": "zone",
+            "type": "uint8",
+            "description": "Выбранная зона UI (GOST), иначе 0"
+          },
+          {
+            "offset": 2,
+            "name": "fire_mode",
+            "type": "uint8"
+          }
+        ]
+      }
+    },
+    {
+      "code": 24,
+      "symbol": "EVENT_LOG_COUNTDOWN_PAUSE",
+      "name": "Пауза таймера пуска тушения",
+      "level": "critical",
+      "debug_only": false,
+      "status": "implemented",
+      "description": "Приостановка отсчёта до пуска тушения: кнопка ОСТАНОВ во время пожара (таймер идёт) или команда PauseExtinguishmentTimer с шины.",
+      "uses": {
+        "can_header": "unused",
+        "can_data": "unused",
+        "additional": "required"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "zone",
+            "type": "uint8",
+            "description": "Зона (1..N); 0 = все / глобальная пауза"
+          },
+          {
+            "offset": 1,
+            "name": "source",
+            "type": "uint8",
+            "enum": {
+              "0": "panel",
+              "1": "can"
+            }
+          },
+          {
+            "offset": 2,
+            "name": "fire_mode",
+            "type": "uint8"
+          }
+        ]
+      }
+    },
+    {
+      "code": 25,
+      "symbol": "EVENT_LOG_COUNTDOWN_RESUME",
+      "name": "Снятие паузы таймера пуска тушения",
+      "level": "critical",
+      "debug_only": false,
+      "status": "implemented",
+      "description": "Возобновление отсчёта после паузы: повторное ОСТАНОВ (toggle) или ResumeExtinguishmentTimer с шины.",
+      "uses": {
+        "can_header": "unused",
+        "can_data": "unused",
+        "additional": "required"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "zone",
+            "type": "uint8",
+            "description": "Зона (1..N); 0 = все / глобально"
+          },
+          {
+            "offset": 1,
+            "name": "source",
+            "type": "uint8",
+            "enum": {
+              "0": "panel",
+              "1": "can"
+            }
+          },
+          {
+            "offset": 2,
+            "name": "fire_mode",
+            "type": "uint8"
+          }
+        ]
+      }
     }
   ]
 }
