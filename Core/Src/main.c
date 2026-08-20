@@ -125,6 +125,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -1261,7 +1262,7 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 uint8_t SetUpdateWord(uint32_t num, uint32_t word)
 { return 0;}
-#define APP_VERSION_U32 1u
+#define APP_VERSION_U32 2u
 
 const char *GetAppVersion(void)
 {

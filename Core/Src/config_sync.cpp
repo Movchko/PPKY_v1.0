@@ -655,6 +655,9 @@ static void CfgSync_HandleSetCfgWordReply(const uint8_t *MsgData, uint32_t now_m
 static void CfgSync_HandleSaveReply(uint32_t now_ms)
 {
 	g_cfg_sync.waiting_reply = 0u;
+	/* После Save МКУ применяет zone из образа (AplyConfig после ACK).
+	 * Дальнейший CRC/команды шлём уже на целевой адрес из конфиг-образа. */
+	g_cfg_sync.current_dev = g_cfg->CfgDevices[g_cfg_sync.current_slot].UId.devId;
 	g_cfg_sync.expected_crc = crc32(POLYNOM, &g_cfg->CfgDevices[g_cfg_sync.current_slot], sizeof(MKUCfg));
 	uint8_t p_crc[7] = {0u};
 	CfgSync_SendReq(&g_cfg_sync.current_dev, ServiceCmd_GetConfigCRC, p_crc, now_ms);
