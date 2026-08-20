@@ -363,6 +363,14 @@ static void CfgSync_Finish(uint8_t success, uint8_t save_ppky_cfg) {
 			                   (uint8_t)(target_count - failed_count) : 0u;
 			EventLog_LogConfigApplyOk(ok_count, target_count);
 			EventLog_LogAllCfgMcusSaved();
+			/* Подтверждение в ПО: cmd=168, p0=ok_count, p1=target_count. */
+			{
+				uint8_t data[7] = {0};
+				data[0] = ok_count;
+				data[1] = target_count;
+				SendMessage(0, ServiceCmd_ApplyConfigDone, data, SEND_NOW,
+				            (uint8_t)(BUS_CAN12 | BUS_UART1));
+			}
 			if (g_apply_success_cb != nullptr) {
 				g_apply_success_cb();
 			}
