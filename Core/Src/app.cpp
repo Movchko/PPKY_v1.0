@@ -1320,7 +1320,7 @@ void AppInit() {
 	LogTransport_Init();
 	EspManager_Init();
 
-	/* TEMP: WiFi/ESP32 при старте (для отладки). Обычно включается только из меню связи. */
+	/* ESP32 включён при старте; WiFi — только из меню «Связь → WIFI». */
 	Esp32_SetEnabled(1u);
 }
 

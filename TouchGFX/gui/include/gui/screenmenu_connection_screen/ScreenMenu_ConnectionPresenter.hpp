@@ -29,6 +29,7 @@ private:
     int16_t currentIndex;
     void refreshLine();
     void enterConfigScreen();
+    void maybeEnableWifi();
 #endif
 };
 

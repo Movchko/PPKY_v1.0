@@ -52,7 +52,7 @@ public:
     void uiShowStartAllHoldTimer(const char* center_text);
     /** imageMute в top_bar: показать при выключенном звуке. */
     void applyMuteIcon(bool soundOn);
-    /** imageWifi в top_bar: показать при активном TCP-подключении хоста. */
+    /** imageWifi в top_bar: видимость (мигание/постоянно при активной WiFi-сессии). */
     void applyWifiIcon(bool active);
 #endif
 

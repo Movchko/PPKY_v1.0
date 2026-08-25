@@ -21,8 +21,11 @@ void ScreenMenu_ConnectionPresenter::activate()
 {
 #ifndef SIMULATOR
     currentIndex = view.getSelectedIndex();
-    Esp32_SetEnabled(1u);
-    EspManager_RequestWifiEnable();
+    if (PPKYConfig.wifi_block != 0u) {
+        currentIndex = 1;
+        view.setSelectedIndex(currentIndex);
+    }
+    maybeEnableWifi();
     refreshLine();
 #endif
 }
@@ -32,6 +35,14 @@ void ScreenMenu_ConnectionPresenter::deactivate()
 }
 
 #ifndef SIMULATOR
+void ScreenMenu_ConnectionPresenter::maybeEnableWifi()
+{
+    if (PPKYConfig.wifi_block != 0u || currentIndex != 0) {
+        return;
+    }
+    EspManager_RequestWifiEnable();
+}
+
 void ScreenMenu_ConnectionPresenter::refreshLine()
 {
     view.updateStatusLine(currentIndex, PPKYConfig.wifi_block != 0u);
@@ -41,7 +52,7 @@ void ScreenMenu_ConnectionPresenter::enterConfigScreen()
 {
     MenuUi_SetConfigSession(1u);
     MenuConfig_Reset();
-    Esp32_SetEnabled(1u);
+    maybeEnableWifi();
     FrontendApplication* app = static_cast<FrontendApplication*>(touchgfx::Application::getInstance());
     app->gotoScreenMenuConfigScreenNoTransition();
 }
@@ -55,22 +66,31 @@ void ScreenMenu_ConnectionPresenter::handleButton(uint8_t but, uint8_t state)
     FrontendApplication* app = static_cast<FrontendApplication*>(touchgfx::Application::getInstance());
 
     if (but == BUT_ESC) {
-        Esp32_SetEnabled(0u);
         MenuUi_SetConfigSession(0u);
         app->gotoScreenMenuScreenNoTransition();
         return;
     }
 
     if (but == BUT_UP) {
-        currentIndex = (currentIndex - 1 + 2) % 2;
+        if (PPKYConfig.wifi_block != 0u) {
+            currentIndex = 1;
+        } else {
+            currentIndex = (currentIndex - 1 + 2) % 2;
+        }
         view.setSelectedIndex(currentIndex);
+        maybeEnableWifi();
         refreshLine();
         return;
     }
 
     if (but == BUT_DOWN) {
-        currentIndex = (currentIndex + 1) % 2;
+        if (PPKYConfig.wifi_block != 0u) {
+            currentIndex = 1;
+        } else {
+            currentIndex = (currentIndex + 1) % 2;
+        }
         view.setSelectedIndex(currentIndex);
+        maybeEnableWifi();
         refreshLine();
         return;
     }

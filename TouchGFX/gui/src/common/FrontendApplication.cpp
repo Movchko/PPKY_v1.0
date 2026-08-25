@@ -45,7 +45,6 @@ void FrontendApplication::handleTickEvent()
      * (там виден 3с счётчик общего пуска). */
     if ((Fire_IsActive() || Fire_IsStartAllHoldActive()) && !MenuUi_IsMainScreenActive()) {
         if (MenuUi_IsConfigSessionActive()) {
-            Esp32_SetEnabled(0u);
             MenuUi_SetConfigSession(0u);
         }
         gotomainscreenScreenNoTransition();

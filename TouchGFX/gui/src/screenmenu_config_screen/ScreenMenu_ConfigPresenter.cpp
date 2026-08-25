@@ -71,7 +71,6 @@ void ScreenMenu_ConfigPresenter::handleButton(uint8_t but, uint8_t state)
     FrontendApplication* app = static_cast<FrontendApplication*>(touchgfx::Application::getInstance());
 
     if (but == BUT_ESC) {
-        Esp32_SetEnabled(0u);
         MenuUi_SetConfigSession(0u);
         app->gotoScreenMenuConnectionScreenNoTransition();
     }

@@ -15,6 +15,8 @@
 #define ESP_ONLINE_TIMEOUT_MS       3000u
 #define ESP_WIFI_RETRY_PERIOD_MS    2000u
 #define ESP_WIFI_RETRY_MAX          10u
+#define ESP_WIFI_CONNECT_TIMEOUT_MS (5u * 60u * 1000u)
+#define ESP_WIFI_ICON_BLINK_MS      500u /* 1 Гц: 500 мс вкл / 500 мс выкл */
 
 extern struct PPKYCfg PPKYConfig;
 
@@ -22,11 +24,13 @@ static uint32_t s_last_activity_ms = 0u;
 static uint8_t  s_online = 0u;
 static uint8_t  s_wifi_enabled = 0u;
 static uint8_t  s_tcp_connected = 0u;
-static uint8_t  s_want_wifi = 0u;       /* ППКУ хочет WiFi (если не wifi_block) */
+static uint8_t  s_want_wifi = 0u;       /* ППКУ запросило WiFi из меню (если не wifi_block) */
 static uint8_t  s_config_sent = 0u;
 static uint8_t  s_wifi_cmd_sent = 0u;
 static uint8_t  s_wifi_retry_cnt = 0u;
 static uint32_t s_next_wifi_retry_ms = 0u;
+static uint32_t s_wifi_attempt_start_ms = 0u;
+static uint8_t  s_prev_tcp_connected = 0u;
 static uint16_t s_cmd_seq = 0u;
 
 void EspManager_Init(void)
@@ -40,6 +44,8 @@ void EspManager_Init(void)
 	s_wifi_cmd_sent = 0u;
 	s_wifi_retry_cnt = 0u;
 	s_next_wifi_retry_ms = 0u;
+	s_wifi_attempt_start_ms = 0u;
+	s_prev_tcp_connected = 0u;
 }
 
 static void send_esp_cmd(uint8_t cmd, const uint8_t *payload, uint16_t payload_len)
@@ -85,25 +91,37 @@ static void send_wifi_enable(void)
 	s_next_wifi_retry_ms = HAL_GetTick() + ESP_WIFI_RETRY_PERIOD_MS;
 }
 
+static void send_wifi_disable(void)
+{
+	send_esp_cmd(ESP_CMD_WIFI_DISABLE, NULL, 0u);
+	s_wifi_cmd_sent = 0u;
+	s_wifi_retry_cnt = 0u;
+	s_next_wifi_retry_ms = 0u;
+}
+
 void EspManager_OnEspPoweredOn(void)
 {
 	s_config_sent = 0u;
 	s_wifi_cmd_sent = 0u;
 	s_wifi_retry_cnt = 0u;
 	s_next_wifi_retry_ms = 0u;
-	s_want_wifi = (PPKYConfig.wifi_block == 0u) ? 1u : 0u;
-	/* Команды уйдут после первого activity — ESP уже слушает UART. */
+	s_wifi_attempt_start_ms = 0u;
+	s_prev_tcp_connected = 0u;
+	s_want_wifi = 0u;
+	/* Конфиг уйдёт после activity; WiFi — только по запросу из меню. */
 }
 
 void EspManager_OnEspPoweredOff(void)
 {
 	if (s_online != 0u) {
-		send_esp_cmd(ESP_CMD_WIFI_DISABLE, NULL, 0u);
+		send_wifi_disable();
 	}
 	s_want_wifi = 0u;
 	s_config_sent = 0u;
 	s_wifi_cmd_sent = 0u;
 	s_wifi_retry_cnt = 0u;
+	s_wifi_attempt_start_ms = 0u;
+	s_prev_tcp_connected = 0u;
 	s_online = 0u;
 	s_wifi_enabled = 0u;
 	s_tcp_connected = 0u;
@@ -118,6 +136,7 @@ void EspManager_RequestWifiEnable(void)
 	}
 	s_want_wifi = 1u;
 	s_wifi_retry_cnt = 0u;
+	s_wifi_attempt_start_ms = HAL_GetTick();
 	/* Если ESP уже online — шлём сразу; иначе ждём activity в Process. */
 	if (Esp32_IsEnabled() && s_online != 0u) {
 		if (s_config_sent == 0u) {
@@ -150,6 +169,15 @@ void EspManager_Process(uint32_t now_ms)
 		}
 	}
 
+	if (s_want_wifi != 0u && s_tcp_connected == 0u && s_wifi_attempt_start_ms != 0u &&
+	    (int32_t)(now_ms - s_wifi_attempt_start_ms) >= (int32_t)ESP_WIFI_CONNECT_TIMEOUT_MS) {
+		s_want_wifi = 0u;
+		s_wifi_attempt_start_ms = 0u;
+		if (s_online != 0u) {
+			send_wifi_disable();
+		}
+	}
+
 	if (s_last_activity_ms != 0u &&
 	    TickAgeExpiredMs(now_ms, s_last_activity_ms, ESP_ONLINE_TIMEOUT_MS) != 0u) {
 		s_online = 0u;
@@ -159,6 +187,7 @@ void EspManager_Process(uint32_t now_ms)
 		s_config_sent = 0u;
 		s_wifi_cmd_sent = 0u;
 		s_wifi_retry_cnt = 0u;
+		s_prev_tcp_connected = 0u;
 	}
 }
 
@@ -173,12 +202,19 @@ void EspManager_OnActivity(const uint8_t *payload, uint16_t len)
 	memcpy(&act, payload, ESP_ACTIVITY_PAYLOAD_SIZE);
 	s_last_activity_ms = HAL_GetTick();
 	s_online = 1u;
-	s_wifi_enabled = act.wifi_enabled;
-	s_tcp_connected = act.tcp_connected;
+	s_wifi_enabled = (act.wifi_enabled != 0u) ? 1u : 0u;
+	s_tcp_connected = (act.tcp_connected != 0u) ? 1u : 0u;
 
 	if (s_wifi_enabled != 0u) {
 		s_wifi_retry_cnt = ESP_WIFI_RETRY_MAX; /* успех — больше не долбить */
 	}
+
+	if (s_tcp_connected != 0u) {
+		s_wifi_attempt_start_ms = 0u;
+	} else if (s_prev_tcp_connected != 0u && s_want_wifi != 0u) {
+		s_wifi_attempt_start_ms = s_last_activity_ms;
+	}
+	s_prev_tcp_connected = s_tcp_connected;
 }
 
 uint8_t EspManager_IsOnline(void)
@@ -199,4 +235,20 @@ uint8_t EspManager_IsHostConnected(void)
 uint8_t EspManager_IsLinkActive(void)
 {
 	return (uint8_t)(Esp32_IsEnabled() && s_online != 0u && s_tcp_connected != 0u);
+}
+
+uint8_t EspManager_IsWifiSessionActive(void)
+{
+	return (uint8_t)(s_want_wifi != 0u || s_tcp_connected != 0u);
+}
+
+uint8_t EspManager_IsWifiIconVisible(uint32_t now_ms)
+{
+	if (!EspManager_IsWifiSessionActive()) {
+		return 0u;
+	}
+	if (EspManager_IsLinkActive() != 0u) {
+		return 1u;
+	}
+	return (uint8_t)(((now_ms / ESP_WIFI_ICON_BLINK_MS) & 1u) == 0u);
 }

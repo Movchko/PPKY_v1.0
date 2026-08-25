@@ -14,7 +14,7 @@ public:
 
     /** imageMute: показать при выключенном звуке. */
     void setMuteVisible(bool visible);
-    /** imageWifi: показать при активном TCP-подключении хоста. */
+    /** imageWifi: видимость (мигание до TCP, постоянно при подключении). */
     void setWifiVisible(bool visible);
 
 protected:

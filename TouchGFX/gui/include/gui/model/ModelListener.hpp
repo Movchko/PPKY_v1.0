@@ -28,7 +28,7 @@ public:
 					char (*details)[ZONE_NAME_SIZE + 1]) {}
     /** Звук Вкл/Выкл изменился (не каждый tick — только при реальной смене). */
     virtual void onSoundOnChanged(bool soundOn) {}
-    /** WiFi: активное подключение хоста по TCP. */
+    /** WiFi: значок на главном экране (мигает 2 Гц до TCP, горит при подключении). */
     virtual void onWifiLinkChanged(bool active) {}
     virtual void onAppTick() {}
 #endif
