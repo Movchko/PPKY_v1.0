@@ -1396,7 +1396,7 @@ static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 
 	uint32_t main_mv = (CHANNEL_VAL[4] > 0) ? (uint32_t)CHANNEL_VAL[4] : 0u; /* Основной ввод */
 	uint32_t reserve_mv = (CHANNEL_VAL[0] > 0) ? (uint32_t)CHANNEL_VAL[0] : 0u; /* Резервный ввод */
-	uint8_t reserve_required = (PPKYConfig.power_input == 0u) ? 1u : 0u; /* 0 = используем оба ввода */
+	uint8_t reserve_required = (PPKYConfig.power_input == 2u) ? 1u : 0u; /* 2 = используем оба ввода */
 
 	if (App_PpkuInputFaultHyst(main_mv, (uint8_t)(s_ppku_input_fault_latched & 0x01u),
 				   low_enter_mv, high_enter_mv, low_exit_mv, high_exit_mv) != 0u) {
