@@ -8,6 +8,7 @@
 #include "app.hpp"
 #include "rtc_cache.h"
 #include "device_config.h"
+#include "menu_ui.h"
 #include "backend.h"
 #include "stm32h5xx_hal.h"
 
@@ -565,7 +566,13 @@ void EventLog_ProcessTelemetrySample(uint32_t now_ms)
 /* Вызов из device_lib ConfigServiceCmd при командах конфига от хоста. */
 extern "C" void App_OnHostConfigCommand(uint8_t bus, uint8_t command)
 {
-	(void)command;
+	(void)bus;
+	if (command == ServiceCmd_SetConfigWord || command == ServiceCmd_StartSetConfig) {
+		if (!MenuUi_IsConfigSessionActive()) {
+			MenuUi_SetConfigSession(1u);
+			MenuConfig_Reset();
+		}
+	}
 	if ((bus & BUS_UART1) != 0u) {
 		EventLog_LogHostLink(0u); /* WiFi / ESP32 UART2 */
 	}

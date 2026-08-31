@@ -14,6 +14,7 @@
 #include "device_config.h"
 #include "device_dpt.hpp"
 #include "sound_profiles.h"
+#include "menu_ui.h"
 
 #define WARN_TITLE_LEN 24
 
@@ -37,6 +38,10 @@ enum AttentionSoundPhase : uint8_t {
 };
 static uint8_t g_power_fault_mask = 0u;
 static uint8_t g_ppku_input_fault_mask = 0u;
+static uint8_t g_raw_power_fault_mask = 0u;
+static uint8_t g_raw_ppku_input_fault_mask = 0u;
+static uint32_t g_power_confirm_since[4];
+static uint8_t g_power_confirm_pending[4];
 static uint8_t g_prev_power_fault_mask = 0u;
 static uint8_t g_prev_ppku_input_fault_mask = 0u;
 static FaultSoundPhase g_fault_sound_phase = FAULT_SOUND_IDLE;
@@ -50,6 +55,7 @@ namespace {
 
 constexpr uint8_t WARN_MAX_ITEMS = 16u;
 constexpr uint32_t WARNING_SHOW_HOLD_MS = 10000u; /* Показывать предупреждение ещё 10 с после исчезновения */
+constexpr uint32_t WARN_CONFIRM_MS = 3000u;       /* Подтверждение неисправности перед реакцией/логом */
 constexpr uint8_t WARN_KIND_VDEV_FAULT = 0u;
 constexpr uint8_t WARN_KIND_MCU_CAN_FAULT = 1u;
 constexpr uint8_t WARN_KIND_PPKU_CAN_FAULT = 2u;
@@ -73,6 +79,8 @@ struct WarningItem {
 	uint8_t can_idx; /* 1 или 2 для CAN-предупреждений */
 	int16_t extra; /* произвольный параметр (например температура DPT) */
 	uint8_t fault_now;
+	uint8_t confirm_pending;
+	uint32_t confirm_since_ms;
 	uint32_t show_until_ms;
 	uint32_t appeared_ms; /* момент появления (новое сверху в UI) */
 };
@@ -403,6 +411,57 @@ static int FindItem(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l_adr,
 	return -1;
 }
 
+/* Безопасное сравнение таймера с учётом переполнения HAL_GetTick(). */
+static uint8_t TimeReached(uint32_t now_ms, uint32_t deadline_ms)
+{
+	return ((int32_t)(now_ms - deadline_ms) >= 0) ? 1u : 0u;
+}
+
+static uint8_t IsConfigFaultKind(uint8_t kind)
+{
+	return (kind == WARN_KIND_DEVICE_MISSING ||
+		kind == WARN_KIND_DEVICE_FOUND ||
+		kind == WARN_KIND_CONFIG_MISMATCH) ? 1u : 0u;
+}
+
+static uint8_t ConfirmElapsed(const WarningItem& it, uint32_t now_ms)
+{
+	return (it.confirm_pending != 0u &&
+		TimeReached(now_ms, it.confirm_since_ms + WARN_CONFIRM_MS)) ? 1u : 0u;
+}
+
+/* Удаляет запись без записи в журнал (кратковременное/неподтверждённое событие). */
+static void ClearItemAt(uint8_t idx)
+{
+	if (idx >= WARN_MAX_ITEMS || !g_items[idx].used) {
+		return;
+	}
+	memset(&g_items[idx], 0, sizeof(g_items[idx]));
+}
+
+static void BeginConfirm(WarningItem& it, uint32_t now_ms)
+{
+	if (it.confirm_pending == 0u) {
+		it.confirm_pending = 1u;
+		it.confirm_since_ms = now_ms;
+	}
+}
+
+static uint8_t PromoteToActiveFault(uint8_t idx, uint32_t now_ms)
+{
+	if (idx >= WARN_MAX_ITEMS || !g_items[idx].used || g_items[idx].fault_now != 0u) {
+		return 0u;
+	}
+	g_items[idx].fault_now = 1u;
+	g_items[idx].confirm_pending = 0u;
+	g_items[idx].appeared_ms = now_ms;
+	g_items[idx].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
+	if (IsFaultKind(g_items[idx].kind) && !IsConfigFaultKind(g_items[idx].kind)) {
+		EventLog_PostDeviceFaultItem(g_items[idx], 0u);
+	}
+	return 1u;
+}
+
 /* Удаляет запись неисправности по индексу.
  * Если запись была активной неисправностью — пишет событие устранения. */
 static void RemoveItemAt(uint8_t idx)
@@ -416,12 +475,6 @@ static void RemoveItemAt(uint8_t idx)
 	memset(&g_items[idx], 0, sizeof(g_items[idx]));
 }
 
-/* Безопасное сравнение таймера с учётом переполнения HAL_GetTick(). */
-static uint8_t TimeReached(uint32_t now_ms, uint32_t deadline_ms)
-{
-	return ((int32_t)(now_ms - deadline_ms) >= 0) ? 1u : 0u;
-}
-
 /* Добавляет/обновляет запись неисправности и продлевает окно отображения.
  * Возвращает 1 при появлении новой активной неисправности (фронт). */
 static uint8_t UpsertItem(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l_adr,
@@ -430,17 +483,17 @@ static uint8_t UpsertItem(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l
 {
 	int idx = FindItem(kind, zone, h_adr, v_l_adr, mcu_d_type, v_d_type, can_idx);
 	if (idx >= 0) {
-		uint8_t became_active = (g_items[(uint8_t)idx].fault_now == 0u) ? 1u : 0u;
+		uint8_t became_active = 0u;
 		g_items[(uint8_t)idx].line_state = line_state;
 		g_items[(uint8_t)idx].can_idx = can_idx;
 		g_items[(uint8_t)idx].extra = extra;
-		g_items[(uint8_t)idx].fault_now = 1u;
-		g_items[(uint8_t)idx].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
-		if (became_active) {
-			g_items[(uint8_t)idx].appeared_ms = now_ms;
-		}
-		if (became_active && IsFaultKind(kind)) {
-			EventLog_PostDeviceFaultItem(g_items[(uint8_t)idx], 0u);
+		if (g_items[(uint8_t)idx].fault_now != 0u) {
+			g_items[(uint8_t)idx].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
+		} else {
+			BeginConfirm(g_items[(uint8_t)idx], now_ms);
+			if (ConfirmElapsed(g_items[(uint8_t)idx], now_ms)) {
+				became_active = PromoteToActiveFault((uint8_t)idx, now_ms);
+			}
 		}
 		return became_active;
 	}
@@ -458,13 +511,12 @@ static uint8_t UpsertItem(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l
 		g_items[i].line_state = line_state;
 		g_items[i].can_idx = can_idx;
 		g_items[i].extra = extra;
-		g_items[i].fault_now = 1u;
+		g_items[i].fault_now = 0u;
+		g_items[i].confirm_pending = 1u;
+		g_items[i].confirm_since_ms = now_ms;
 		g_items[i].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
 		g_items[i].appeared_ms = now_ms;
-		if (IsFaultKind(kind)) {
-			EventLog_PostDeviceFaultItem(g_items[i], 0u);
-		}
-		return 1u;
+		return 0u;
 	}
 	return 0u;
 }
@@ -475,20 +527,118 @@ static void MarkRecovered(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l
 {
 	int idx = FindItem(kind, zone, h_adr, v_l_adr, mcu_d_type, v_d_type, can_idx);
 	if (idx >= 0) {
+		if (g_items[(uint8_t)idx].fault_now == 0u && g_items[(uint8_t)idx].confirm_pending != 0u) {
+			ClearItemAt((uint8_t)idx);
+			return;
+		}
 		if (IsFaultKind(kind) && g_items[(uint8_t)idx].fault_now != 0u) {
 			EventLog_PostDeviceFaultItem(g_items[(uint8_t)idx], 1u);
 		}
 		g_items[(uint8_t)idx].fault_now = 0u;
+		g_items[(uint8_t)idx].confirm_pending = 0u;
 		g_items[(uint8_t)idx].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
 	}
 }
 
-/* Проверяет, что запись всё ещё реально неисправна по текущим данным шины. */
-static uint8_t IsConfigFaultKind(uint8_t kind)
+static void ProcessPendingConfirmations(uint32_t now_ms);
+static uint8_t IsItemStillFaulty(const WarningItem& it);
+
+static uint8_t IsConfigItemStillActive(const WarningItem& it)
 {
-	return (kind == WARN_KIND_DEVICE_MISSING ||
-		kind == WARN_KIND_DEVICE_FOUND ||
-		kind == WARN_KIND_CONFIG_MISMATCH) ? 1u : 0u;
+	for (uint8_t slot = 0u; slot < 32u; slot++) {
+		const Device *dev = ConfigMonitor_GetCfgDevice(slot);
+		if (dev == nullptr || dev->d_type == 0u) {
+			continue;
+		}
+		if (dev->zone != it.zone || dev->h_adr != it.h_adr || dev->d_type != it.mcu_d_type) {
+			continue;
+		}
+		if (it.kind == WARN_KIND_DEVICE_MISSING) {
+			return ConfigMonitor_IsMcuMissingLatched(slot) ? 1u : 0u;
+		}
+		if (it.kind == WARN_KIND_CONFIG_MISMATCH) {
+			return ConfigMonitor_IsCrcFaultLatched(slot) ? 1u : 0u;
+		}
+	}
+	if (it.kind == WARN_KIND_DEVICE_FOUND) {
+		uint8_t found_n = ConfigMonitor_GetFoundLatchedCount();
+		for (uint8_t fi = 0u; fi < found_n; fi++) {
+			Device mcu = {};
+			uint8_t v_l_adr = 0u;
+			uint8_t v_d_type = 0u;
+			if (!ConfigMonitor_GetFoundLatchedKey(fi, &mcu, &v_l_adr, &v_d_type)) {
+				continue;
+			}
+			if (it.zone == mcu.zone && it.h_adr == mcu.h_adr && it.mcu_d_type == mcu.d_type &&
+			    it.v_l_adr == v_l_adr && it.v_d_type == v_d_type) {
+				return 1u;
+			}
+		}
+	}
+	return 0u;
+}
+
+static void ProcessPendingConfirmations(uint32_t now_ms)
+{
+	for (uint8_t i = 0u; i < WARN_MAX_ITEMS; i++) {
+		if (!g_items[i].used || g_items[i].fault_now != 0u || g_items[i].confirm_pending == 0u) {
+			continue;
+		}
+		uint8_t still = IsConfigFaultKind(g_items[i].kind) ?
+				IsConfigItemStillActive(g_items[i]) :
+				IsItemStillFaulty(g_items[i]);
+		if (still == 0u) {
+			ClearItemAt(i);
+			continue;
+		}
+		if (ConfirmElapsed(g_items[i], now_ms)) {
+			(void)PromoteToActiveFault(i, now_ms);
+		}
+	}
+}
+
+static void UpdateDebouncedPowerFaults(uint32_t now_ms)
+{
+	uint8_t raw[4];
+	raw[0] = (uint8_t)(g_raw_power_fault_mask & 0x01u);
+	raw[1] = (uint8_t)((g_raw_power_fault_mask >> 1) & 0x01u);
+	raw[2] = (uint8_t)(g_raw_ppku_input_fault_mask & 0x01u);
+	raw[3] = (uint8_t)((g_raw_ppku_input_fault_mask >> 1) & 0x01u);
+
+	uint8_t out_power = 0u;
+	uint8_t out_input = 0u;
+
+	for (uint8_t ch = 0u; ch < 4u; ch++) {
+		uint8_t confirmed = (ch < 2u) ?
+				    (uint8_t)((g_power_fault_mask >> ch) & 0x01u) :
+				    (uint8_t)((g_ppku_input_fault_mask >> (ch - 2u)) & 0x01u);
+		if (raw[ch] != 0u) {
+			if (confirmed != 0u) {
+				if (ch < 2u) {
+					out_power |= (uint8_t)(1u << ch);
+				} else {
+					out_input |= (uint8_t)(1u << (ch - 2u));
+				}
+				g_power_confirm_pending[ch] = 0u;
+				continue;
+			}
+			if (g_power_confirm_pending[ch] == 0u) {
+				g_power_confirm_pending[ch] = 1u;
+				g_power_confirm_since[ch] = now_ms;
+			} else if (TimeReached(now_ms, g_power_confirm_since[ch] + WARN_CONFIRM_MS)) {
+				if (ch < 2u) {
+					out_power |= (uint8_t)(1u << ch);
+				} else {
+					out_input |= (uint8_t)(1u << (ch - 2u));
+				}
+			}
+		} else {
+			g_power_confirm_pending[ch] = 0u;
+		}
+	}
+
+	g_power_fault_mask = out_power;
+	g_ppku_input_fault_mask = out_input;
 }
 
 static uint8_t IsItemStillFaulty(const WarningItem& it)
@@ -549,7 +699,7 @@ static uint8_t IsItemStillFaulty(const WarningItem& it)
 	if (it.kind == WARN_KIND_DEVICE_MISSING ||
 	    it.kind == WARN_KIND_DEVICE_FOUND ||
 	    it.kind == WARN_KIND_CONFIG_MISMATCH) {
-		return it.fault_now;
+		return IsConfigItemStillActive(it);
 	}
 	return 0u;
 }
@@ -622,13 +772,14 @@ static void PruneInactiveItems(uint32_t now_ms)
 
 		if (IsItemStillFaulty(g_items[i])) {
 			if (g_items[i].fault_now == 0u) {
-				g_items[i].appeared_ms = now_ms;
-				if (IsFaultKind(g_items[i].kind) && !IsConfigFaultKind(g_items[i].kind)) {
-					EventLog_PostDeviceFaultItem(g_items[i], 0u);
+				BeginConfirm(g_items[i], now_ms);
+				if (ConfirmElapsed(g_items[i], now_ms)) {
+					(void)PromoteToActiveFault(i, now_ms);
 				}
 			}
-			g_items[i].fault_now = 1u;
-			g_items[i].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
+			if (g_items[i].fault_now != 0u) {
+				g_items[i].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
+			}
 			continue;
 		}
 
@@ -740,32 +891,7 @@ static void SyncPpkuCanFaultItems(uint32_t now_ms)
 static uint8_t UpsertConfigUiItem(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l_adr,
 				  uint8_t mcu_d_type, uint8_t v_d_type, uint32_t now_ms)
 {
-	int idx = FindItem(kind, zone, h_adr, v_l_adr, mcu_d_type, v_d_type, 0u);
-	if (idx >= 0) {
-		if (g_items[(uint8_t)idx].fault_now == 0u) {
-			g_items[(uint8_t)idx].appeared_ms = now_ms;
-		}
-		g_items[(uint8_t)idx].fault_now = 1u;
-		g_items[(uint8_t)idx].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
-		return 0u;
-	}
-	for (uint8_t i = 0u; i < WARN_MAX_ITEMS; i++) {
-		if (g_items[i].used) {
-			continue;
-		}
-		g_items[i].used = 1u;
-		g_items[i].kind = kind;
-		g_items[i].zone = zone;
-		g_items[i].h_adr = h_adr;
-		g_items[i].v_l_adr = v_l_adr;
-		g_items[i].mcu_d_type = mcu_d_type;
-		g_items[i].v_d_type = v_d_type;
-		g_items[i].fault_now = 1u;
-		g_items[i].show_until_ms = now_ms + WARNING_SHOW_HOLD_MS;
-		g_items[i].appeared_ms = now_ms;
-		return 1u;
-	}
-	return 0u;
+	return UpsertItem(kind, zone, h_adr, v_l_adr, mcu_d_type, v_d_type, 0u, 0u, 0u, now_ms);
 }
 
 static void MarkConfigUiRecovered(uint8_t kind, uint8_t zone, uint8_t h_adr, uint8_t v_l_adr,
@@ -1168,6 +1294,10 @@ static void PushUiIfChanged(uint8_t active, uint8_t count,
 /* Главный 1мс-тик модуля: сбор, фильтрация, LED и публикация предупреждений. */
 extern "C" void WarningProcess1ms(void)
 {
+	if (MenuUi_IsConfigSessionActive()) {
+		return;
+	}
+
 	uint32_t now_ms = HAL_GetTick();
 	char big_titles[WARN_MAX_ITEMS][WARN_TITLE_LEN] = {{0}};
 	char details[WARN_MAX_ITEMS][ZONE_NAME_SIZE + 1] = {{0}};
@@ -1178,6 +1308,8 @@ extern "C" void WarningProcess1ms(void)
 	SyncPpkuCanFaultItems(now_ms);
 	SyncMkuPositionFaultItems(now_ms);
 	SyncConfigMonitorItems(now_ms);
+	UpdateDebouncedPowerFaults(now_ms);
+	ProcessPendingConfirmations(now_ms);
 	SyncPowerFaultEventLog();
 	PruneInactiveItems(now_ms);
 	UpdateErrorLed(now_ms);
@@ -1190,12 +1322,12 @@ extern "C" void WarningProcess1ms(void)
 
 extern "C" void Warning_SetPowerFaultMask(uint8_t mask)
 {
-	g_power_fault_mask = (uint8_t)(mask & 0x03u);
+	g_raw_power_fault_mask = (uint8_t)(mask & 0x03u);
 }
 
 extern "C" void Warning_SetPpkuInputFaultMask(uint8_t mask)
 {
-	g_ppku_input_fault_mask = (uint8_t)(mask & 0x03u);
+	g_raw_ppku_input_fault_mask = (uint8_t)(mask & 0x03u);
 }
 
 extern "C" void Warning_SetMkuPositionFaultMask(uint32_t mask)

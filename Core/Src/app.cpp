@@ -116,9 +116,6 @@ uint16_t  		POWER_OUT_PIN[2] = {KEY_1_Pin, KEY_2_Pin};
 
 bool isAppInit = 0;
 
-extern Device BoardDevicesList[];
-extern uint8_t nDevs;
-
 
 extern int32_t CHANNEL_VAL[NUM_ADC_CHANNEL];
 
@@ -1485,18 +1482,25 @@ void AppTimer10ms() {
 	}
 
 	ConfigIgnBlockSync_Process1ms(now);
-	ConfigMonitor_Process1ms(now);
+	if (!MenuUi_IsConfigSessionActive()) {
+		ConfigMonitor_Process1ms(now);
+		Position_EvaluateMismatch(now);
+	}
 	RefreshActiveDevices(now);
-	Position_EvaluateMismatch(now);
-	Warning_SetMkuPositionFaultMask(g_position_fault_mask);
+	if (!MenuUi_IsConfigSessionActive()) {
+		Warning_SetMkuPositionFaultMask(g_position_fault_mask);
+	}
 	App_UpdatePowerFaultIndication(now);
 	EventLog_ProcessTelemetrySample(now);
 	EspManager_Process(now);
+	MenuConfig_Process1ms(now);
 
 	if (warning_process_delay == 0) {
 		WarningProcess1ms();
 		RelayAuto_Process();
-		LogTransport_Process();
+		if (PPKYConfig.rs485_on != 0u) {
+			LogTransport_Process();
+		}
 	}
 
 	Fire_Timer10ms();

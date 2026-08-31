@@ -54,4 +54,9 @@
 #define SOUND_TEST_OFF_MS                      100u
 #define SOUND_TEST_PULSES                        3u
 
+/* Успешная конфигурация: отдельный профиль (не пожар / не неисправность). */
+#define SOUND_CFG_SUCCESS_ON_MS                180u
+#define SOUND_CFG_SUCCESS_OFF_MS               120u
+#define SOUND_CFG_SUCCESS_PULSES                 4u
+
 #endif /* INC_SOUND_PROFILES_H_ */

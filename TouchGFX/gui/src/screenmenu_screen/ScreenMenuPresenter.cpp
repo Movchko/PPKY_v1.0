@@ -6,6 +6,7 @@
 #include "device_config.h"
 #include "event_log.h"
 #include "gost_mode.h"
+#include "menu_ui.h"
 extern PPKYCfg PPKYConfig;
 extern void SaveConfig(void);
 
@@ -24,11 +25,17 @@ void ScreenMenuPresenter::activate()
     FrontendApplication* app = static_cast<FrontendApplication*>(touchgfx::Application::getInstance());
     soundOn = (PPKYConfig.beep != 0u);
     app->getModel().setSoundOn(soundOn);
-    currentIndex = view.getSelectedMenuIndex();
+    currentIndex = MenuUi_GetMenuIndex();
+#if GOST_MODE
     if (currentIndex >= MENU_ITEMS) {
         currentIndex = 0;
-        view.setMenuIndex(currentIndex);
     }
+#else
+    if (currentIndex >= MENU_ITEMS) {
+        currentIndex = 0;
+    }
+#endif
+    view.setMenuIndex(currentIndex);
     refreshLine();
 #endif
 }
@@ -74,6 +81,7 @@ void ScreenMenuPresenter::handleButton(uint8_t but, uint8_t state)
     if (but == BUT_UP) {
         currentIndex = (currentIndex - 1 + MENU_ITEMS) % MENU_ITEMS;
         view.setMenuIndex(currentIndex);
+        MenuUi_SetMenuIndex(currentIndex);
         refreshLine();
         return;
     }
@@ -81,6 +89,7 @@ void ScreenMenuPresenter::handleButton(uint8_t but, uint8_t state)
     if (but == BUT_DOWN) {
         currentIndex = (currentIndex + 1) % MENU_ITEMS;
         view.setMenuIndex(currentIndex);
+        MenuUi_SetMenuIndex(currentIndex);
         refreshLine();
         return;
     }
