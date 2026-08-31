@@ -1418,7 +1418,7 @@ static void App_UpdatePowerFaultIndication(uint32_t now_ms)
 	Warning_SetPowerFaultMask(power_fault_mask);
 	Warning_SetPpkuInputFaultMask(ppku_input_fault_mask);
 
-	if(ppku_input_fault_mask || ppku_input_fault_mask) {
+	if (ppku_input_fault_mask != 0u) {
 		led_power_is_toogle = 1;
 	} else {
 		Led_Set(LED_POWER, 1);
