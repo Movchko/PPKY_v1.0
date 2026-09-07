@@ -11,6 +11,7 @@
 #include "main.h"
 #include "spif.h"
 #include "device_config.h"
+#include "boot_layout.h"
 
 #define FLASH_CFG_START_SECTOR 0
 #define FLASH_CFG_START_BLOCK FLASH_CFG_START_SECTOR / (SPIF_BLOCK_SIZE / SPIF_SECTOR_SIZE)
@@ -25,11 +26,8 @@
 #define FLASH_CFG_MAX_USABLE_BYTES  ((FLASH_CFG_BYTES_ALLOCATED * (100u - FLASH_CFG_RESERVE_PERCENT)) / 100u)
 #define FLASH_CFG_STORED_BYTES      (sizeof(PPKYConfigHeader) + sizeof(PPKYCfg))
 
-/* --- Область логера событий во внешней SPI Flash (после конфигурации) --- */
-/* Микросхема платы: W25Q128 (16 Мбайт). При смене чипа обновить SPI_FLASH_SECTOR_COUNT. */
-#define SPI_FLASH_SECTOR_COUNT      4096u
-
-#define FLASH_LOG_START_SECTOR      (FLASH_CFG_START_SECTOR + FLASH_CFG_SECTORS_USED)
+/* --- Область логера событий во внешней SPI Flash (после config + factory 0x020000 + update 0x0A0000, слот 512 КБ) --- */
+/* Микросхема платы: W25Q128 (16 Мбайт). SPI_FLASH_SECTOR_COUNT / FLASH_LOG_START_SECTOR — boot_layout.h. */
 #define FLASH_LOG_TOTAL_SECTORS     (SPI_FLASH_SECTOR_COUNT - FLASH_LOG_START_SECTOR)
 
 #define EVENT_LOG_RECORD_SIZE_BYTES   32u

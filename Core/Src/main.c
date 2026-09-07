@@ -25,6 +25,7 @@
 #include "Display/display.h"
 #include "stdlib.h"
 #include "app.hpp"
+#include "fw_update.h"
 #include "led.h"
 #include "can_bus.h"
 #include "rtc_cache.h"
@@ -215,6 +216,7 @@ int main(void)
 
   if(isFlash == true) {
 	  AppInit();
+	  Boot_WriteProgramWatchDog();
 
 	  HAL_TIM_Base_Start_IT(&htim1);
 	  HAL_TIM_Base_Start_IT(&htim2);
@@ -1260,8 +1262,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-uint8_t SetUpdateWord(uint32_t num, uint32_t word)
-{ return 0;}
 #define APP_VERSION_U32 2u
 
 const char *GetAppVersion(void)
@@ -1270,10 +1270,6 @@ const char *GetAppVersion(void)
     /* fw: версия прошивки (пока константа) */
     (void)snprintf(ver_buf, sizeof(ver_buf), "БСУ 4 версия аппаратной части %u", (unsigned)APP_VERSION_U32);
     return ver_buf;
-}
-
-uint8_t FinishUpdateTransmit(void) {
-	return 0;
 }
 
 
