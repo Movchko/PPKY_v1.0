@@ -4,6 +4,7 @@
 #include "device_cfg_common.h"
 #include "backend.h"
 #include "menu_ui.h"
+#include "event_log.h"
 #include <string.h>
 
 static_assert(FLASH_CFG_STORED_BYTES <= FLASH_CFG_MAX_USABLE_BYTES,
@@ -65,6 +66,8 @@ void SaveConfig() {
 		// Что-то пошло не так, оставляем SavedPPKYConfig равным локальной конфигурации
 		SavedPPKYConfig = PPKYConfig;
 	}
+
+	EventLog_LogConfigSaved();
 }
 
 // Запись 4-байтового слова в локальную конфигурацию (big-endian)

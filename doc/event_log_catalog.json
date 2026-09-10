@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated": "2026-06-25",
+  "updated": "2026-09-10",
   "source_firmware": {
     "catalog_header": "stm_PPKY/Core/Inc/event_log_catalog.h",
     "catalog_table": "stm_PPKY/Core/Src/event_log_catalog.c",
@@ -1199,6 +1199,73 @@
           }
         ]
       }
+    },
+    {
+      "code": 26,
+      "symbol": "EVENT_LOG_CONFIG_SAVED",
+      "name": "Сохранена конфигурация",
+      "level": "critical",
+      "debug_only": false,
+      "status": "implemented",
+      "description": "ППКУ записала свой конфиг во Flash (SaveConfig). Не путать с кодом 16 CONFIG_APPLY_OK (заливка в МКУ). После этой записи идут события 27 ZONE_NAME по одной на каждую зону с непустым именем.",
+      "uses": {
+        "can_header": "unused",
+        "can_data": "unused",
+        "additional": "required"
+      },
+      "payload": {
+        "additional": [
+          {
+            "offset": 0,
+            "name": "named_zone_count",
+            "type": "uint8",
+            "description": "Число следующих записей EVENT_LOG_ZONE_NAME (только зоны с непустым именем)"
+          },
+          {
+            "offset": 1,
+            "name": "zone_capacity",
+            "type": "uint8",
+            "description": "ZONE_NUMBER (ёмкость массива имён, сейчас 100)"
+          }
+        ]
+      }
+    },
+    {
+      "code": 27,
+      "symbol": "EVENT_LOG_ZONE_NAME",
+      "name": "Имя зоны",
+      "level": "critical",
+      "debug_only": false,
+      "status": "implemented",
+      "description": "Снимок имени зоны сразу после EVENT_LOG_CONFIG_SAVED. Пишется только для зон с непустым именем. Имя обрезается до 16 байт: can_data[0..7] + additional[0..7]. Если имя короче 16 — хвост нули; если ровно 16 или длиннее — без NUL.",
+      "uses": {
+        "can_header": "required",
+        "can_data": "required",
+        "additional": "required"
+      },
+      "payload": {
+        "can_header": {
+          "required": true,
+          "description": "can_ext_id: zone = номер зоны 1..100, d_type=DEVICE_PPKY_TYPE, h_adr ППКУ, dir=1"
+        },
+        "can_data": {
+          "required": true,
+          "description": "Байты имени зоны [0..7]"
+        },
+        "additional": [
+          {
+            "offset": 0,
+            "name": "name_bytes_8_15",
+            "type": "bytes",
+            "size": 8,
+            "description": "Байты имени зоны [8..15]"
+          }
+        ]
+      },
+      "parse_hints": [
+        "Собрать имя: 8 байт can_data, затем 8 байт additional, затем добавить NUL при разборе.",
+        "Пустые зоны (zone_name[i][0]==0) не пишутся."
+      ]
     }
   ]
 }

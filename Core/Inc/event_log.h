@@ -91,6 +91,14 @@ void EventLog_HostLinkSessionReset(uint8_t media);
 void EventLog_LogConfigApplyOk(uint8_t mcu_ok_count, uint8_t mcu_total);
 
 /**
+ * ППКУ сохранила свой конфиг во Flash (SaveConfig).
+ * Сначала EVENT_LOG_CONFIG_SAVED, затем по одному EVENT_LOG_ZONE_NAME
+ * на каждую зону с непустым именем.
+ * Имя: can_data[8] + additional[8] (16 байт, обрезка), номер зоны — can_header.zone.
+ */
+void EventLog_LogConfigSaved(void);
+
+/**
  * Сохранено МКУ: can_header = ID МКУ (dir=1), can_data/additional = серийник (UId0..UId2).
  * Критический tier.
  */
